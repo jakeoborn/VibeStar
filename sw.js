@@ -1,5 +1,5 @@
 // Vibestar Service Worker — offline-first cache for EDC LV 2026
-const CACHE = 'vibestar-v5';
+const CACHE = 'vibestar-v6';
 const PRECACHE = [
   './',
   './index.html',
@@ -39,15 +39,44 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
 
-  // Claude API calls must never be cached (private, tokenized)
-  if (req.url.includes('anthropic.com') || req.url.includes('/v1/messages')) {
+  // Claude / Spotify API calls must never be cached (private, tokenized, time-sensitive)
+  if (req.url.includes('anthropic.com') ||
+      req.url.includes('/v1/messages') ||
+      req.url.includes('api.spotify.com') ||
+      req.url.includes('accounts.spotify.com')) {
     return;
   }
 
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
+  // App code (HTML / JSX / JSON / manifest) must update on deploy — network-first,
+  // cache only as offline fallback. Otherwise a stale cached build sticks forever
+  // (which is why the Spotify button stopped working in Chrome: old spotify.jsx).
+  const isAppCode = sameOrigin && (
+    url.pathname === '/' ||
+    url.pathname.endsWith('/') ||
+    /\.(html|jsx|js|json|svg)$/i.test(url.pathname)
+  );
+
+  if (isAppCode) {
+    e.respondWith(
+      fetch(req).then(resp => {
+        if (resp && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(req, clone));
+        }
+        return resp;
+      }).catch(() =>
+        caches.match(req).then(m => m || caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
+  // Fonts, images, other CDN assets — stale-while-revalidate (fast, still fresh eventually)
   e.respondWith(
     caches.match(req).then(cached => {
       if (cached) {
-        // Stale-while-revalidate for static assets
         fetch(req).then(fresh => {
           if (fresh && fresh.status === 200) {
             caches.open(CACHE).then(c => c.put(req, fresh.clone()));
@@ -58,11 +87,9 @@ self.addEventListener('fetch', e => {
       return fetch(req).then(resp => {
         if (resp && resp.status === 200 && (
           req.url.includes('fonts.g') ||
-          req.url.includes('cdnjs') ||
-          req.url.startsWith(self.location.origin)
+          req.url.includes('cdnjs')
         )) {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(req, clone));
+          caches.open(CACHE).then(c => c.put(req, resp.clone()));
         }
         return resp;
       }).catch(() => caches.match('./index.html'));
