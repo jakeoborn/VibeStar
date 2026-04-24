@@ -1,0 +1,2 @@
+# VibeStar
+Music Festival App
