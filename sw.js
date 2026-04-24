@@ -1,11 +1,19 @@
 // Vibestar Service Worker — offline-first cache for EDC LV 2026
-const CACHE = 'vibestar-v3';
+const CACHE = 'vibestar-v4';
 const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@300;400;500;600&display=swap',
+  './app.jsx',
+  './chrome.jsx',
+  './data.jsx',
+  './home.jsx',
+  './map.jsx',
+  './lineup.jsx',
+  './artist.jsx',
+  './spotify.jsx',
+  './ios-frame.jsx',
+  'https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap',
 ];
 
 self.addEventListener('install', e => {
