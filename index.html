@@ -315,9 +315,8 @@ canvas#cv:active{cursor:grabbing}
     <canvas id="cv" style="flex:1"></canvas>
 
     <div id="mode-bar">
-      <button class="mchip on" onclick="setMode('both',this)">MAP+WEB</button>
-      <button class="mchip" onclick="setMode('map',this)">MAP</button>
-      <button class="mchip" onclick="setMode('web',this)">WEB</button>
+      <button class="mchip on" onclick="setMode('overview',this)">OVERVIEW</button>
+      <button class="mchip" onclick="setMode('walk',this)">WALK</button>
       <button class="mchip" onclick="setMode('heat',this)">HEAT</button>
     </div>
 
@@ -1087,6 +1086,21 @@ function buildGround(){
     scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-maxX,0,j),new THREE.Vector3(maxX,0,j)]),gm));
   }
 
+  // Stage zones — each stage paints its color onto the ground (matches EDC map feel)
+  STAGES.forEach(st=>{
+    const R=st.sz*2.6;
+    const zone=new THREE.Mesh(new THREE.CircleGeometry(R,48),
+      new THREE.MeshBasicMaterial({color:st.hex,transparent:true,opacity:0.11,blending:THREE.AdditiveBlending,depthWrite:false}));
+    zone.rotation.x=-Math.PI/2; zone.position.set(st.x,-0.03,st.z); scene.add(zone);
+    // Bright ring marking the zone edge
+    const ring=new THREE.Mesh(new THREE.RingGeometry(R-0.4,R,48),
+      new THREE.MeshBasicMaterial({color:st.hex,transparent:true,opacity:0.4,side:THREE.DoubleSide,depthWrite:false}));
+    ring.rotation.x=-Math.PI/2; ring.position.set(st.x,-0.02,st.z); scene.add(ring);
+    // Stage name label above ground (readable in overview mode)
+    const nameSprite=mkSprite(st.name.toUpperCase(),st.col,1.3);
+    nameSprite.position.set(st.x,st.h+7.5,st.z); scene.add(nameSprite);
+  });
+
   // Festival paths — glowing arteries across the infield between stages
   [
     {pts:[{x:0,z:LVMS_RZ_IN-2},{x:0,z:-LVMS_RZ_IN+2}],c:'#34456a',w:.65},
@@ -1280,38 +1294,36 @@ const hitTargets=[];
 const webGroup=new THREE.Group(); scene.add(webGroup);
 
 function buildWeb(){
-  // EDC hub = "polaris" at the top of the constellation
-  const EDC_Y=44;
-  const cm=mkSphere(3.5,0xf0c040,1.2); cm.position.set(0,EDC_Y,0); webGroup.add(cm);
-  nodeMap2['__edc']={mesh:cm,pos:new THREE.Vector3(0,EDC_Y,0),type:'festival',label:'EDC LV 2026',data:{}};
-  hitTargets.push({mesh:cm,id:'__edc'});
-  const cl=mkSprite('EDC LV 2026','#f0c040',1.05); cl.position.set(0,EDC_Y+6,0); webGroup.add(cl);
-
-  STAGES.forEach((st,i)=>{
-    const wy=20+i*.6;
-    const m=mkSphere(2.8,st.hex,.85); m.position.set(st.x,wy,st.z); webGroup.add(m);
-    nodeMap2[st.id+'_web']={mesh:m,pos:new THREE.Vector3(st.x,wy,st.z),type:'stage',label:st.name,data:st};
-    hitTargets.push({mesh:m,id:st.id+'_web'});
-    const lb=mkSprite(st.short,st.col,.82); lb.position.set(st.x,wy+4.5,st.z); webGroup.add(lb);
-    addLine3(new THREE.Vector3(0,EDC_Y,0),new THREE.Vector3(st.x,wy,st.z),st.col,.18);
-    addLine3(new THREE.Vector3(st.x,st.h+2,st.z),new THREE.Vector3(st.x,wy,st.z),st.col,.11);
+  // Register each stage's ground position as its nodeMap entry so ribbon/flyTo still work.
+  STAGES.forEach(st=>{
+    const pos=new THREE.Vector3(st.x,3,st.z);
+    nodeMap2[st.id+'_web']={mesh:null,pos,type:'stage',label:st.name,data:st};
+    const lb=mkSprite(st.short,st.col,1.05); lb.position.set(st.x,st.h+4,st.z); webGroup.add(lb);
   });
 
-  ARTISTS.forEach((a,i)=>{
-    const st=STAGES.find(s=>s.id===a.s); if(!st) return;
-    const gc=GC[a.g]||'#fff'; const gcH=parseInt(gc.replace('#',''),16);
-    const r=a.tier*.52+.4;
-    const spread=10+Math.random()*9;
-    const ang=i*2.618;
-    const px=st.x+Math.cos(ang)*spread, py=30+(Math.random()-.5)*18+a.tier*0.8, pz=st.z+Math.sin(ang)*spread;
-    const m=mkStar(r,gcH,a.tier); m.position.set(px,py,pz); m.userData={artistId:a.id};
-    webGroup.add(m);
-    const pos=new THREE.Vector3(px,py,pz);
-    nodeMap2[a.id]={mesh:m,pos,type:'artist',label:a.n,data:a};
-    hitTargets.push({mesh:m,id:a.id});
-    if(a.tier>=4){const lb=mkSprite(a.n,gc,.68);lb.position.set(px,py+r+2,pz);webGroup.add(lb);}
-    const sn=nodeMap2[st.id+'_web']; if(sn) addLine3(sn.pos,pos,gcH,.09);
-    ARTISTS.slice(0,i).forEach(b=>{if(b.g===a.g&&b.s!==a.s){const nb=nodeMap2[b.id];if(nb&&Math.random()<.25)addLine3(pos,nb.pos,gcH,.05);}});
+  // Artists cluster AROUND their stage at ground-level, arranged in concentric rings
+  // sorted by tier (headliners in the inner ring, openers on the outside)
+  const byStage={};
+  ARTISTS.forEach(a=>{(byStage[a.s]||(byStage[a.s]=[])).push(a);});
+  Object.keys(byStage).forEach(sid=>{
+    const st=STAGES.find(s=>s.id===sid); if(!st) return;
+    const arts=byStage[sid].slice().sort((a,b)=>b.tier-a.tier);
+    arts.forEach((a,i)=>{
+      const gc=GC[a.g]||'#fff'; const gcH=parseInt(gc.replace('#',''),16);
+      const r=a.tier*.5+.6;
+      // Ring index: 0 = tier-5 inner, 1 = tier 3-4 mid, 2 = tier 2 outer
+      const ring=Math.min(3, Math.floor(i/8));
+      const ringR=st.sz*1.7 + ring*3.4;
+      const ang=(i/Math.max(8,arts.length))*Math.PI*2 + ring*0.35;
+      const px=st.x+Math.cos(ang)*ringR;
+      const pz=st.z+Math.sin(ang)*ringR;
+      const py=2.4 + (i%3)*0.6;
+      const m=mkStar(r,gcH,a.tier); m.position.set(px,py,pz); m.userData={artistId:a.id};
+      webGroup.add(m);
+      nodeMap2[a.id]={mesh:m,pos:new THREE.Vector3(px,py,pz),type:'artist',label:a.n,data:a};
+      hitTargets.push({mesh:m,id:a.id});
+      if(a.tier>=4){const lb=mkSprite(a.n,gc,.6);lb.position.set(px,py+r+1.2,pz);webGroup.add(lb);}
+    });
   });
 }
 
@@ -1489,9 +1501,13 @@ STAGES.forEach(st=>{
 });
 function focusStage(sid){
   const n=nodeMap2[sid+'_web']; if(!n) return;
-  if(viewMode==='web'){
-    const bothBtn=document.querySelector('.mchip');
-    if(bothBtn) setMode('both',bothBtn);
+  // In walk mode, teleport the player to the stage so the camera follows them there
+  if(viewMode==='walk'){
+    const st=STAGES.find(s=>s.id===sid);
+    if(st){
+      playerGroup.position.set(st.x,0,st.z+st.sz*2.2);
+      playerGroup.visible=true;
+    }
   }
   showInfo(sid+'_web');
   flyTo(n.pos);
@@ -1502,21 +1518,29 @@ function syncStageRibbon(activeStageId){
   if(active) active.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
-/* ── MODE ── */
+/* ── MODE ──
+   OVERVIEW = top-down planning view (entire venue visible)
+   WALK = eye-level camera that follows the avatar, orbit on touch
+   HEAT = crowd density overlay (same camera as overview) */
+let camTargetMode='center'; // 'center' or 'player'
 function setMode(mode,el){
   viewMode=mode;
   document.querySelectorAll('.mchip').forEach(b=>b.classList.remove('on'));
   el.classList.add('on');
-  stageGroupList.forEach(s=>s.g.visible=mode!=='web');
-  crowdMesh.visible=mode!=='web'&&mode!=='heat';
-  webGroup.visible=mode!=='map'&&mode!=='heat';
-  amenityGroup.visible=mode!=='web'&&mode!=='heat';
-  lasers.forEach(l=>l.visible=mode!=='web'&&mode!=='heat');
+  stageGroupList.forEach(s=>s.g.visible=true);
+  crowdMesh.visible=false;
+  webGroup.visible=mode!=='heat';
+  amenityGroup.visible=mode!=='heat';
+  lasers.forEach(l=>l.visible=mode!=='heat');
   if(hmCanvas) hmCanvas.style.opacity=mode==='heat'?'1':'0';
-  if(mode==='web'){tgtPhi=1.08;sph.r=135;}
-  else if(mode==='map'){tgtPhi=.45;sph.r=92;}
-  else if(mode==='heat'){tgtPhi=.35;sph.r=88;}
-  else{tgtPhi=.70;sph.r=128;}
+  if(mode==='walk'){
+    if(!playerGroup.visible){toast('Enable GPS (📍) or pick a stage to walk around');}
+    tgtPhi=1.32; sph.r=16; autoRot=false; camTargetMode='player';
+  } else if(mode==='heat'){
+    tgtPhi=.35; sph.r=88; camTargetMode='center';
+  } else {
+    tgtPhi=.48; sph.r=96; camTargetMode='center';
+  }
 }
 
 /* ── WALKING ETA (BFS path × walking speed) ── */
@@ -1838,7 +1862,16 @@ function doClick(cx,cy){
   const se=stageGroupList.find(s=>s.body===hm);
   if(se)showInfo(se.st.id+'_web');
 }
-function flyTo(pos){if(!pos)return;sph.r=48;tgtT=Math.atan2(pos.x,pos.z)+.25;tgtPhi=.9;autoRot=false;}
+function flyTo(pos){
+  if(!pos)return;
+  if(viewMode==='walk'){
+    // In walk mode, just rotate to face the target from the player's position
+    const p=playerGroup.visible?playerGroup.position:_camCenter;
+    tgtT=Math.atan2(pos.x-p.x,pos.z-p.z)+Math.PI;
+    autoRot=false; return;
+  }
+  sph.r=48; tgtT=Math.atan2(pos.x,pos.z)+.25; tgtPhi=.9; autoRot=false;
+}
 
 /* ── TOAST ── */
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2400);}
@@ -2344,6 +2377,7 @@ window.addEventListener('appinstalled',()=>{toast('✨ Installed to home screen'
 /* ── ANIMATION ── */
 let tick=0, batterySaver=false, _frame=0;
 const camLookAt=new THREE.Vector3(0,4,0);
+const _camCenter=new THREE.Vector3(0,4,0);
 (function animate(){
   requestAnimationFrame(animate);
   _frame++;
@@ -2353,31 +2387,28 @@ const camLookAt=new THREE.Vector3(0,4,0);
   if(autoRot&&!batterySaver)tgtT+=.0018;
   sph.t+=(tgtT-sph.t)*.045;
   sph.p+=(tgtPhi-sph.p)*.045;
+  // Target the player in WALK mode; otherwise the scene origin
+  const target = camTargetMode==='player' && playerGroup.visible
+    ? playerGroup.position
+    : _camCenter;
+  camLookAt.lerp(target, .1);
   const sp=Math.sin(sph.p);
-  camera.position.x=sph.r*sp*Math.sin(sph.t);
-  camera.position.y=sph.r*Math.cos(sph.p);
-  camera.position.z=sph.r*sp*Math.cos(sph.t);
+  camera.position.x=camLookAt.x+sph.r*sp*Math.sin(sph.t);
+  camera.position.y=Math.max(1.5, camLookAt.y+sph.r*Math.cos(sph.p));
+  camera.position.z=camLookAt.z+sph.r*sp*Math.cos(sph.t);
   camera.lookAt(camLookAt);
   if(!batterySaver){
     stagePL.forEach((pl,i)=>{pl.intensity=2.8+Math.sin(tick*1.8+i*.9)*1.8;});
     Object.values(nodeMap2).forEach((n,i)=>{
-      if(n.type==='artist'){
-        n.mesh.position.y=n.pos.y+Math.sin(tick*1.1+i*.7)*.9;
+      if(n.type==='artist' && n.mesh){
+        n.mesh.position.y=n.pos.y+Math.sin(tick*1.1+i*.7)*.35;
         if(n.mesh.isSprite){
           const base=n.mesh.userData.baseOpacity??1;
           const tw=0.78+Math.sin(tick*3.1+i*1.7)*0.22;
           n.mesh.material.opacity=base*tw;
         }
-      } else if(n.type==='festival'){
-        n.mesh.position.y=44+Math.sin(tick*.8)*1.5; n.mesh.rotation.y=tick*.5;
       }
     });
-    // Constellation line breathing — each line shimmers at its own phase
-    const lt=tick*1.7;
-    for(let i=0;i<webLines.length;i++){
-      const l=webLines[i];
-      l.material.opacity=l.userData.baseOp*(0.55+Math.sin(lt+l.userData.phase)*0.45);
-    }
     // Laser beams — sweep and pulse for tier-5 stages
     for(let i=0;i<lasers.length;i++){
       const l=lasers[i]; const st=l.userData.stage;
