@@ -1134,6 +1134,70 @@ function mkSprite(text,color,scale=1){
 }
 buildWeb();
 
+/* ── AMENITY PINS (water / medical / restroom / charging / art) ── */
+const amenityGroup=new THREE.Group(); scene.add(amenityGroup);
+function mkAmenityTexture(icon,color){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=128;
+  const ctx=cv.getContext('2d'); const cx=64,cy=64;
+  // Outer glow halo
+  const halo=ctx.createRadialGradient(cx,cy,10,cx,cy,60);
+  halo.addColorStop(0,color+'66');
+  halo.addColorStop(0.6,color+'22');
+  halo.addColorStop(1,color+'00');
+  ctx.fillStyle=halo; ctx.fillRect(0,0,128,128);
+  // Pin body
+  ctx.fillStyle='rgba(9,12,24,0.95)';
+  ctx.strokeStyle=color; ctx.lineWidth=3.5;
+  ctx.shadowColor=color; ctx.shadowBlur=14;
+  ctx.beginPath(); ctx.arc(cx,cy,36,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
+  // Icon (text character or emoji)
+  ctx.fillStyle=color;
+  ctx.font='700 46px "Apple Color Emoji","Segoe UI Emoji",Orbitron,sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(icon,cx,cy+2);
+  return cv;
+}
+const _amenTextures={};
+function getAmenTexture(type){
+  if(_amenTextures[type]) return _amenTextures[type];
+  const s=AMEN_STYLE[type]; if(!s) return null;
+  const tex=new THREE.CanvasTexture(mkAmenityTexture(s.icon,s.color));
+  tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter;
+  _amenTextures[type]=tex; return tex;
+}
+function buildAmenities(){
+  AMENITIES.forEach(am=>{
+    const tex=getAmenTexture(am.type); if(!tex) return;
+    const mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false});
+    const sp=new THREE.Sprite(mat); sp.scale.set(3.4,3.4,1);
+    sp.position.set(am.x,2.4,am.z); sp.userData={amenityId:am.id};
+    amenityGroup.add(sp);
+    const pos=new THREE.Vector3(am.x,2.4,am.z);
+    nodeMap2[am.id]={mesh:sp,pos,type:'amenity',label:am.name,data:am};
+    hitTargets.push({mesh:sp,id:am.id});
+  });
+}
+buildAmenities();
+
+/* ── LASER BEAMS from tier-5 stages (mainstage + Circuit + Cosmic) ── */
+const LASER_STAGE_IDS=['kinetic','circuit','cosmic'];
+const lasers=[];
+function buildLasers(){
+  LASER_STAGE_IDS.forEach(sid=>{
+    const st=STAGES.find(s=>s.id===sid); if(!st) return;
+    for(let i=0;i<4;i++){
+      const mat=new THREE.LineBasicMaterial({color:new THREE.Color(st.col),transparent:true,opacity:.55,blending:THREE.AdditiveBlending,depthWrite:false});
+      const geo=new THREE.BufferGeometry();
+      geo.setFromPoints([new THREE.Vector3(st.x,st.h+1,st.z),new THREE.Vector3(st.x,st.h+60,st.z)]);
+      const line=new THREE.Line(geo,mat);
+      line.userData={stage:st,beamIdx:i,phase:Math.random()*Math.PI*2};
+      lasers.push(line); scene.add(line);
+    }
+  });
+}
+buildLasers();
+
 /* ── GENRE FILTER BAR ── */
 const gbarEl=document.getElementById('gbar');
 const gList=[{id:'all',l:'ALL',h:'#e2e8f0'},...Object.entries(GC).map(([k,v])=>({id:k,l:k.toUpperCase(),h:v}))];
@@ -1199,6 +1263,8 @@ function setMode(mode,el){
   stageGroupList.forEach(s=>s.g.visible=mode!=='web');
   crowdMesh.visible=mode!=='web'&&mode!=='heat';
   webGroup.visible=mode!=='map'&&mode!=='heat';
+  amenityGroup.visible=mode!=='web'&&mode!=='heat';
+  lasers.forEach(l=>l.visible=mode!=='web'&&mode!=='heat');
   if(hmCanvas) hmCanvas.style.opacity=mode==='heat'?'1':'0';
   if(mode==='web'){tgtPhi=1.08;sph.r=135;}
   else if(mode==='map'){tgtPhi=.45;sph.r=92;}
@@ -1242,6 +1308,21 @@ function showInfo(id){
     subEl.textContent='30TH ANNIVERSARY'; subEl.style.color='#f0c040';
     bdEl.textContent='May 15–17 · Las Vegas Motor Speedway · 9 stages · 200+ artists · 500k+ headliners';
     tgEl.innerHTML=''; spEl.style.display='none'; actsEl.innerHTML='<button class="ip-btn btn-close" onclick="closeInfo()">✕ CLOSE</button>';
+  } else if(n.type==='amenity'){
+    const am=n.data; const style=AMEN_STYLE[am.type]||{color:'#fff',label:'Amenity'};
+    nameEl.textContent=am.name; nameEl.style.color=style.color;
+    subEl.textContent=style.label.toUpperCase(); subEl.style.color=style.color;
+    bdEl.textContent=am.type==='water'?'Free water refill — bring your hydration pack.':
+                     am.type==='medical'?'Medical staff on-site 24/7. 911 for life-threatening emergencies.':
+                     am.type==='restroom'?'Toilets + hand sanitizer. Lines shortest between sets.':
+                     am.type==='charging'?'Free phone charging. Bring your own cable.':
+                     'Art installation — photo spot.';
+    const eta=walkingETA(am.x,am.z);
+    etaEl.innerHTML=`🚶 ~${eta.minutes} min walk · ${eta.meters}m <span class="eta-src">from ${eta.src}</span>`;
+    etaEl.classList.add('on');
+    tgEl.innerHTML=`<span class="ip-tag" style="background:${style.color}15;color:${style.color};border:1px solid ${style.color}30">${style.icon} ${style.label}</span>`;
+    spEl.style.display='none';
+    actsEl.innerHTML='<button class="ip-btn btn-close" onclick="closeInfo()">✕ CLOSE</button>';
   } else if(n.type==='stage'){
     const st=n.data;
     nameEl.textContent=st.name; nameEl.style.color=st.col;
@@ -2049,6 +2130,21 @@ const camLookAt=new THREE.Vector3(0,4,0);
     for(let i=0;i<webLines.length;i++){
       const l=webLines[i];
       l.material.opacity=l.userData.baseOp*(0.55+Math.sin(lt+l.userData.phase)*0.45);
+    }
+    // Laser beams — sweep and pulse for tier-5 stages
+    for(let i=0;i<lasers.length;i++){
+      const l=lasers[i]; const st=l.userData.stage;
+      const sweep=tick*0.6+l.userData.beamIdx*(Math.PI/2)+l.userData.phase;
+      const tilt=0.22+Math.sin(tick*0.9+l.userData.phase)*0.12;
+      const len=55;
+      const posAttr=l.geometry.attributes.position;
+      posAttr.setXYZ(0,st.x,st.h+1,st.z);
+      posAttr.setXYZ(1,
+        st.x+Math.cos(sweep)*Math.sin(tilt)*len,
+        st.h+1+Math.cos(tilt)*len,
+        st.z+Math.sin(sweep)*Math.sin(tilt)*len);
+      posAttr.needsUpdate=true;
+      l.material.opacity=0.42+Math.sin(tick*5+l.userData.phase)*0.25;
     }
     stageGroupList.forEach((s,i)=>{s.face.material.emissiveIntensity=.72+Math.sin(tick*2.2+i*1.1)*.3;});
   }
