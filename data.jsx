@@ -51,11 +51,16 @@ const gradFor = (stageId) => {
   return `linear-gradient(135deg, ${s.color}, #1a0a28)`;
 };
 
-const mk = (id, name, genre, stage, day, start, end, bio) => ({
-  id, name, genre, country: "—", stage, day, start, end,
-  img: `linear-gradient(135deg, ${STAGES.find(s=>s.id===stage).color}, #1a0a28)`,
-  bio: bio || "Playing Las Vegas 2026."
-});
+const mk = (id, name, genre, stage, day, start, end, bio) => {
+  const h = parseInt(start.split(':')[0]);
+  // tier: 3=headliner (23:00-05:59), 2=prime time (21:00-22:59), 1=opener (19:00-20:59)
+  const tier = (h < 6 || h >= 23) ? 3 : (h >= 21) ? 2 : 1;
+  return {
+    id, name, genre, country: "—", stage, day, start, end, tier,
+    img: `linear-gradient(135deg, ${STAGES.find(s=>s.id===stage).color}, #1a0a28)`,
+    bio: bio || "Playing EDC Las Vegas 2026."
+  };
+};
 
 const ARTISTS = [
   // ---------- KINETIC FIELD ----------

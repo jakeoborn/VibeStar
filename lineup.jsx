@@ -3,10 +3,12 @@
 function LineupScreen({ state, setState }) {
   const [day, setDay] = React.useState(state.lineupDay || NOW.day);
   const [filter, setFilter] = React.useState("all"); // all | saved
+  const [stageFilter, setStageFilter] = React.useState("all"); // all | stage id
 
   const dayArtists = ARTISTS
     .filter(a => a.day === day)
     .filter(a => filter === "all" || state.saved.includes(a.id))
+    .filter(a => stageFilter === "all" || a.stage === stageFilter)
     .sort((a, b) => a.start.localeCompare(b.start));
 
   // conflicts: 2+ saved sets overlap in time
@@ -42,6 +44,29 @@ function LineupScreen({ state, setState }) {
               <span className="mono" style={{ fontSize: 10, letterSpacing: 1.6, opacity: on ? 0.7 : 0.5 }}>{d.label}</span>
               <span className="serif" style={{ fontSize: 18 }}>{d.date.split(" ")[1]}</span>
             </button>
+          );
+        })}
+      </div>
+
+      {/* Stage filter chips */}
+      <div className="no-scrollbar" style={{
+        display: "flex", gap: 6, padding: "10px 16px 4px",
+        overflowX: "auto", scrollbarWidth: "none",
+        borderBottom: "1px solid var(--line)",
+      }}>
+        {[{ id: "all", name: "All Stages", color: "var(--ink)" }, ...STAGES].map(s => {
+          const on = stageFilter === s.id;
+          return (
+            <button key={s.id} onClick={() => setStageFilter(s.id)} className="mono" style={{
+              flexShrink: 0,
+              padding: "5px 11px",
+              borderRadius: 999,
+              background: on ? (s.color || "var(--ink)") : "transparent",
+              color: on ? "#fff" : "var(--ink)",
+              border: on ? "none" : "1px solid var(--line-2)",
+              fontSize: 9.5, letterSpacing: 1.1, textTransform: "uppercase",
+              cursor: "pointer", fontWeight: on ? 700 : 400,
+            }}>{s.short || s.name}</button>
           );
         })}
       </div>
@@ -106,7 +131,10 @@ function LineupScreen({ state, setState }) {
               <div style={{ width: 4, alignSelf: "stretch", background: stage.color, borderRadius: 3 }} />
               <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                    onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
-                <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, letterSpacing: -0.3 }}>{a.name}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                  <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, letterSpacing: -0.3 }}>{a.name}</div>
+                  <TierStars tier={a.tier} />
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                   <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: stage.color, fontWeight: 600, textTransform: "uppercase" }}>
                     {stage.name}
@@ -218,6 +246,20 @@ function ConflictResolver({ conflicts, onKeep, onSplit }) {
         )}
       </div>
     </div>
+  );
+}
+
+function TierStars({ tier }) {
+  const colors = { 3: "#f59a36", 2: "var(--muted)", 1: "rgba(26,18,13,0.25)" };
+  return (
+    <span style={{ display: "inline-flex", gap: 1.5, alignItems: "center" }}>
+      {[1, 2, 3].map(i => (
+        <svg key={i} width="9" height="9" viewBox="0 0 24 24"
+          fill={i <= tier ? colors[tier] : "rgba(26,18,13,0.12)"}>
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      ))}
+    </span>
   );
 }
 
