@@ -6,6 +6,63 @@ function ArtistScreen({ state, setState }) {
   const stage = STAGES.find(s => s.id === a.stage);
   const saved = state.saved.includes(a.id);
 
+  // ── Preview player state ──────────────────────────────────
+  const audioRef = React.useRef(null);
+  const [preview,     setPreview]     = React.useState(null); // null | "loading" | "none" | {url,name}
+  const [playing,     setPlaying]     = React.useState(false);
+  const [waveHeights, setWaveHeights] = React.useState([5,9,14,10,18,13,8,15,18,11,6]);
+
+  const isSpotifyConnected = () => {
+    const token   = localStorage.getItem("spotify_token");
+    const expires = localStorage.getItem("spotify_expires");
+    return !!(token && expires && Date.now() < parseInt(expires));
+  };
+
+  // Stop audio and reset when navigating away
+  React.useEffect(() => {
+    return () => {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    };
+  }, []);
+
+  // Animate waveform while playing
+  React.useEffect(() => {
+    if (!playing) { setWaveHeights([5,9,14,10,18,13,8,15,18,11,6]); return; }
+    const id = setInterval(() => {
+      setWaveHeights(prev => prev.map(h => Math.max(3, Math.min(20, h + (Math.random() - 0.5) * 7))));
+    }, 120);
+    return () => clearInterval(id);
+  }, [playing]);
+
+  const handlePreview = async () => {
+    if (!isSpotifyConnected()) return;
+    if (preview === "loading" || preview === "none") return;
+
+    // First tap — fetch the preview URL
+    if (!preview) {
+      setPreview("loading");
+      const result = await fetchPreviewUrl(a.name);
+      if (!result) { setPreview("none"); return; }
+      setPreview(result);
+      audioRef.current = new Audio(result.url);
+      audioRef.current.onended = () => setPlaying(false);
+      audioRef.current.play();
+      setPlaying(true);
+      return;
+    }
+
+    // Already loaded — toggle play/pause
+    if (playing) {
+      audioRef.current.pause();
+      setPlaying(false);
+    } else {
+      audioRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  const connected = isSpotifyConnected();
+
   return (
     <Screen bg="var(--paper)">
       {/* Hero */}
@@ -35,7 +92,7 @@ function ArtistScreen({ state, setState }) {
 
         <div style={{ position: "absolute", bottom: 14, left: 18, right: 18 }}>
           <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, opacity: 0.85, marginBottom: 6 }}>
-            {a.country} · {a.genre.toUpperCase()}
+            {a.genre.toUpperCase()}
           </div>
           <div className="serif" style={{ fontSize: 48, lineHeight: 0.9, letterSpacing: -1 }}>{a.name}</div>
         </div>
@@ -70,34 +127,65 @@ function ArtistScreen({ state, setState }) {
           {a.bio}
         </div>
 
-        {/* Spotify-style preview */}
+        {/* ── Preview player ────────────────────────────────── */}
         <div style={{
           background: "var(--ink)", color: "var(--paper)",
           borderRadius: 16, padding: 14, marginBottom: 16,
           display: "flex", alignItems: "center", gap: 12,
         }}>
-          <div style={{
-            width: 42, height: 42, borderRadius: 42,
-            background: "var(--success)",
+          {/* Play/Pause button */}
+          <button onClick={handlePreview} style={{
+            width: 44, height: 44, borderRadius: 44, border: "none",
+            background: !connected ? "rgba(247,237,224,0.1)"
+              : playing ? "var(--ember)"
+              : "#1DB954",
+            cursor: connected && preview !== "none" ? "pointer" : "default",
             display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0, transition: "background 0.2s",
           }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff">
-              <path d="M8 5 L19 12 L8 19 Z" />
-            </svg>
-          </div>
+            {preview === "loading" ? (
+              <div style={{
+                width: 16, height: 16, borderRadius: "50%",
+                border: "2px solid rgba(255,255,255,0.35)",
+                borderTopColor: "#fff",
+                animation: "spin 0.75s linear infinite",
+              }} />
+            ) : playing ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff">
+                <rect x="5" y="4" width="4" height="16" rx="1"/>
+                <rect x="15" y="4" width="4" height="16" rx="1"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff">
+                <path d="M8 5 L19 12 L8 19 Z"/>
+              </svg>
+            )}
+          </button>
+
+          {/* Track info */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="serif" style={{ fontSize: 16 }}>Essential Tracks</div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "rgba(247,237,224,0.55)", marginTop: 2 }}>
-              3 MIN PREVIEW · VIA SPOTIFY
+            <div className="serif" style={{ fontSize: 16, lineHeight: 1.1 }}>
+              {preview && typeof preview === "object" ? preview.name : "30-sec Preview"}
+            </div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "rgba(247,237,224,0.5)", marginTop: 3 }}>
+              {!connected     ? "CONNECT SPOTIFY TO PREVIEW"
+               : preview === "none"    ? "NO PREVIEW AVAILABLE"
+               : preview === "loading" ? "LOADING…"
+               : playing               ? "PLAYING · VIA SPOTIFY"
+               :                         "TAP TO PLAY · 30 SEC"}
             </div>
           </div>
-          {/* Waveform */}
-          <div style={{ display: "flex", alignItems: "center", gap: 2, height: 22 }}>
-            {[8,14,18,12,20,16,10,16,20,14,8].map((h,i) => (
+
+          {/* Animated waveform */}
+          <div style={{ display: "flex", alignItems: "center", gap: 2, height: 22, flexShrink: 0 }}>
+            {waveHeights.map((h, i) => (
               <div key={i} style={{
-                width: 2, height: h,
-                background: i < 4 ? "var(--success)" : "rgba(247,237,224,0.3)",
+                width: 2.5, height: h,
+                background: playing
+                  ? (i % 2 === 0 ? "var(--ember)" : "#f59a36")
+                  : connected ? "#1DB954" : "rgba(247,237,224,0.2)",
                 borderRadius: 2,
+                transition: "height 0.12s ease, background 0.3s",
               }} />
             ))}
           </div>

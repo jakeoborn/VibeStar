@@ -314,4 +314,4 @@ function MeScreen({ state, setState }) {
   );
 }
 
-Object.assign(window, { SpotifyScreen, MeScreen });
+Object.assign(window, { SpotifyScreen, MeScreen, fetchPreviewUrl });
