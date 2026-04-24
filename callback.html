@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plursky · Connecting Spotify</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#0d0a08;color:#f4ece2;
+    font-family:'Geist Mono',monospace;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;text-align:center;
+  }
+  .icon{font-size:48px;margin-bottom:20px;opacity:0.9}
+  .wordmark{font-size:13px;letter-spacing:4px;font-weight:500;margin-bottom:24px;opacity:0.7}
+  .msg{font-size:12px;letter-spacing:1.6px;opacity:0.55;margin-top:10px}
+  .dot{display:inline-block;animation:blink 1.2s infinite}
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,100%{opacity:0.2}50%{opacity:1}}
+  .error{color:#f87171;font-size:11px;letter-spacing:1.2px;margin-top:16px}
+</style>
+</head>
+<body>
+  <div>
+    <div class="icon">✦</div>
+    <div class="wordmark">PLURSKY</div>
+    <div id="label" style="font-size:11px;letter-spacing:2px;color:#1DB954">
+      CONNECTING SPOTIFY<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script>
+    const CLIENT_ID    = "2219c68606c54629a8799f467a996a81";
+    const REDIRECT_URI = "https://plursky.com/callback";
+
+    async function run() {
+      const label = document.getElementById("label");
+      const msg   = document.getElementById("msg");
+      const p     = new URLSearchParams(window.location.search);
+      const code  = p.get("code");
+      const error = p.get("error");
+
+      if (error || !code) {
+        label.innerHTML = '<span class="error">CONNECTION CANCELLED</span>';
+        msg.textContent = "Redirecting back…";
+        setTimeout(() => window.location.href = "/", 1800);
+        return;
+      }
+
+      const verifier = localStorage.getItem("spotify_pkce_verifier");
+      if (!verifier) {
+        label.innerHTML = '<span class="error">SESSION EXPIRED</span>';
+        msg.textContent = "Please try connecting again.";
+        setTimeout(() => window.location.href = "/", 2200);
+        return;
+      }
+
+      try {
+        const res = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id:     CLIENT_ID,
+            grant_type:    "authorization_code",
+            code,
+            redirect_uri:  REDIRECT_URI,
+            code_verifier: verifier,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.access_token) {
+          localStorage.setItem("spotify_token",         data.access_token);
+          localStorage.setItem("spotify_refresh_token", data.refresh_token || "");
+          localStorage.setItem("spotify_expires",       Date.now() + data.expires_in * 1000);
+          localStorage.removeItem("spotify_pkce_verifier");
+          label.innerHTML = '<span style="color:#1DB954;letter-spacing:2px">SPOTIFY CONNECTED ✓</span>';
+          msg.textContent = "Loading your lineup…";
+        } else {
+          throw new Error(data.error || "unknown");
+        }
+      } catch (err) {
+        label.innerHTML = '<span class="error">CONNECTION FAILED</span>';
+        msg.textContent = "Please try again from the app.";
+      }
+
+      setTimeout(() => window.location.href = "/", 1200);
+    }
+
+    run();
+  </script>
+</body>
+</html>

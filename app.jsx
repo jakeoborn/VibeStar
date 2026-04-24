@@ -1,10 +1,16 @@
 // Main app — iOS frame + routing
 
+function spotifyTokenValid() {
+  const token = localStorage.getItem("spotify_token");
+  const expires = localStorage.getItem("spotify_expires");
+  return !!(token && expires && Date.now() < parseInt(expires));
+}
+
 function App() {
   const [state, setState] = React.useState({
     tab: "home",
-    saved: ["ar1", "ar4", "ar6", "ar7", "ar10"],
-    spotifyConnected: false,
+    saved: ["k9", "k11", "k4", "c5", "w1"],
+    spotifyConnected: spotifyTokenValid(),
     artist: null,
     focusStage: null,
     lineupDay: NOW.day,
