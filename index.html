@@ -85,7 +85,7 @@ canvas#cv:active{cursor:grabbing}
 .mcbtn:hover{background:rgba(255,255,255,.1);color:#fff}
 
 /* ── INFO PANEL ── */
-#info-panel{position:absolute;top:50px;right:10px;width:205px;background:rgba(4,6,18,.97);border:1px solid rgba(255,255,255,.1);border-radius:13px;overflow:hidden;display:none;z-index:30;max-height:calc(100% - 120px);overflow-y:auto}
+#info-panel{position:absolute;top:50px;right:10px;width:min(86vw,280px);background:rgba(4,6,18,.97);border:1px solid rgba(255,255,255,.1);border-radius:13px;overflow:hidden;display:none;z-index:30;max-height:calc(100% - 160px);overflow-y:auto;backdrop-filter:blur(8px)}
 .ip-hd{padding:12px 14px 8px}
 .ip-name{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;line-height:1.3}
 .ip-sub{font-size:9px;font-weight:700;letter-spacing:1.5px;margin-top:3px}
@@ -108,6 +108,20 @@ canvas#cv:active{cursor:grabbing}
 .btn-sp{background:rgba(29,185,84,.15);color:#1DB954;border:1px solid rgba(29,185,84,.3)}
 .btn-close{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid rgba(255,255,255,.1)}
 
+/* ── STAGE ARTIST LIST ── */
+.st-art-list{display:flex;flex-direction:column;width:100%;max-height:42vh;overflow-y:auto;margin-top:2px}
+.st-day-hdr{font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;letter-spacing:1.8px;padding:8px 2px 4px;position:sticky;top:0;background:rgba(4,6,18,.97);z-index:2}
+.st-art-row{display:flex;align-items:stretch;gap:6px;margin-bottom:4px;border-radius:9px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);overflow:hidden}
+.st-art-row:hover{background:rgba(255,255,255,.05)}
+.st-art-tap{flex:1;padding:8px 10px;background:transparent;border:none;color:inherit;text-align:left;cursor:pointer;min-height:44px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.st-art-tap:active{background:rgba(255,255,255,.06)}
+.st-art-n{font-size:12px;font-weight:600;color:#fff;line-height:1.25;letter-spacing:.1px}
+.st-art-m{font-size:9.5px;color:var(--muted);letter-spacing:.3px}
+.st-art-add{width:44px;border:none;background:rgba(240,192,64,.12);color:var(--gold);font-family:'Orbitron',sans-serif;font-size:18px;font-weight:900;cursor:pointer;border-left:1px solid rgba(255,255,255,.05);transition:background .15s}
+.st-art-add:hover{background:rgba(240,192,64,.22)}
+.st-art-add.added{background:rgba(167,139,250,.15);color:var(--purple)}
+.st-empty{padding:14px;text-align:center;font-size:10px;color:var(--muted)}
+
 /* ── HEATMAP LEGEND ── */
 #hm-legend{position:absolute;bottom:48px;right:10px;background:rgba(0,0,0,.7);border:1px solid var(--border);border-radius:9px;padding:8px 10px;z-index:20}
 .lrow{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--muted);font-family:'Orbitron',sans-serif;letter-spacing:.4px;margin-bottom:3px}
@@ -118,6 +132,16 @@ canvas#cv:active{cursor:grabbing}
 #gbar{position:absolute;bottom:0;left:0;right:0;padding:7px 12px 9px;background:linear-gradient(0deg,rgba(3,5,8,.98) 0%,transparent 100%);display:flex;gap:4px;flex-wrap:wrap;justify-content:center;z-index:20}
 .gchip{padding:5px 10px;border-radius:20px;font-size:9px;font-weight:700;cursor:pointer;border:1.5px solid;font-family:'Orbitron',sans-serif;letter-spacing:.4px;transition:all .2s;opacity:.55;background:transparent}
 .gchip.on{opacity:1;transform:scale(1.06)}
+
+/* ── STAGE RIBBON ── */
+#stage-ribbon{position:absolute;bottom:44px;left:0;right:0;padding:6px 12px 8px;z-index:21;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;background:linear-gradient(0deg,rgba(3,5,8,.75) 0%,transparent 100%)}
+#stage-ribbon::-webkit-scrollbar{display:none}
+#stage-ribbon{scrollbar-width:none}
+.schip{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:22px;background:rgba(9,12,24,.85);border:1.5px solid;font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;letter-spacing:.6px;color:#fff;cursor:pointer;transition:transform .18s,background .18s;min-height:36px}
+.schip:hover{transform:translateY(-1px)}
+.schip.on{background:rgba(255,255,255,.08);transform:scale(1.05);box-shadow:0 4px 16px -4px currentColor}
+.schip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor}
+.schip-cnt{font-size:8.5px;opacity:.55;font-weight:500;margin-left:2px}
 
 /* ── SURVIVAL PANE ── */
 #p-survival{background:var(--bg);overflow-y:auto;padding:14px 16px;gap:10px}
@@ -305,6 +329,7 @@ canvas#cv:active{cursor:grabbing}
       <div class="lrow" style="font-size:8px;opacity:.5">Bigger = more popular</div>
     </div>
 
+    <div id="stage-ribbon" role="tablist" aria-label="Stages"></div>
     <div id="gbar"></div>
   </div>
 
@@ -904,6 +929,34 @@ function setGenre(gid){
   });
 }
 
+/* ── STAGE RIBBON ── */
+const stageRibbonEl=document.getElementById('stage-ribbon');
+STAGES.forEach(st=>{
+  const count=ARTISTS.filter(a=>a.s===st.id).length;
+  const b=document.createElement('button');
+  b.className='schip'; b.dataset.stage=st.id; b.type='button';
+  b.style.borderColor=st.col; b.style.color=st.col;
+  b.setAttribute('role','tab'); b.setAttribute('aria-label',st.name+', '+count+' artists');
+  b.innerHTML=`<span class="schip-dot" style="background:${st.col}"></span>${st.short}<span class="schip-cnt">${count}</span>`;
+  b.onclick=()=>focusStage(st.id);
+  stageRibbonEl.appendChild(b);
+});
+function focusStage(sid){
+  const n=nodeMap2[sid+'_web']; if(!n) return;
+  // ensure stages visible if in web-only mode
+  if(viewMode==='web'){document.querySelectorAll('.mchip').forEach((m,i)=>{if(i===0)m.click();});}
+  showInfo(sid+'_web');
+  flyTo(n.pos);
+  stageRibbonEl.querySelectorAll('.schip').forEach(c=>c.classList.toggle('on',c.dataset.stage===sid));
+  // scroll active chip into view
+  const active=stageRibbonEl.querySelector('.schip.on');
+  if(active)active.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+}
+function syncStageRibbon(){
+  const sid=selectedId&&selectedId.endsWith('_web')?selectedId.replace('_web',''):null;
+  stageRibbonEl.querySelectorAll('.schip').forEach(c=>c.classList.toggle('on',sid&&c.dataset.stage===sid));
+}
+
 /* ── MODE ── */
 function setMode(mode,el){
   viewMode=mode;
@@ -963,10 +1016,26 @@ function showInfo(id){
     const eta=walkingETA(st.x,st.z);
     etaEl.innerHTML=`🚶 ~${eta.minutes} min walk · ${eta.meters}m <span class="eta-src">from ${eta.src}</span>`;
     etaEl.classList.add('on');
-    const arts=ARTISTS.filter(a=>a.s===st.id).slice(0,5);
-    tgEl.innerHTML=arts.map(a=>`<span class="ip-tag" style="background:${st.col}15;color:${st.col};border:1px solid ${st.col}30">${a.n}</span>`).join('');
+    const arts=ARTISTS.filter(a=>a.s===st.id);
+    const byDay={fri:[],sat:[],sun:[]};
+    arts.forEach(a=>{(byDay[a.d]||(byDay[a.d]=[])).push(a);});
+    const dayLabels={fri:'FRI',sat:'SAT',sun:'SUN'};
+    const listHTML=['fri','sat','sun'].filter(d=>byDay[d]&&byDay[d].length).map(d=>`
+      <div class="st-day-hdr" style="color:${st.col}">${dayLabels[d]} · ${byDay[d].length}</div>
+      ${byDay[d].sort((a,b)=>parseT(a.t)-parseT(b.t)).map(a=>{
+        const inL=lineup.some(x=>x.id===a.id);
+        return `<div class="st-art-row">
+          <button class="st-art-tap" onclick="focusArtistFromList('${a.id}')" aria-label="Show ${a.n.replace(/"/g,'&quot;')} on map">
+            <div class="st-art-n">${a.n}</div>
+            <div class="st-art-m">${a.t} · ${TIER_LABELS[a.tier]} · ★${a.tier}</div>
+          </button>
+          <button class="st-art-add ${inL?'added':''}" onclick="toggleA('${a.id}')" aria-label="${inL?'Remove from lineup':'Add to lineup'}">${inL?'✓':'+'}</button>
+        </div>`;
+      }).join('')}`).join('');
+    tgEl.innerHTML=`<div class="st-art-list">${listHTML||'<div class="st-empty">No artists listed for this stage yet.</div>'}</div>`;
     spEl.style.display='none';
     actsEl.innerHTML='<button class="ip-btn btn-close" onclick="closeInfo()">✕ CLOSE</button>';
+    syncStageRibbon();
   } else {
     const a=n.data; const gc=GC[a.g]||'#888'; const st=STAGES.find(s=>s.id===a.s);
     nameEl.textContent=a.n; nameEl.style.color=gc;
@@ -984,7 +1053,19 @@ function showInfo(id){
     `;
   }
 }
-function closeInfo(){document.getElementById('info-panel').style.display='none';selectedId=null;}
+function closeInfo(){document.getElementById('info-panel').style.display='none';selectedId=null;stageRibbonEl&&stageRibbonEl.querySelectorAll('.schip.on').forEach(c=>c.classList.remove('on'));}
+function parseT(t){// "1AM"/"11PM"/"5AM" → 0–23 for same-day sort (early-AM is late-night)
+  const m=String(t||'').trim().match(/^(\d{1,2})(AM|PM)$/i); if(!m) return 99;
+  let h=parseInt(m[1],10); const pm=m[2].toUpperCase()==='PM';
+  if(pm&&h<12)h+=12; else if(!pm&&h===12)h=0;
+  // shift so 8PM→0, 9PM→1, …, 5AM→9 (later in the night = higher)
+  return (h+4)%24;
+}
+function focusArtistFromList(id){
+  const n=nodeMap2[id]; if(!n) return;
+  showInfo(id);
+  flyTo(n.pos);
+}
 
 /* ── LINEUP ── */
 function toggleA(id){
@@ -992,7 +1073,9 @@ function toggleA(id){
   const idx=lineup.findIndex(x=>x.id===id);
   if(idx>=0){lineup.splice(idx,1);toast('Removed: '+a.n);}
   else{lineup.push(a);toast(a.n+' ★'.repeat(a.tier));}
-  updBadge(); renderLineup(); if(selectedId===id)showInfo(id);
+  updBadge(); renderLineup();
+  if(selectedId===id)showInfo(id);
+  else if(selectedId&&selectedId.endsWith('_web')&&selectedId.replace('_web','')===a.s)showInfo(selectedId);
   updateNextSet();
   if(typeof setVS==='function')setVS('lineup',lineup);
   if(typeof scheduleAlerts==='function'&&alertsEnabled)scheduleAlerts();
