@@ -9,7 +9,11 @@ function LineupScreen({ state, setState }) {
     .filter(a => a.day === day)
     .filter(a => filter === "all" || state.saved.includes(a.id))
     .filter(a => stageFilter === "all" || a.stage === stageFilter)
-    .sort((a, b) => a.start.localeCompare(b.start));
+    .sort((a, b) => {
+      // EDC runs 19:00→05:00 — treat early AM as "next day" (hour + 24)
+      const toSlot = t => { const h = parseInt(t.split(":")[0]); return h < 8 ? h + 24 : h; };
+      return toSlot(a.start) - toSlot(b.start);
+    });
 
   // conflicts: 2+ saved sets overlap in time
   const savedToday = ARTISTS.filter(a => a.day === day && state.saved.includes(a.id));

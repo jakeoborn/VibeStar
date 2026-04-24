@@ -1,5 +1,5 @@
 // Vibestar Service Worker — offline-first cache for EDC LV 2026
-const CACHE = 'vibestar-v4';
+const CACHE = 'vibestar-v5';
 const PRECACHE = [
   './',
   './index.html',
