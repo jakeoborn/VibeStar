@@ -583,6 +583,31 @@ const WP_EDGES=[
   ['west','nw'],['west','sw'],
 ];
 
+const AMEN_STYLE={
+  water:   {icon:'💧', color:'#38bdf8', label:'Water refill'},
+  medical: {icon:'✚',  color:'#ff4455', label:'Medical tent'},
+  restroom:{icon:'🚻', color:'#a78bfa', label:'Restrooms'},
+  charging:{icon:'⚡', color:'#f0c040', label:'Charging hub'},
+  art:     {icon:'✨', color:'#f472b6', label:'Art installation'},
+};
+const AMENITIES=[
+  {id:'water-n',  type:'water',   x:-22,z:-6,  name:'Water — North Infield'},
+  {id:'water-s',  type:'water',   x:18, z:12,  name:'Water — South Infield'},
+  {id:'water-e',  type:'water',   x:34, z:2,   name:'Water — East Gate'},
+  {id:'water-w',  type:'water',   x:-25,z:14,  name:'Water — West Straight'},
+  {id:'med-main', type:'medical', x:0,  z:12,  name:'Medical — Main Infield'},
+  {id:'med-n',    type:'medical', x:-8, z:-28, name:'Medical — North'},
+  {id:'med-e',    type:'medical', x:32, z:8,   name:'Medical — East'},
+  {id:'wc-n',     type:'restroom',x:-18,z:-18, name:'Restrooms — North'},
+  {id:'wc-s',     type:'restroom',x:15, z:18,  name:'Restrooms — South'},
+  {id:'wc-e',     type:'restroom',x:28, z:-6,  name:'Restrooms — East'},
+  {id:'charge-1', type:'charging',x:-10,z:8,   name:'Charging Hub — Central'},
+  {id:'charge-2', type:'charging',x:14, z:-14, name:'Charging Hub — East'},
+  {id:'art-lotus',type:'art',     x:-5, z:-12, name:'The Lotus (art installation)'},
+  {id:'art-ser',  type:'art',     x:22, z:0,   name:'Neon Serpent (art car)'},
+  {id:'art-tower',type:'art',     x:-16,z:6,   name:'Sky Tower (LED art)'},
+];
+
 const ARTISTS=[
   {id:'tiesto', n:'Tiësto',           s:'circuit',g:'house',    tier:5,sp:'Red Lights',       t:'12AM',d:'fri'},
   {id:'garrix', n:'Martin Garrix',    s:'kinetic',g:'mainstage',tier:5,sp:'Animals',           t:'1AM', d:'fri'},
@@ -706,14 +731,15 @@ function roundRect(ctx,x,y,w,h,r){
 }
 const playerAvatarMat=new THREE.SpriteMaterial({map:null,transparent:true,depthTest:false,depthWrite:false});
 const playerAvatar=new THREE.Sprite(playerAvatarMat);
-playerAvatar.scale.set(6.5,8.1,1); playerAvatar.position.y=5.2; playerAvatar.renderOrder=999;
+// Ground-level sizing: sprite ~32m tall visual, base sits on floor (position.y - scale.y/2 ≈ 0)
+playerAvatar.scale.set(2.6,3.2,1); playerAvatar.position.y=1.65; playerAvatar.renderOrder=999;
 playerGroup.add(playerAvatar);
-const playerRing=new THREE.Mesh(new THREE.RingGeometry(1.6,2.0,32),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.75,side:THREE.DoubleSide}));
-playerRing.rotation.x=-Math.PI/2; playerRing.position.y=.08; playerGroup.add(playerRing);
-const playerPulse=new THREE.Mesh(new THREE.RingGeometry(2.0,2.4,32),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.35,side:THREE.DoubleSide}));
-playerPulse.rotation.x=-Math.PI/2; playerPulse.position.y=.08; playerGroup.add(playerPulse);
-const playerBeam=new THREE.Mesh(new THREE.CylinderGeometry(.12,.3,14,8),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.08}));
-playerBeam.position.y=7; playerGroup.add(playerBeam);
+const playerRing=new THREE.Mesh(new THREE.RingGeometry(1.1,1.4,32),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.8,side:THREE.DoubleSide}));
+playerRing.rotation.x=-Math.PI/2; playerRing.position.y=.06; playerGroup.add(playerRing);
+const playerPulse=new THREE.Mesh(new THREE.RingGeometry(1.4,1.7,32),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.4,side:THREE.DoubleSide}));
+playerPulse.rotation.x=-Math.PI/2; playerPulse.position.y=.06; playerGroup.add(playerPulse);
+const playerBeam=new THREE.Mesh(new THREE.CylinderGeometry(.07,.18,5,8),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.12}));
+playerBeam.position.y=2.5; playerGroup.add(playerBeam);
 function updatePlayerAvatar(){
   const tex=new THREE.CanvasTexture(buildAvatarCanvas(profile));
   tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; tex.anisotropy=4;
@@ -860,7 +886,7 @@ function buildStages(){
 buildStages();
 
 /* ── CROWD WITH PATHFINDING ── */
-const CROWD_N=900;
+const CROWD_N=0; // Crowd dots removed — felt like visual clutter. Heatmap still reads stage popularity from sz.
 const crowdPos=[];
 const crowdTgt=[];
 const crowdCol=[];
@@ -2029,7 +2055,7 @@ const camLookAt=new THREE.Vector3(0,4,0);
   if(playerGroup.visible){
     const pp=(tick*2)%1; playerPulse.scale.set(1+pp*2,1+pp*2,1); playerPulse.material.opacity=.4*(1-pp);
     const breathe=1+Math.sin(tick*3)*.03;
-    playerAvatar.scale.set(6.5*breathe,8.1*breathe,1);
+    playerAvatar.scale.set(2.6*breathe,3.2*breathe,1);
   }
   if(!batterySaver&&viewMode!=='web')animateCrowd2();
   if(viewMode==='heat')renderHeatmap();
