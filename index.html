@@ -732,32 +732,98 @@ const sv2=[];for(let i=0;i<2500;i++)sv2.push((Math.random()-.5)*700,Math.random(
 sgeo.setAttribute('position',new THREE.Float32BufferAttribute(sv2,3));
 scene.add(new THREE.Points(sgeo,new THREE.PointsMaterial({color:0xffffff,size:0.3,transparent:true,opacity:0.35})));
 
-/* ── GROUND ── */
+/* ── GROUND: LAS VEGAS MOTOR SPEEDWAY TRI-OVAL ──
+   Real LVMS footprint. 1 scene unit ≈ 10 meters.
+   Tri-oval outer edge ≈ 55 × 44 units (550m × 440m).
+   Track width ≈ 18m (1.8 units). Infield is where the stages live. */
+const LVMS_RX_OUT=55, LVMS_RZ_OUT=44, LVMS_TW=3.2;
+const LVMS_RX_IN=LVMS_RX_OUT-LVMS_TW, LVMS_RZ_IN=LVMS_RZ_OUT-LVMS_TW;
+function _ovalPts(rx,rz,segs=120,y=0){
+  const pts=[];
+  for(let i=0;i<=segs;i++){const a=(i/segs)*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*rx,y,Math.sin(a)*rz));}
+  return pts;
+}
+function _ovalShape(rx,rz,segs=120){
+  const s=new THREE.Shape();
+  for(let i=0;i<=segs;i++){const a=(i/segs)*Math.PI*2;const x=Math.cos(a)*rx,z=Math.sin(a)*rz;i===0?s.moveTo(x,z):s.lineTo(x,z);}
+  return s;
+}
 function buildGround(){
-  const sh=new THREE.Shape();
-  for(let i=0;i<=64;i++){const a=(i/64)*Math.PI*2;i===0?sh.moveTo(Math.cos(a)*63,Math.sin(a)*55):sh.lineTo(Math.cos(a)*63,Math.sin(a)*55);}
-  const fg=new THREE.Mesh(new THREE.ShapeGeometry(sh),new THREE.MeshStandardMaterial({color:0x060c1e,roughness:.9}));
-  fg.rotation.x=-Math.PI/2; fg.position.y=-.1; scene.add(fg);
-  const pl=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshStandardMaterial({color:0x020306,roughness:1}));
-  pl.rotation.x=-Math.PI/2; pl.position.y=-.2; scene.add(pl);
-  // Grid
-  const gm=new THREE.LineBasicMaterial({color:0x0c1530,transparent:true,opacity:.3});
-  for(let i=-64;i<=64;i+=6){
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(i,0,-64),new THREE.Vector3(i,0,64)]),gm));
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-64,0,i),new THREE.Vector3(64,0,i)]),gm));
+  // Desert floor — dark, large, dim
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(600,600),new THREE.MeshStandardMaterial({color:0x02030a,roughness:1}));
+  pl.rotation.x=-Math.PI/2; pl.position.y=-.22; scene.add(pl);
+
+  // Track asphalt (ring between outer + inner ovals)
+  const trackShape=_ovalShape(LVMS_RX_OUT,LVMS_RZ_OUT);
+  const hole=new THREE.Path();
+  for(let i=0;i<=120;i++){const a=(i/120)*Math.PI*2;const x=Math.cos(a)*LVMS_RX_IN,z=Math.sin(a)*LVMS_RZ_IN;i===0?hole.moveTo(x,z):hole.lineTo(x,z);}
+  trackShape.holes.push(hole);
+  const track=new THREE.Mesh(new THREE.ShapeGeometry(trackShape), new THREE.MeshStandardMaterial({color:0x13182a,roughness:.88,metalness:.05}));
+  track.rotation.x=-Math.PI/2; track.position.y=-.08; scene.add(track);
+
+  // Infield — slightly lighter than outer desert, distinct festival area
+  const infield=new THREE.Mesh(new THREE.ShapeGeometry(_ovalShape(LVMS_RX_IN-.3,LVMS_RZ_IN-.3)), new THREE.MeshStandardMaterial({color:0x060b1c,roughness:.95}));
+  infield.rotation.x=-Math.PI/2; infield.position.y=-.12; scene.add(infield);
+
+  // Glowing track edges — the iconic oval outline
+  const edgeMatOut=new THREE.LineBasicMaterial({color:0x8fb3ff,transparent:true,opacity:.35});
+  const edgeMatIn=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.28});
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(_ovalPts(LVMS_RX_OUT,LVMS_RZ_OUT,120,.04)),edgeMatOut));
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(_ovalPts(LVMS_RX_IN,LVMS_RZ_IN,120,.04)),edgeMatIn));
+
+  // Centerline stripes on track (faint dashed mid-line, 48 dashes around the oval)
+  const midR=(LVMS_RX_OUT+LVMS_RX_IN)/2, midZ=(LVMS_RZ_OUT+LVMS_RZ_IN)/2;
+  for(let i=0;i<48;i++){
+    const a=(i/48)*Math.PI*2;
+    const dash=new THREE.Mesh(new THREE.PlaneGeometry(.9,.18),new THREE.MeshBasicMaterial({color:0xffd866,transparent:true,opacity:.35}));
+    dash.rotation.x=-Math.PI/2;
+    const tx=-Math.sin(a)*midR, tz=Math.cos(a)*midZ;
+    dash.rotation.z=Math.atan2(tz,tx);
+    dash.position.set(Math.cos(a)*midR,.03,Math.sin(a)*midZ);
+    scene.add(dash);
   }
-  // Paths
+
+  // START / FINISH line — crosses track width on the east side (turn-1 exit)
+  const sfX=LVMS_RX_OUT-LVMS_TW/2;
+  const sf=new THREE.Mesh(new THREE.PlaneGeometry(1.1,LVMS_TW*1.05),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.8}));
+  sf.rotation.x=-Math.PI/2; sf.position.set(sfX,.06,0); scene.add(sf);
+
+  // Grandstand hint — dark raised strips just outside the west straight (front stretch)
+  const gsMat=new THREE.MeshStandardMaterial({color:0x0b1020,roughness:.95,metalness:.15});
+  for(let row=0;row<4;row++){
+    const y=0.4+row*0.55, length=LVMS_RZ_OUT*1.55, depth=1.4, offset=LVMS_RX_OUT+2.4+row*1.2;
+    const gs=new THREE.Mesh(new THREE.BoxGeometry(depth,y*2-.4,length),gsMat);
+    gs.position.set(-offset,y-.2,0); scene.add(gs);
+  }
+  // Gate — south entry (where most of the crowd arrives)
+  const gate=new THREE.Mesh(new THREE.RingGeometry(2.2,3.0,24), new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.55,side:THREE.DoubleSide}));
+  gate.rotation.x=-Math.PI/2; gate.position.set(0,.05,LVMS_RZ_OUT+4.5); scene.add(gate);
+  const gateInner=new THREE.Mesh(new THREE.CircleGeometry(2.0,24), new THREE.MeshStandardMaterial({color:0xf0c040,emissive:0xf0c040,emissiveIntensity:.55,transparent:true,opacity:.28}));
+  gateInner.rotation.x=-Math.PI/2; gateInner.position.set(0,.045,LVMS_RZ_OUT+4.5); scene.add(gateInner);
+
+  // Subtle infield grid — clipped to within the inner oval
+  const gm=new THREE.LineBasicMaterial({color:0x142041,transparent:true,opacity:.22});
+  for(let i=-Math.floor(LVMS_RX_IN);i<=LVMS_RX_IN;i+=5){
+    const maxZ=LVMS_RZ_IN*Math.sqrt(Math.max(0,1-(i/LVMS_RX_IN)**2))-.6;
+    if(maxZ<1) continue;
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(i,0,-maxZ),new THREE.Vector3(i,0,maxZ)]),gm));
+  }
+  for(let j=-Math.floor(LVMS_RZ_IN);j<=LVMS_RZ_IN;j+=5){
+    const maxX=LVMS_RX_IN*Math.sqrt(Math.max(0,1-(j/LVMS_RZ_IN)**2))-.6;
+    if(maxX<1) continue;
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-maxX,0,j),new THREE.Vector3(maxX,0,j)]),gm));
+  }
+
+  // Festival paths — glowing arteries across the infield between stages
   [
-    {pts:[{x:0,z:-36},{x:0,z:36}],c:'#2a3a60',w:.7},
-    {pts:[{x:-40,z:0},{x:40,z:0}],c:'#1e2a50',w:.5},
-    {pts:[{x:0,z:0},{x:26,z:26}],c:'#a78bfa',w:.35},
-    {pts:[{x:10,z:12},{x:12,z:38}],c:'#f472b6',w:.35},
-    {pts:[{x:-5,z:-30},{x:-18,z:-12},{x:-28,z:0}],c:'#38bdf8',w:.3},
-    {pts:[{x:-24,z:18},{x:24,z:18}],c:'#f0c040',w:.4},
+    {pts:[{x:0,z:LVMS_RZ_IN-2},{x:0,z:-LVMS_RZ_IN+2}],c:'#34456a',w:.65},
+    {pts:[{x:-LVMS_RX_IN+2,z:0},{x:LVMS_RX_IN-2,z:0}],c:'#2a3a60',w:.5},
+    {pts:[{x:-22,z:18},{x:0,z:0},{x:26,z:-18}],c:'#a78bfa',w:.32},
+    {pts:[{x:22,z:18},{x:0,z:0},{x:-26,z:-18}],c:'#f472b6',w:.3},
   ].forEach(p=>{
-    const pts2=p.pts.map(v=>new THREE.Vector3(v.x,.15,v.z));
+    const pts2=p.pts.map(v=>new THREE.Vector3(v.x,.12,v.z));
     const curve=new THREE.CatmullRomCurve3(pts2);
-    scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,20,p.w*.5,4,false),new THREE.MeshBasicMaterial({color:new THREE.Color(p.c),transparent:true,opacity:.2})));
+    scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,24,p.w*.5,6,false),new THREE.MeshBasicMaterial({color:new THREE.Color(p.c),transparent:true,opacity:.28})));
   });
 }
 buildGround();
