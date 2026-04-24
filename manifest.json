@@ -1,0 +1,26 @@
+{
+  "name": "Vibestar - EDC Las Vegas 2026",
+  "short_name": "VIBESTAR",
+  "description": "The world's most immersive festival companion. 3D live map, artist spider web, AI guide. Works offline.",
+  "start_url": "./vibestar_edc2026.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#030508",
+  "theme_color": "#f0c040",
+  "categories": ["music", "entertainment", "navigation"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%23030508'/><polygon points='96,20 116,74 174,74 128,108 146,168 96,134 46,168 64,108 18,74 76,74' fill='%23f0c040'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23030508'/><polygon points='256,56 308,196 464,196 336,286 384,448 256,358 128,448 176,286 48,196 204,196' fill='%23f0c040'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

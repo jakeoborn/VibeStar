@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>VIBESTAR · EDC Las Vegas 2026</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f0c040">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vibestar">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 20,12 30,12 22,19 26,30 16,23 6,30 10,19 2,12 12,12' fill='%23f0c040'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#030508;--surf:#090c18;--card:#0e1120;--border:rgba(255,255,255,0.07);
+  --gold:#f0c040;--text:rgba(255,255,255,0.92);--muted:rgba(255,255,255,0.35);
+  --green:#34d399;--pink:#f472b6;--blue:#38bdf8;--purple:#a78bfa;
+}
+html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;font-family:'Inter',sans-serif;color:var(--text);font-size:16px}
+
+/* ── ACCESSIBILITY ── */
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px;border-radius:6px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.skip-link{position:absolute;top:-40px;left:10px;background:var(--gold);color:#000;padding:8px 14px;border-radius:8px;font-weight:700;z-index:999;text-decoration:none}
+.skip-link:focus{top:10px}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .logo-star{animation:none!important}
+  .live-d{animation:none!important;opacity:1}
+}
+#app{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── HEADER ── */
+#hdr{background:linear-gradient(180deg,#07091c 0%,var(--bg) 100%);padding:10px 16px 0;flex-shrink:0;border-bottom:1px solid var(--border)}
+.hdr-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.logo-star{width:28px;height:28px;background:conic-gradient(var(--gold),var(--pink),var(--blue),var(--purple),var(--green),var(--gold));clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);animation:spinStar 8s linear infinite;flex-shrink:0}
+@keyframes spinStar{to{transform:rotate(360deg)}}
+.logo-txt{font-family:'Orbitron',sans-serif;font-size:17px;font-weight:900;letter-spacing:4px}
+.hdr-badge{font-size:8px;font-family:'Orbitron',sans-serif;letter-spacing:1.5px;border:1px solid rgba(240,192,64,.35);color:var(--gold);padding:2px 8px;border-radius:10px}
+.live-pill{margin-left:auto;display:flex;align-items:center;gap:5px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:16px;padding:3px 9px}
+.live-d{width:5px;height:5px;border-radius:50%;background:#f87171;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.live-txt{font-size:9px;font-family:'Orbitron',sans-serif;color:#f87171;letter-spacing:1px}
+.live-art{font-size:10px;font-weight:600;transition:opacity .3s}
+.nav-old-removed{display:none}
+.nav{display:flex;width:100%;gap:1px;background:var(--border)}
+.ntab{flex:1;min-width:0;padding:11px 4px;font-size:12px;font-weight:600;color:var(--muted);background:var(--bg);border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap;letter-spacing:.2px;min-height:44px;text-align:center;overflow:hidden;text-overflow:ellipsis}
+.ntab:hover{color:var(--text)}
+.ntab.on{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* ── BODY ── */
+#body{flex:1;overflow:hidden;position:relative}
+.pane{display:none;width:100%;height:100%}
+.pane.on{display:flex;flex-direction:column}
+
+/* ── 3D CANVAS PANE ── */
+#p-map{position:relative}
+canvas#cv{display:block;width:100%;flex:1;cursor:grab;touch-action:none}
+canvas#cv:active{cursor:grabbing}
+
+/* ── MODE TOGGLE ── */
+#mode-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.1);border-radius:28px;padding:3px;gap:2px;z-index:30}
+.mchip{padding:9px 14px;border-radius:22px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.8px;color:rgba(255,255,255,.55);border:none;background:transparent;transition:all .2s;min-height:36px}
+.mchip.on{background:rgba(240,192,64,.18);color:var(--gold)}
+
+/* ── MAP CONTROLS ── */
+#map-ctrls{position:absolute;top:50px;left:10px;display:flex;flex-direction:column;gap:5px;z-index:30}
+.mcbtn{width:44px;height:44px;border-radius:11px;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.75);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;font-weight:700}
+.mcbtn:hover{background:rgba(255,255,255,.1);color:#fff}
+
+/* ── INFO PANEL ── */
+#info-panel{position:absolute;top:50px;right:10px;width:205px;background:rgba(4,6,18,.97);border:1px solid rgba(255,255,255,.1);border-radius:13px;overflow:hidden;display:none;z-index:30;max-height:calc(100% - 120px);overflow-y:auto}
+.ip-hd{padding:12px 14px 8px}
+.ip-name{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;line-height:1.3}
+.ip-sub{font-size:9px;font-weight:700;letter-spacing:1.5px;margin-top:3px}
+.ip-bd{padding:0 14px 8px;font-size:11px;color:var(--muted);line-height:1.6}
+.ip-eta{padding:0 14px 8px;font-size:11px;font-weight:600;color:var(--gold);line-height:1.5;display:none}
+.ip-eta.on{display:block}
+.ip-eta .eta-src{color:var(--muted);font-weight:500;font-size:10px}
+.ip-tags{padding:0 14px 6px;display:flex;flex-wrap:wrap;gap:3px}
+.ip-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:6px;letter-spacing:.5px}
+.ip-sp{margin:6px 14px;background:rgba(29,185,84,.1);border:1px solid rgba(29,185,84,.25);border-radius:8px;padding:7px 9px;display:none}
+.sp-row{display:flex;align-items:center;gap:7px}
+.sp-ball{width:22px;height:22px;border-radius:50%;background:#1DB954;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0}
+.sp-track{font-weight:600;color:#fff;font-size:11px}
+.sp-lbl{color:var(--muted);font-size:10px}
+.ip-acts{display:flex;gap:5px;padding:6px 14px 12px;flex-wrap:wrap}
+.ip-btn{padding:7px 10px;border-radius:9px;border:none;font-size:9px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.5px;transition:all .15s;flex:1;text-align:center}
+.ip-btn:active{transform:scale(.96)}
+.btn-add{background:var(--gold);color:#000}
+.btn-added{background:rgba(167,139,250,.2);color:var(--purple);border:1px solid var(--purple)}
+.btn-sp{background:rgba(29,185,84,.15);color:#1DB954;border:1px solid rgba(29,185,84,.3)}
+.btn-close{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid rgba(255,255,255,.1)}
+
+/* ── HEATMAP LEGEND ── */
+#hm-legend{position:absolute;bottom:48px;right:10px;background:rgba(0,0,0,.7);border:1px solid var(--border);border-radius:9px;padding:8px 10px;z-index:20}
+.lrow{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--muted);font-family:'Orbitron',sans-serif;letter-spacing:.4px;margin-bottom:3px}
+.lrow:last-child{margin-bottom:0}
+.ldot{border-radius:50%;flex-shrink:0}
+
+/* ── GENRE BAR ── */
+#gbar{position:absolute;bottom:0;left:0;right:0;padding:7px 12px 9px;background:linear-gradient(0deg,rgba(3,5,8,.98) 0%,transparent 100%);display:flex;gap:4px;flex-wrap:wrap;justify-content:center;z-index:20}
+.gchip{padding:5px 10px;border-radius:20px;font-size:9px;font-weight:700;cursor:pointer;border:1.5px solid;font-family:'Orbitron',sans-serif;letter-spacing:.4px;transition:all .2s;opacity:.55;background:transparent}
+.gchip.on{opacity:1;transform:scale(1.06)}
+
+/* ── SURVIVAL PANE ── */
+#p-survival{background:var(--bg);overflow-y:auto;padding:14px 16px;gap:10px}
+.surv-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.surv-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.emerg-grid{display:flex;flex-direction:column;gap:9px}
+.emerg-item{display:flex;gap:9px;align-items:flex-start;font-size:11.5px;color:rgba(255,255,255,.75);line-height:1.5}
+.emerg-item strong{color:#fff;font-weight:600}
+.emerg-item .alert-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.surv-card.full{grid-column:1/-1}
+.surv-icon{font-size:24px;margin-bottom:8px}
+.surv-title{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:1.5px;color:var(--muted);margin-bottom:6px}
+.surv-val{font-family:'Orbitron',sans-serif;font-size:22px;font-weight:900;line-height:1}
+.surv-sub{font-size:10px;color:var(--muted);margin-top:4px}
+.surv-btn{width:100%;margin-top:10px;padding:9px;border-radius:9px;border:none;font-size:10px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.8px;transition:all .15s}
+.surv-btn:active{transform:scale(.97)}
+.hydrate-bar{height:8px;border-radius:4px;background:rgba(255,255,255,.08);margin:6px 0;overflow:hidden}
+.hydrate-fill{height:100%;border-radius:4px;transition:width .5s;background:linear-gradient(90deg,#38bdf8,#34d399)}
+.alert-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:9px;margin-bottom:7px;font-size:11px}
+.alert-icon{font-size:18px;flex-shrink:0}
+.tip-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.15);border-radius:9px;margin-bottom:7px;font-size:11px;line-height:1.5}
+
+/* ── AI ASSISTANT PANE ── */
+#p-ai{background:var(--bg);overflow:hidden}
+#ai-msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.ai-msg{padding:12px 14px;border-radius:12px;font-size:12px;line-height:1.65;max-width:92%}
+.ai-msg.ai{background:var(--card);border:1px solid var(--border);align-self:flex-start}
+.ai-msg.user{background:rgba(240,192,64,.12);border:1px solid rgba(240,192,64,.25);align-self:flex-end;color:var(--gold)}
+.ai-msg.typing{align-self:flex-start}
+.typing-dots{display:flex;gap:4px;padding:4px 0}
+.typing-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:tdot 1.2s infinite}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
+.ai-quick-btns{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px}
+.qbtn{padding:7px 12px;border-radius:20px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--muted);transition:all .2s;white-space:nowrap}
+.qbtn:hover{border-color:rgba(240,192,64,.4);color:var(--gold)}
+#ai-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surf)}
+#ai-input{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:22px;padding:9px 16px;font-size:12px;color:var(--text);font-family:'Inter',sans-serif;outline:none}
+#ai-input::placeholder{color:var(--muted)}
+#ai-input:focus{border-color:rgba(240,192,64,.4)}
+#ai-send{width:38px;height:38px;border-radius:50%;background:var(--gold);border:none;color:#000;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+#ai-send:hover{opacity:.85}
+#ai-send:active{transform:scale(.93)}
+
+/* ── FRIENDS PANE ── */
+#p-friends{background:var(--bg);overflow-y:auto;padding:14px 16px}
+.friends-hero{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center;margin-bottom:14px}
+.friends-code{font-family:'Orbitron',sans-serif;font-size:28px;font-weight:900;letter-spacing:6px;color:var(--gold);margin:10px 0}
+.friends-sub{font-size:11px;color:var(--muted)}
+.friend-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+.friend-av{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:12px;font-weight:700;flex-shrink:0}
+.friend-info{flex:1;min-width:0}
+.friend-name{font-size:13px;font-weight:600}
+.friend-loc{font-size:10px;color:var(--muted);margin-top:2px}
+.friend-dist{font-size:11px;font-weight:600;flex-shrink:0}
+.join-row{display:flex;gap:8px;margin-bottom:14px}
+#join-input{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:9px;padding:9px 14px;font-size:13px;color:var(--text);font-family:'Orbitron',sans-serif;letter-spacing:2px;outline:none}
+#join-input:focus{border-color:rgba(240,192,64,.4)}
+.join-btn{padding:9px 16px;background:var(--gold);color:#000;border:none;border-radius:9px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.8px}
+
+/* ── LINEUP PANE ── */
+#p-lineup{background:var(--bg);overflow-y:auto;padding:14px 16px}
+.lu-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.lu-stat{background:var(--card);border-radius:10px;padding:11px;text-align:center;border:1px solid var(--border)}
+.lu-n{font-family:'Orbitron',sans-serif;font-size:20px;font-weight:900;line-height:1}
+.lu-l{font-size:8px;color:var(--muted);letter-spacing:1.5px;margin-top:3px;font-family:'Orbitron',sans-serif}
+.lu-empty{text-align:center;padding:44px;color:var(--muted)}
+.lu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.lu-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;display:flex;align-items:center;gap:10px}
+.lu-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;flex-shrink:0;border:2px solid}
+.lu-info{flex:1;min-width:0}
+.lu-aname{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lu-detail{font-size:10px;color:var(--muted);margin-top:2px}
+.lu-rm{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:3px;transition:color .2s}
+.lu-rm:hover{color:#f87171}
+
+/* ── CONFLICT WARNING ── */
+.conflict-bar{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:8px;padding:9px 13px;font-size:11px;color:#f87171;margin-bottom:12px;display:none}
+
+/* ── TOAST ── */
+#toast{position:absolute;bottom:55px;left:50%;transform:translateX(-50%);background:rgba(10,12,24,.97);border:1px solid rgba(255,255,255,.1);border-radius:26px;padding:8px 18px;font-size:11px;font-weight:700;white-space:nowrap;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200;font-family:'Orbitron',sans-serif;letter-spacing:.8px}
+#toast.on{opacity:1}
+
+/* ── GPS PILL ── */
+#gps-pill{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.75);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:5px 11px;z-index:31;cursor:pointer;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1px;color:rgba(255,255,255,.55);transition:all .2s}
+#gps-pill:hover{color:#fff;border-color:rgba(240,192,64,.4)}
+#gps-pill.live{color:var(--green);border-color:rgba(52,211,153,.4)}
+#gps-pill.live .gps-d{background:var(--green);box-shadow:0 0 6px var(--green)}
+.gps-d{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3)}
+
+/* ── RECALIBRATE MODAL ── */
+#recal{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(6,9,22,.98);border:1px solid rgba(240,192,64,.3);border-radius:14px;padding:18px;z-index:250;width:280px;max-width:90%;display:none}
+#recal h3{font-family:'Orbitron',sans-serif;font-size:12px;color:var(--gold);letter-spacing:1.5px;margin-bottom:10px}
+#recal p{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+.recal-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.recal-btn{padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);font-size:10px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.5px;text-align:center}
+.recal-btn:hover{border-color:var(--gold);color:var(--gold)}
+.recal-close{width:100%;margin-top:10px;padding:7px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--muted);font-size:10px;font-family:'Orbitron',sans-serif;letter-spacing:1px;cursor:pointer}
+
+/* ── ONBOARDING COACHMARK ── */
+#onboard{display:none;position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,rgba(240,192,64,.96) 0%,rgba(240,192,64,.88) 100%);color:#000;border-radius:14px;padding:11px 14px;z-index:210;max-width:300px;width:calc(100% - 28px);box-shadow:0 8px 24px rgba(240,192,64,.35);animation:onboardPop .45s ease-out}
+#onboard.on{display:flex;align-items:center;gap:10px}
+@keyframes onboardPop{from{opacity:0;transform:translate(-50%,12px) scale(.92)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+.ob-icon{font-size:22px;flex-shrink:0;animation:obTap 1.6s ease-in-out infinite}
+@keyframes obTap{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.ob-txt{flex:1;font-size:12px;font-weight:600;line-height:1.35;font-family:'Inter',sans-serif;letter-spacing:.2px}
+.ob-x{background:rgba(0,0,0,.12);border:none;color:#000;width:26px;height:26px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700;flex-shrink:0}
+
+/* ── INSTALL BANNER ── */
+#install-banner{display:none;position:absolute;bottom:55px;left:50%;transform:translateX(-50%);background:rgba(10,12,24,.97);border:1px solid rgba(240,192,64,.3);border-radius:12px;padding:10px 14px;align-items:center;gap:11px;z-index:220;max-width:320px;width:calc(100% - 24px)}
+#install-banner.on{display:flex}
+.ib-icon{font-size:22px}
+.ib-txt{flex:1;min-width:0}
+.ib-t1{font-family:'Orbitron',sans-serif;font-size:9px;color:var(--gold);letter-spacing:1px;margin-bottom:2px}
+.ib-t2{font-size:10px;color:rgba(255,255,255,.55)}
+.ib-btn{background:var(--gold);color:#000;border:none;border-radius:7px;padding:7px 11px;font-size:9px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:.8px}
+.ib-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px}
+</style>
+</head>
+<body>
+<a href="#body" class="skip-link">Skip to map</a>
+<div id="app">
+
+<!-- HEADER -->
+<div id="hdr">
+  <div class="hdr-top">
+    <div class="logo-star"></div>
+    <div class="logo-txt">VIBESTAR</div>
+    <div class="hdr-badge">EDC LV 2026</div>
+    <div class="live-pill">
+      <div class="live-d"></div>
+      <span class="live-txt">LIVE:</span>
+      <span class="live-art" id="live-art">Charlotte de Witte · neonGARDEN</span>
+    </div>
+  </div>
+  <nav class="nav" role="tablist" aria-label="App sections">
+    <button class="ntab on" onclick="goTab('map',this)" role="tab" aria-selected="true">Map</button>
+    <button class="ntab" onclick="goTab('lineup',this)" role="tab" aria-selected="false">Lineup <span id="lbadge"></span></button>
+    <button class="ntab" onclick="goTab('ai',this)" role="tab" aria-selected="false">Guide</button>
+    <button class="ntab" onclick="goTab('survival',this)" role="tab" aria-selected="false">Survive</button>
+    <button class="ntab" onclick="goTab('friends',this)" role="tab" aria-selected="false">Friends</button>
+  </nav>
+</div>
+
+<!-- BODY -->
+<div id="body" role="main">
+
+  <!-- MAP+WEB PANE -->
+  <div class="pane on" id="p-map" style="position:relative;flex-direction:column">
+    <canvas id="cv" style="flex:1"></canvas>
+
+    <div id="mode-bar">
+      <button class="mchip on" onclick="setMode('both',this)">MAP+WEB</button>
+      <button class="mchip" onclick="setMode('map',this)">MAP</button>
+      <button class="mchip" onclick="setMode('web',this)">WEB</button>
+      <button class="mchip" onclick="setMode('heat',this)">HEAT</button>
+    </div>
+
+    <div id="gps-pill" onclick="toggleGPS()"><div class="gps-d"></div><span id="gps-lbl">GPS OFF</span></div>
+
+    <div id="map-ctrls" role="group" aria-label="Map controls">
+      <button class="mcbtn" onclick="zIn()" aria-label="Zoom in">+</button>
+      <button class="mcbtn" onclick="zOut()" aria-label="Zoom out">−</button>
+      <button class="mcbtn" onclick="resetCam()" style="font-size:11px" aria-label="Reset camera">⟳</button>
+      <button class="mcbtn" onclick="openRecal()" title="Recalibrate location" aria-label="Recalibrate my location" style="font-size:18px">📍</button>
+      <button class="mcbtn" onclick="toggleTilt()" style="font-size:9px;font-family:Orbitron,sans-serif">3D</button>
+    </div>
+
+    <div id="info-panel">
+      <div class="ip-hd"><div class="ip-name" id="ip-name">—</div><div class="ip-sub" id="ip-sub">—</div></div>
+      <div class="ip-bd" id="ip-bd"></div>
+      <div class="ip-eta" id="ip-eta"></div>
+      <div class="ip-tags" id="ip-tags"></div>
+      <div class="ip-sp" id="ip-sp"><div class="sp-row"><div class="sp-ball">♪</div><div><div class="sp-track" id="sp-track"></div><div class="sp-lbl">Spotify preview</div></div></div></div>
+      <div class="ip-acts" id="ip-acts"></div>
+    </div>
+
+    <div id="hm-legend">
+      <div class="lrow"><div class="ldot" style="background:var(--gold);width:12px;height:12px"></div>Festival</div>
+      <div class="lrow"><div class="ldot" style="background:#fff;width:10px;height:10px"></div>Stage</div>
+      <div class="lrow"><div class="ldot" style="background:#aaa;width:7px;height:7px"></div>Artist node</div>
+      <div class="lrow"><div class="ldot" style="background:#f87171;width:5px;height:5px"></div>Crowd</div>
+      <div style="border-top:1px solid rgba(255,255,255,.07);margin:4px 0 3px"></div>
+      <div class="lrow" style="font-size:8px;opacity:.5">Bigger = more popular</div>
+    </div>
+
+    <div id="gbar"></div>
+  </div>
+
+  <!-- LINEUP PANE -->
+  <div class="pane" id="p-lineup">
+    <div class="lu-stats">
+      <div class="lu-stat"><div class="lu-n" id="s1" style="color:var(--purple)">0</div><div class="lu-l">SETS</div></div>
+      <div class="lu-stat"><div class="lu-n" id="s2" style="color:var(--blue)">0</div><div class="lu-l">STAGES</div></div>
+      <div class="lu-stat"><div class="lu-n" id="s3" style="color:var(--green)">0</div><div class="lu-l">GENRES</div></div>
+      <div class="lu-stat"><div class="lu-n" id="s4" style="color:#f87171">0</div><div class="lu-l">CONFLICTS</div></div>
+    </div>
+    <div class="conflict-bar" id="cbar"></div>
+    <div id="lu-export-bar" style="display:none;margin-bottom:10px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="exportICS()" style="flex:1;min-width:160px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-family:Orbitron,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;cursor:pointer">📅 EXPORT .ICS</button>
+        <button id="spotify-btn" onclick="spotifyConnect()" style="flex:1;min-width:160px;padding:11px 14px;border-radius:10px;border:1px solid #1DB954;background:transparent;color:#1DB954;font-family:Orbitron,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;cursor:pointer">🎵 CONNECT SPOTIFY</button>
+      </div>
+      <button id="spotify-disconnect" onclick="spotifyDisconnect()" style="display:none;margin-top:6px;width:100%;padding:7px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:Orbitron,sans-serif;font-size:10px;letter-spacing:1px;cursor:pointer">disconnect spotify</button>
+    </div>
+    <div id="lu-content"><div class="lu-empty"><div style="font-size:32px;opacity:.15;margin-bottom:10px">✦</div><div style="font-family:Orbitron,sans-serif;font-size:11px;letter-spacing:2px">LINEUP EMPTY</div><div style="font-size:11px;margin-top:8px">Tap any artist node on the map to add</div></div></div>
+  </div>
+
+  <!-- AI GUIDE PANE -->
+  <div class="pane" id="p-ai" style="flex-direction:column">
+    <div id="ai-msgs">
+      <div class="ai-msg ai">
+        Hey! 👋 I'm your EDC 2026 AI guide. I know your lineup, the full schedule, and every stage. Ask me anything:<br><br>
+        • <em>"Where should I go right now?"</em><br>
+        • <em>"Who's playing at neonGARDEN tonight?"</em><br>
+        • <em>"I love techno — build me a night"</em><br>
+        • <em>"Any conflicts in my lineup?"</em><br>
+        • <em>"How do I get from bassPOD to kineticFIELD?"</em>
+      </div>
+    </div>
+    <div class="ai-quick-btns" id="ai-quick">
+      <button class="qbtn" onclick="askAI('Where should I go right now based on my lineup?')">Where now?</button>
+      <button class="qbtn" onclick="askAI('Build me the perfect techno night')">Techno night</button>
+      <button class="qbtn" onclick="askAI('Any conflicts in my lineup?')">Check conflicts</button>
+      <button class="qbtn" onclick="askAI('What are the sunrise sets I should not miss?')">Sunrise sets</button>
+      <button class="qbtn" onclick="askAI('Give me survival tips for EDC Las Vegas')">Survival tips</button>
+    </div>
+    <div id="ai-input-row">
+      <input id="ai-input" type="text" placeholder="Ask your EDC guide anything..." onkeydown="if(event.key==='Enter')sendAI()">
+      <button id="ai-send" onclick="sendAI()">↑</button>
+    </div>
+  </div>
+
+  <!-- SURVIVAL PANE -->
+  <div class="pane" id="p-survival" style="overflow-y:auto">
+    <div class="surv-row">
+      <div class="surv-card">
+        <div class="surv-title">HYDRATION</div>
+        <div class="surv-val" id="hydrate-val" style="color:var(--blue)">100%</div>
+        <div class="hydrate-bar"><div class="hydrate-fill" id="hydrate-fill" style="width:100%"></div></div>
+        <div class="surv-sub" id="hydrate-sub">Drink water now!</div>
+        <button class="surv-btn" style="background:rgba(56,189,248,.15);color:var(--blue);border:1px solid rgba(56,189,248,.3)" onclick="drinkWater()">💧 DRANK WATER</button>
+      </div>
+      <div class="surv-card">
+        <div class="surv-title">ON FEET</div>
+        <div class="surv-val" id="feet-val" style="color:var(--green)">0:00</div>
+        <div class="surv-sub" id="feet-sub">Rest every 90 min</div>
+        <button class="surv-btn" style="background:rgba(52,211,153,.15);color:var(--green);border:1px solid rgba(52,211,153,.3)" onclick="resetFeet()">😮‍💨 TOOK A BREAK</button>
+      </div>
+    </div>
+    <div class="surv-row">
+      <div class="surv-card">
+        <div class="surv-title">TIME TO NEXT SET</div>
+        <div class="surv-val" id="next-set-time" style="color:var(--gold)">—</div>
+        <div class="surv-sub" id="next-set-name">Add sets to your lineup</div>
+      </div>
+      <div class="surv-card">
+        <div class="surv-title">NIGHT PROGRESS</div>
+        <div class="surv-val" id="night-prog" style="color:var(--purple)">—%</div>
+        <div class="surv-sub">10 PM → 5:30 AM</div>
+      </div>
+    </div>
+    <div class="surv-card full" id="weather-card" style="margin-bottom:10px">
+      <div class="surv-title" style="margin-bottom:10px">🌡 WEATHER · LAS VEGAS MOTOR SPEEDWAY</div>
+      <div id="weather-body" style="font-size:12px;color:var(--muted);line-height:1.55">Loading…</div>
+    </div>
+    <div class="surv-card full" id="battery-card" style="margin-bottom:10px">
+      <div class="surv-title" style="margin-bottom:10px">🔋 BATTERY SAVER</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button id="battery-toggle-btn" onclick="toggleBattery()" style="flex:1;min-width:160px;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:Orbitron,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;cursor:pointer">TURN ON</button>
+      </div>
+      <div id="battery-status" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">Pauses crowd animation + auto-rotation, caps 3D at 30fps. Roughly +2–3 hrs phone life on festival day.</div>
+    </div>
+    <div class="surv-card full" id="set-alerts-card" style="margin-bottom:10px">
+      <div class="surv-title" style="margin-bottom:10px">🔔 SET-TIME ALERTS</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button id="alerts-toggle-btn" onclick="toggleAlerts()" style="flex:1;min-width:160px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold);color:#000;font-family:Orbitron,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;cursor:pointer">TURN ON ALERTS</button>
+        <button onclick="testAlert()" style="padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:Orbitron,sans-serif;font-size:10px;letter-spacing:1px;cursor:pointer">TEST</button>
+      </div>
+      <div id="alerts-status" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">Get a buzz 15 min before every set in your lineup.</div>
+    </div>
+    <div class="surv-card full" id="emergency-card" style="margin-bottom:10px;border-color:rgba(248,113,113,.35)">
+      <div class="surv-title" style="margin-bottom:10px;color:#f87171">🆘 EMERGENCY & INFO</div>
+      <div class="emerg-grid">
+        <div class="emerg-item"><div class="alert-icon">🚑</div><div><strong>Medical tents</strong> at Gate P, cosmicMEADOW, kineticFIELD, and Camp EDC. Staff trained for heat, dehydration, and bad trips — no questions, no charge.</div></div>
+        <div class="emerg-item"><div class="alert-icon">🎒</div><div><strong>Lost & Found</strong> at the Info Booth near Gate P. Open during all festival hours; unclaimed items held 30 days.</div></div>
+        <div class="emerg-item"><div class="alert-icon">🚌</div><div><strong>Shuttles</strong> pick up at World Market Center. Last bus leaves 30 min after festival close — don't miss it.</div></div>
+        <div class="emerg-item" style="flex-direction:column;align-items:stretch;gap:8px"><div style="display:flex;align-items:center;gap:9px"><div class="alert-icon">🚗</div><div><strong>Rides home</strong> — opens in your installed app.</div></div><div style="display:flex;gap:6px"><button onclick="openRide('uber')" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-family:Orbitron,sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer">UBER</button><button onclick="openRide('lyft')" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-family:Orbitron,sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer">LYFT</button><button onclick="openRide('waze')" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-family:Orbitron,sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer">WAZE</button></div></div>
+        <div class="emerg-item"><div class="alert-icon">🚪</div><div><strong>Exits</strong> — Gate P (south main), Gate C/D (west). Follow crowd flow at close; don't push.</div></div>
+        <div class="emerg-item"><div class="alert-icon">⚠</div><div><strong>911 for life threats.</strong> For any other medical or safety concern, flag the nearest yellow-vest staff or walk to any medical tent.</div></div>
+        <div class="emerg-item"><div class="alert-icon">👥</div><div><strong>Buddy rule.</strong> Never leave someone alone if they're altered. Walk them to a medical tent — staff will take care of the rest, no consequences.</div></div>
+      </div>
+    </div>
+    <div class="surv-card full" id="alerts-card" style="margin-bottom:10px">
+      <div class="surv-title" style="margin-bottom:10px">LIVE ALERTS</div>
+      <div id="alerts-list">
+        <div class="alert-item"><div class="alert-icon">💧</div><div>Stay hydrated! It's warm in the desert. Drink at least 500ml per hour.</div></div>
+        <div class="alert-item"><div class="alert-icon">👂</div><div>Protect your ears. Bring earplugs — front row can hit 120dB+.</div></div>
+        <div class="alert-item"><div class="alert-icon">🌡</div><div>Las Vegas desert night temps can drop to 60°F. Bring a layer.</div></div>
+      </div>
+    </div>
+    <div class="surv-card full" style="margin-bottom:10px">
+      <div class="surv-title" style="margin-bottom:10px">PRO TIPS</div>
+      <div class="tip-item"><div class="alert-icon">🚌</div><div><strong>Take the EDC shuttle.</strong> Avoids the 3hr parking exit. Pickup at World Market Center.</div></div>
+      <div class="tip-item"><div class="alert-icon">🎒</div><div><strong>Clear bag only.</strong> Max 12"×6"×12". Hydration pack allowed — must be empty at entry.</div></div>
+      <div class="tip-item"><div class="alert-icon">💳</div><div><strong>Cashless only inside.</strong> Bring debit/credit or load a festival card at cash stations.</div></div>
+      <div class="tip-item"><div class="alert-icon">🌅</div><div><strong>Don't miss sunrise sets.</strong> Above & Beyond and Armin van Buuren at 5AM are life-changing.</div></div>
+      <div class="tip-item"><div class="alert-icon">🎡</div><div><strong>Explore between sets.</strong> Art installations, art cars, and rides are best before headliners hit.</div></div>
+    </div>
+  </div>
+
+  <!-- FRIENDS PANE -->
+  <div class="pane" id="p-friends" style="overflow-y:auto">
+    <div class="friends-hero">
+      <div style="font-family:Orbitron,sans-serif;font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">YOUR SQUAD CODE</div>
+      <div class="friends-code" id="my-code">—</div>
+      <div class="friends-sub">Share this code with your crew to appear on each other's maps</div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;justify-content:center">
+        <button class="surv-btn" style="flex:1;min-width:130px;background:rgba(240,192,64,.15);color:var(--gold);border:1px solid rgba(240,192,64,.3)" onclick="copyCode()">📋 COPY CODE</button>
+        <button class="surv-btn" style="flex:1;min-width:130px;background:rgba(56,189,248,.15);color:var(--blue);border:1px solid rgba(56,189,248,.3)" onclick="shareSquadMsg()">📤 SHARE</button>
+        <button class="surv-btn" style="flex:1;min-width:130px;background:rgba(167,139,250,.15);color:var(--purple);border:1px solid rgba(167,139,250,.3)" onclick="shareLocation()">📍 SHARE LOCATION</button>
+      </div>
+    </div>
+    <div class="join-row">
+      <input id="join-input" type="text" placeholder="ENTER FRIEND CODE" maxlength="6">
+      <button class="join-btn" onclick="joinFriend()">ADD</button>
+    </div>
+    <div id="friends-list"></div>
+  </div>
+
+</div><!-- /body -->
+
+<!-- ONBOARDING COACHMARK -->
+<div id="onboard" role="status" aria-live="polite">
+  <div class="ob-icon">👆</div>
+  <div class="ob-txt">Tap any glowing artist bubble on the 3D map to add them to your Lineup.</div>
+  <button class="ob-x" onclick="dismissOnboard()" aria-label="Dismiss hint">×</button>
+</div>
+
+<!-- RECALIBRATE MODAL -->
+<div id="recal">
+  <h3>📍 I'M AT...</h3>
+  <p>Tap the nearest stage to recalibrate your dot on the map. Useful when GPS drifts indoors or between tall structures.</p>
+  <div class="recal-grid" id="recal-grid"></div>
+  <button class="recal-close" onclick="closeRecal()">CANCEL</button>
+</div>
+
+<!-- INSTALL BANNER -->
+<div id="install-banner">
+  <div class="ib-icon">📲</div>
+  <div class="ib-txt">
+    <div class="ib-t1">INSTALL FOR OFFLINE USE</div>
+    <div class="ib-t2">Works at 0 bars. GPS, lineup, map — all cached.</div>
+  </div>
+  <button class="ib-btn" onclick="installPWA()">INSTALL</button>
+  <button class="ib-x" onclick="dismissInstall()">×</button>
+</div>
+
+<div id="toast"></div>
+</div><!-- /app -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ══════════════════════════════════════════════════
+   DATA
+══════════════════════════════════════════════════ */
+const STAGES=[
+  {id:'kinetic',name:'kineticFIELD',  short:'KINETIC', x:0,  z:-36,col:'#38bdf8',hex:0x38bdf8,genre:'Mainstage',   sz:9, h:12,cap:'75k+'},
+  {id:'circuit',name:'circuitGROUNDS',short:'CIRCUIT', x:26, z:26, col:'#a78bfa',hex:0xa78bfa,genre:'House/Techno',sz:7, h:9, cap:'40k'},
+  {id:'cosmic', name:'cosmicMEADOW', short:'COSMIC',   x:-29,z:4,  col:'#f0c040',hex:0xf0c040,genre:'Multi-Genre', sz:7, h:8, cap:'35k'},
+  {id:'neon',   name:'neonGARDEN',   short:'NEON',     x:22, z:-8, col:'#f472b6',hex:0xf472b6,genre:'House/Techno',sz:6, h:7, cap:'25k'},
+  {id:'bass',   name:'bassPOD',      short:'BASS',     x:10, z:28, col:'#fb923c',hex:0xfb923c,genre:'Bass/Dubstep',sz:5.5,h:7,cap:'20k'},
+  {id:'waste',  name:'wasteLAND',    short:'WASTE',    x:-17,z:28, col:'#ff4455',hex:0xff4455,genre:'Hardstyle',   sz:5, h:7, cap:'18k'},
+  {id:'quantum',name:'quantumVALLEY',short:'QUANTUM',  x:29, z:-19,col:'#34d399',hex:0x34d399,genre:'Trance',      sz:5, h:7, cap:'15k'},
+  {id:'stereo', name:'stereoBLOOM',  short:'STEREO',   x:-21,z:-17,col:'#c084fc',hex:0xc084fc,genre:'House',       sz:4.5,h:6,cap:'12k'},
+  {id:'bionic', name:'bionicJUNGLE', short:'BIONIC',   x:-31,z:-21,col:'#86efac',hex:0x86efac,genre:'House',       sz:4, h:5, cap:'8k'},
+];
+
+const GC={mainstage:'#38bdf8',house:'#f472b6',techno:'#a78bfa',bass:'#fb923c',dubstep:'#ff6b35',trance:'#34d399',hardstyle:'#ff4455',melodic:'#7dd3fc',multi:'#f0c040'};
+const TIER_LABELS=['','Emerging','Rising','Established','Headliner','Global Icon'];
+
+// Waypoints for pathfinding (festival paths)
+const WAYPOINTS=[
+  {id:'centre',x:0,z:0},
+  {id:'main-n',x:0,z:-20},
+  {id:'main-s',x:0,z:20},
+  {id:'east',x:20,z:0},
+  {id:'west',x:-20,z:0},
+  {id:'ne',x:18,z:-15},
+  {id:'nw',x:-18,z:-15},
+  {id:'se',x:18,z:15},
+  {id:'sw',x:-18,z:15},
+  {id:'gate',x:0,z:-50},
+];
+// Connections
+const WP_EDGES=[
+  ['centre','main-n'],['centre','main-s'],['centre','east'],['centre','west'],
+  ['main-n','ne'],['main-n','nw'],['main-n','gate'],
+  ['main-s','se'],['main-s','sw'],
+  ['east','ne'],['east','se'],
+  ['west','nw'],['west','sw'],
+];
+
+const ARTISTS=[
+  {id:'tiesto', n:'Tiësto',           s:'circuit',g:'house',    tier:5,sp:'Red Lights',       t:'12AM',d:'fri'},
+  {id:'garrix', n:'Martin Garrix',    s:'kinetic',g:'mainstage',tier:5,sp:'Animals',           t:'1AM', d:'fri'},
+  {id:'avb',    n:'Armin van Buuren', s:'kinetic',g:'trance',   tier:5,sp:'In and Out of Love',t:'5AM', d:'sat'},
+  {id:'fisher', n:'FISHER',           s:'kinetic',g:'house',    tier:5,sp:'Losing It',         t:'11PM',d:'sat'},
+  {id:'kaskade',n:'Kaskade',          s:'kinetic',g:'mainstage',tier:5,sp:'Room for Happiness',t:'10PM',d:'fri'},
+  {id:'prodigy',n:'The Prodigy',      s:'cosmic', g:'multi',    tier:5,sp:'Firestarter',       t:'11PM',d:'sat'},
+  {id:'chains', n:'The Chainsmokers', s:'kinetic',g:'mainstage',tier:5,sp:'Closer',            t:'1AM', d:'sat'},
+  {id:'zedd',   n:'Zedd',             s:'kinetic',g:'mainstage',tier:5,sp:'Clarity',           t:'2AM', d:'sat'},
+  {id:'cdw',    n:'Charlotte de Witte',s:'neon',  g:'techno',   tier:4,sp:'Doppler',           t:'12AM',d:'fri'},
+  {id:'jsumm',  n:'John Summit',      s:'kinetic',g:'house',    tier:4,sp:'La Danza',          t:'12AM',d:'sat'},
+  {id:'solomun',n:'Solomun',          s:'circuit',g:'house',    tier:4,sp:'Babylon',           t:'1AM', d:'sat'},
+  {id:'pgou',   n:'Peggy Gou',        s:'neon',   g:'house',    tier:4,sp:'Nanana',            t:'11PM',d:'sun'},
+  {id:'excision',n:'Excision',        s:'bass',   g:'dubstep',  tier:4,sp:'X Rated',           t:'1AM', d:'sat'},
+  {id:'abeyond',n:'Above & Beyond',   s:'quantum',g:'trance',   tier:4,sp:'Sun & Moon',        t:'5AM', d:'sun'},
+  {id:'porter', n:'Porter Robinson',  s:'kinetic',g:'melodic',  tier:4,sp:'Shelter',           t:'10PM',d:'sat'},
+  {id:'sevlion',n:'Seven Lions',      s:'cosmic', g:'melodic',  tier:4,sp:'Lose Myself',       t:'1AM', d:'sun'},
+  {id:'hardwell',n:'Hardwell',        s:'kinetic',g:'mainstage',tier:4,sp:'Spaceman',          t:'1AM', d:'sun'},
+  {id:'pvd',    n:'Paul van Dyk',     s:'quantum',g:'trance',   tier:4,sp:'For an Angel',      t:'10PM',d:'fri'},
+  {id:'adbeyer',n:'Adam Beyer',       s:'neon',   g:'techno',   tier:4,sp:'Teach Me',          t:'10PM',d:'sun'},
+  {id:'anger',  n:'Angerfist',        s:'waste',  g:'hardstyle',tier:4,sp:'Rampant',           t:'1AM', d:'sat'},
+  {id:'clake',  n:'Chris Lake',       s:'kinetic',g:'house',    tier:4,sp:'Turn Off the Lights',t:'11PM',d:'fri'},
+  {id:'capri',  n:'Joseph Capriati',  s:'neon',   g:'techno',   tier:3,sp:'Metamorfosi',       t:'1AM', d:'fri'},
+  {id:'eli',    n:'Eli Brown',        s:'neon',   g:'techno',   tier:3,sp:'Love Me',           t:'11PM',d:'fri'},
+  {id:'under',  n:'Underworld',       s:'cosmic', g:'multi',    tier:4,sp:'Born Slippy',       t:'11PM',d:'fri'},
+  {id:'sanho',  n:'San Holo',         s:'cosmic', g:'melodic',  tier:3,sp:'Light',             t:'12AM',d:'sun'},
+  {id:'cstussy',n:'Chris Stussy',     s:'circuit',g:'techno',   tier:3,sp:'All I Need',        t:'10PM',d:'fri'},
+  {id:'lpalmer',n:'Lilly Palmer',     s:'circuit',g:'techno',   tier:3,sp:'Control',           t:'11PM',d:'sat'},
+  {id:'noizu',  n:'Noizu',            s:'stereo', g:'house',    tier:3,sp:'Summer 91',         t:'11PM',d:'fri'},
+  {id:'waxm',   n:'Wax Motif',        s:'stereo', g:'house',    tier:3,sp:'Go Slow',           t:'12AM',d:'sat'},
+  {id:'atl',    n:'ATLiens',          s:'bass',   g:'dubstep',  tier:3,sp:'Subculture',        t:'10PM',d:'fri'},
+  {id:'subtro', n:'Subtronics',       s:'bass',   g:'dubstep',  tier:3,sp:'Cyclops',           t:'2AM', d:'sun'},
+  {id:'szp',    n:'Sub Zero Project', s:'waste',  g:'hardstyle',tier:3,sp:'Avalanche',         t:'10PM',d:'sat'},
+  {id:'garemery',n:'Gareth Emery',    s:'quantum',g:'trance',   tier:3,sp:'U',                 t:'11PM',d:'sat'},
+  {id:'darude', n:'Darude',           s:'quantum',g:'trance',   tier:3,sp:'Sandstorm',         t:'10PM',d:'sat'},
+  {id:'domdo',  n:'Dom Dolla',        s:'stereo', g:'house',    tier:3,sp:'Eating Me Alive',   t:'10PM',d:'sun'},
+  {id:'ahee',   n:'AHEE b2b Liq.Str.',s:'bass',   g:'bass',     tier:3,sp:'Crunk',             t:'12AM',d:'fri'},
+  {id:'ihatm',  n:'I Hate Models',    s:'circuit',g:'techno',   tier:3,sp:'Acid Rain',         t:'10PM',d:'sun'},
+  {id:'amelie', n:'Amelie Lens',      s:'neon',   g:'techno',   tier:3,sp:'Exhale',            t:'1AM', d:'sun'},
+  {id:'indira', n:'Indira Paganotto', s:'neon',   g:'techno',   tier:3,sp:'Morphing',          t:'2AM', d:'sat'},
+];
+
+/* ══════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════ */
+let lineup=[];
+let viewMode='both';
+let activeGenre='all';
+let selectedId=null;
+let hydrateLevel=100, hydrateLast=Date.now(), feetStart=Date.now();
+
+/* ══════════════════════════════════════════════════
+   THREE.JS SETUP
+══════════════════════════════════════════════════ */
+const canvas=document.getElementById('cv');
+const mapPane=document.getElementById('p-map');
+
+function getCanvasSize(){
+  return{w:mapPane.clientWidth||680, h:window.innerHeight - document.getElementById('hdr').offsetHeight - 1};
+}
+let {w:W,h:H}=getCanvasSize();
+canvas.style.width=W+'px'; canvas.style.height=H+'px';
+const DPR=Math.min(window.devicePixelRatio,2);
+canvas.width=W*DPR; canvas.height=H*DPR;
+
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setSize(W,H); renderer.setPixelRatio(DPR);
+renderer.setClearColor(0x030508,1);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x030508,0.005);
+
+const camera=new THREE.PerspectiveCamera(52,W/H,0.1,1000);
+camera.position.set(0,85,78); camera.lookAt(0,0,0);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x0a0a2a,3));
+const sunLight=new THREE.DirectionalLight(0x334488,1.5);
+sunLight.position.set(40,80,30); scene.add(sunLight);
+const stagePL=STAGES.map(st=>{const pl=new THREE.PointLight(st.hex,3.5,48);pl.position.set(st.x,8,st.z);scene.add(pl);return pl;});
+
+// Player dot (GPS position marker)
+const playerGroup=new THREE.Group(); playerGroup.visible=false; scene.add(playerGroup);
+const playerDot=new THREE.Mesh(new THREE.SphereGeometry(.9,20,20),new THREE.MeshStandardMaterial({color:0xf0c040,emissive:0xf0c040,emissiveIntensity:1.2,roughness:.1,metalness:.4}));
+playerDot.position.y=2; playerGroup.add(playerDot);
+const playerRing=new THREE.Mesh(new THREE.RingGeometry(1.2,1.6,24),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.55,side:THREE.DoubleSide}));
+playerRing.rotation.x=-Math.PI/2; playerRing.position.y=.05; playerGroup.add(playerRing);
+const playerPulse=new THREE.Mesh(new THREE.RingGeometry(1.6,1.8,24),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.3,side:THREE.DoubleSide}));
+playerPulse.rotation.x=-Math.PI/2; playerPulse.position.y=.05; playerGroup.add(playerPulse);
+const playerBeam=new THREE.Mesh(new THREE.CylinderGeometry(.18,.4,18,8),new THREE.MeshBasicMaterial({color:0xf0c040,transparent:true,opacity:.15}));
+playerBeam.position.y=9; playerGroup.add(playerBeam);
+
+// Stars
+const sgeo=new THREE.BufferGeometry();
+const sv2=[];for(let i=0;i<2500;i++)sv2.push((Math.random()-.5)*700,Math.random()*120+10,(Math.random()-.5)*700);
+sgeo.setAttribute('position',new THREE.Float32BufferAttribute(sv2,3));
+scene.add(new THREE.Points(sgeo,new THREE.PointsMaterial({color:0xffffff,size:0.3,transparent:true,opacity:0.35})));
+
+/* ── GROUND ── */
+function buildGround(){
+  const sh=new THREE.Shape();
+  for(let i=0;i<=64;i++){const a=(i/64)*Math.PI*2;i===0?sh.moveTo(Math.cos(a)*63,Math.sin(a)*55):sh.lineTo(Math.cos(a)*63,Math.sin(a)*55);}
+  const fg=new THREE.Mesh(new THREE.ShapeGeometry(sh),new THREE.MeshStandardMaterial({color:0x060c1e,roughness:.9}));
+  fg.rotation.x=-Math.PI/2; fg.position.y=-.1; scene.add(fg);
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshStandardMaterial({color:0x020306,roughness:1}));
+  pl.rotation.x=-Math.PI/2; pl.position.y=-.2; scene.add(pl);
+  // Grid
+  const gm=new THREE.LineBasicMaterial({color:0x0c1530,transparent:true,opacity:.3});
+  for(let i=-64;i<=64;i+=6){
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(i,0,-64),new THREE.Vector3(i,0,64)]),gm));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-64,0,i),new THREE.Vector3(64,0,i)]),gm));
+  }
+  // Paths
+  [
+    {pts:[{x:0,z:-36},{x:0,z:36}],c:'#2a3a60',w:.7},
+    {pts:[{x:-40,z:0},{x:40,z:0}],c:'#1e2a50',w:.5},
+    {pts:[{x:0,z:0},{x:26,z:26}],c:'#a78bfa',w:.35},
+    {pts:[{x:10,z:12},{x:12,z:38}],c:'#f472b6',w:.35},
+    {pts:[{x:-5,z:-30},{x:-18,z:-12},{x:-28,z:0}],c:'#38bdf8',w:.3},
+    {pts:[{x:-24,z:18},{x:24,z:18}],c:'#f0c040',w:.4},
+  ].forEach(p=>{
+    const pts2=p.pts.map(v=>new THREE.Vector3(v.x,.15,v.z));
+    const curve=new THREE.CatmullRomCurve3(pts2);
+    scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,20,p.w*.5,4,false),new THREE.MeshBasicMaterial({color:new THREE.Color(p.c),transparent:true,opacity:.2})));
+  });
+}
+buildGround();
+
+/* ── STAGES ── */
+const stageMeshList=[];
+const stageGroupList=[];
+function buildStages(){
+  STAGES.forEach((st,idx)=>{
+    const g=new THREE.Group(); g.position.set(st.x,0,st.z);
+    // Platform
+    const _plat=new THREE.Mesh(new THREE.CylinderGeometry(st.sz*1.15,st.sz*1.35,.5,8),new THREE.MeshStandardMaterial({color:0x080f22,roughness:.8}));
+    _plat.position.y=.25; g.add(_plat);
+    // Body
+    const body=new THREE.Mesh(new THREE.BoxGeometry(st.sz*1.5,st.h,st.sz*.75),new THREE.MeshStandardMaterial({color:new THREE.Color(st.col).multiplyScalar(.25),emissive:new THREE.Color(st.col),emissiveIntensity:.35,roughness:.25,metalness:.7}));
+    body.position.y=st.h/2+.5; body.userData={stageId:st.id,stageIdx:idx};
+    g.add(body); stageMeshList.push(body);
+    // LED face
+    const face=new THREE.Mesh(new THREE.PlaneGeometry(st.sz*1.35,st.h*.88),new THREE.MeshStandardMaterial({color:new THREE.Color(st.col),emissive:new THREE.Color(st.col),emissiveIntensity:.85,roughness:.1}));
+    face.position.set(0,st.h/2+.5,st.sz*.38); g.add(face);
+    // Truss
+    for(let i=0;i<2;i++){const tr=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,st.sz*1.7,5),new THREE.MeshStandardMaterial({color:0x334466,metalness:.9,roughness:.2}));tr.rotation.z=Math.PI/2;tr.position.set(0,st.h+.7,(i-.5)*st.sz*.4);g.add(tr);}
+    // Beams
+    const bc=st.sz>6?6:4;
+    for(let i=0;i<bc;i++){const a=(i/bc)*Math.PI*2;const bm=new THREE.Mesh(new THREE.CylinderGeometry(.04,.4,26,4),new THREE.MeshBasicMaterial({color:new THREE.Color(st.col),transparent:true,opacity:.05}));bm.position.set(Math.cos(a)*st.sz*.55,13,Math.sin(a)*st.sz*.28);g.add(bm);}
+    // Crowd disc
+    const cd=new THREE.Mesh(new THREE.CircleGeometry(st.sz*2.6,24),new THREE.MeshBasicMaterial({color:new THREE.Color(st.col),transparent:true,opacity:.08}));
+    cd.rotation.x=-Math.PI/2; cd.position.y=.05; g.add(cd);
+    // Label
+    const lbl=mkSprite(st.short,st.col,st.sz>6?1.1:.88);lbl.position.set(0,st.h+4.5,0);g.add(lbl);
+    scene.add(g); stageGroupList.push({g,st,face,body});
+  });
+}
+buildStages();
+
+/* ── CROWD WITH PATHFINDING ── */
+const CROWD_N=900;
+const crowdPos=[];
+const crowdTgt=[];
+const crowdCol=[];
+const crowdPath=[];
+const crowdProgress=[];
+let crowdMesh;
+
+// Build waypoint graph
+const wpMap={};
+WAYPOINTS.forEach(w=>wpMap[w.id]=w);
+function wpDist(a,b){return Math.hypot(a.x-b.x,a.z-b.z);}
+function nearestWP(x,z){let best=null,bd=9999;WAYPOINTS.forEach(w=>{const d=Math.hypot(w.x-x,w.z-z);if(d<bd){bd=d;best=w;}});return best;}
+function nearestStageWP(stageId){const st=STAGES.find(s=>s.id===stageId);return nearestWP(st.x,st.z);}
+
+// Simple BFS pathfinding
+function findPath(fromId,toId){
+  const visited={};const queue=[[fromId]];
+  while(queue.length){
+    const path=queue.shift();const cur=path[path.length-1];
+    if(cur===toId)return path;
+    if(visited[cur])continue;visited[cur]=true;
+    WP_EDGES.forEach(e=>{
+      if(e[0]===cur&&!visited[e[1]])queue.push([...path,e[1]]);
+      if(e[1]===cur&&!visited[e[0]])queue.push([...path,e[0]]);
+    });
+  }
+  return[fromId,toId];
+}
+
+function buildCrowd(){
+  const geo=new THREE.BufferGeometry();
+  const pos=new Float32Array(CROWD_N*3);
+  const col=new Float32Array(CROWD_N*3);
+  for(let i=0;i<CROWD_N;i++){
+    const st=STAGES[Math.floor(Math.random()*STAGES.length)];
+    const a=Math.random()*Math.PI*2,d=st.sz*1.2+Math.random()*st.sz*2.4;
+    const px=st.x+Math.cos(a)*d, pz=st.z+Math.sin(a)*d;
+    const ov=Math.sqrt((px/62)**2+(pz/53)**2);
+    const f=ov>.9?.86/ov:1;
+    pos[i*3]=px*f;pos[i*3+1]=.25;pos[i*3+2]=pz*f;
+    crowdPos.push([px*f,.25,pz*f]);
+    crowdTgt.push([px*f,.25,pz*f]);
+    crowdPath.push(null);crowdProgress.push(0);
+    const sc=new THREE.Color(st.col);
+    col[i*3]=Math.min(1,sc.r+(Math.random()-.5)*.25);
+    col[i*3+1]=Math.min(1,sc.g+(Math.random()-.5)*.25);
+    col[i*3+2]=Math.min(1,sc.b+(Math.random()-.5)*.25);
+    crowdCol.push([col[i*3],col[i*3+1],col[i*3+2]]);
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  crowdMesh=new THREE.Points(geo,new THREE.PointsMaterial({size:.55,vertexColors:true,transparent:true,opacity:.82,sizeAttenuation:true}));
+  scene.add(crowdMesh);
+}
+buildCrowd();
+
+let crowdTick2=0;
+function animateCrowd2(){
+  crowdTick2++;
+  const pos=crowdMesh.geometry.attributes.position.array;
+  const col=crowdMesh.geometry.attributes.color.array;
+  // Migrate 5% of crowd every 90 frames, walking along paths
+  if(crowdTick2%90===0){
+    const n=Math.floor(CROWD_N*.07);
+    for(let m=0;m<n;m++){
+      const idx=Math.floor(Math.random()*CROWD_N);
+      const toSt=STAGES[Math.floor(Math.random()*STAGES.length)];
+      const fromWP=nearestWP(pos[idx*3],pos[idx*3+2]);
+      const toWP=nearestStageWP(toSt.id);
+      if(!fromWP||!toWP)continue;
+      const path=findPath(fromWP.id,toWP.id);
+      // Build 3D path points
+      const pts=path.map(id=>{
+        const w=wpMap[id];
+        return w?{x:w.x,z:w.z}:{x:toSt.x,z:toSt.z};
+      });
+      const a=Math.random()*Math.PI*2,d=toSt.sz*1.2+Math.random()*toSt.sz*2;
+      pts.push({x:toSt.x+Math.cos(a)*d,z:toSt.z+Math.sin(a)*d});
+      crowdPath[idx]=pts;
+      crowdProgress[idx]=0;
+      const sc=new THREE.Color(toSt.col);
+      crowdCol[idx]=[Math.min(1,sc.r+(Math.random()-.5)*.2),Math.min(1,sc.g+(Math.random()-.5)*.2),Math.min(1,sc.b+(Math.random()-.5)*.2)];
+    }
+  }
+  // Move crowd
+  for(let i=0;i<CROWD_N;i++){
+    const path=crowdPath[i];
+    if(path&&path.length>1){
+      crowdProgress[i]+=.008+Math.random()*.004;
+      const totalSeg=path.length-1;
+      const globalT=Math.min(crowdProgress[i],1);
+      const segT=globalT*totalSeg;
+      const segIdx=Math.min(Math.floor(segT),totalSeg-1);
+      const localT=segT-segIdx;
+      const p0=path[segIdx],p1=path[Math.min(segIdx+1,totalSeg)];
+      if(p0&&p1){pos[i*3]=p0.x+(p1.x-p0.x)*localT;pos[i*3+2]=p0.z+(p1.z-p0.z)*localT;}
+      if(crowdProgress[i]>=1)crowdPath[i]=null;
+    }
+    // Dance bob
+    pos[i*3+1]=.25+Math.abs(Math.sin(crowdTick2*.07+i*.33))*.75;
+    // Color lerp
+    col[i*3]+=(crowdCol[i][0]-col[i*3])*.025;
+    col[i*3+1]+=(crowdCol[i][1]-col[i*3+1])*.025;
+    col[i*3+2]+=(crowdCol[i][2]-col[i*3+2])*.025;
+  }
+  crowdMesh.geometry.attributes.position.needsUpdate=true;
+  crowdMesh.geometry.attributes.color.needsUpdate=true;
+}
+
+/* ── HEATMAP OVERLAY (canvas 2D on top of WebGL) ── */
+let hmCanvas=null, hmCtx=null;
+function buildHeatmapCanvas(){
+  hmCanvas=document.createElement('canvas');
+  hmCanvas.width=W*DPR; hmCanvas.height=H*DPR;
+  hmCanvas.style.cssText=`position:absolute;top:0;left:0;width:${W}px;height:${H}px;pointer-events:none;z-index:10;opacity:0;transition:opacity .4s;border-radius:0`;
+  document.getElementById('p-map').appendChild(hmCanvas);
+  hmCtx=hmCanvas.getContext('2d');
+}
+buildHeatmapCanvas();
+
+function renderHeatmap(){
+  if(!hmCtx)return;
+  hmCtx.clearRect(0,0,hmCanvas.width,hmCanvas.height);
+  STAGES.forEach(st=>{
+    // Project 3D to 2D
+    const v=new THREE.Vector3(st.x,st.h/2,st.z);
+    v.project(camera);
+    const px=(v.x*.5+.5)*W*DPR;
+    const py=(-.5*v.y+.5)*H*DPR;
+    const popularity=st.sz/9;
+    const radius=(80+popularity*120)*DPR;
+    const col=new THREE.Color(st.hex);
+    const grd=hmCtx.createRadialGradient(px,py,0,px,py,radius);
+    grd.addColorStop(0,`rgba(${Math.round(col.r*255)},${Math.round(col.g*255)},${Math.round(col.b*255)},0.32)`);
+    grd.addColorStop(1,'rgba(0,0,0,0)');
+    hmCtx.beginPath(); hmCtx.arc(px,py,radius,0,Math.PI*2);
+    hmCtx.fillStyle=grd; hmCtx.fill();
+  });
+}
+
+/* ── WEB NODES ── */
+const nodeMap2={};
+const hitTargets=[];
+const webGroup=new THREE.Group(); scene.add(webGroup);
+
+function buildWeb(){
+  const cm=mkSphere(3.5,0xf0c040,1.2); cm.position.set(0,28,0); webGroup.add(cm);
+  nodeMap2['__edc']={mesh:cm,pos:new THREE.Vector3(0,28,0),type:'festival',label:'EDC LV 2026',data:{}};
+  hitTargets.push({mesh:cm,id:'__edc'});
+  const cl=mkSprite('EDC LV 2026','#f0c040',1.05); cl.position.set(0,34,0); webGroup.add(cl);
+
+  STAGES.forEach((st,i)=>{
+    const wy=22+i*.7;
+    const m=mkSphere(2.8,st.hex,.85); m.position.set(st.x,wy,st.z); webGroup.add(m);
+    nodeMap2[st.id+'_web']={mesh:m,pos:new THREE.Vector3(st.x,wy,st.z),type:'stage',label:st.name,data:st};
+    hitTargets.push({mesh:m,id:st.id+'_web'});
+    const lb=mkSprite(st.short,st.col,.82); lb.position.set(st.x,wy+4.5,st.z); webGroup.add(lb);
+    addLine3(new THREE.Vector3(0,28,0),new THREE.Vector3(st.x,wy,st.z),st.col,.16);
+    addLine3(new THREE.Vector3(st.x,st.h+2,st.z),new THREE.Vector3(st.x,wy,st.z),st.col,.09);
+  });
+
+  ARTISTS.forEach((a,i)=>{
+    const st=STAGES.find(s=>s.id===a.s); if(!st) return;
+    const gc=GC[a.g]||'#fff'; const gcH=parseInt(gc.replace('#',''),16);
+    const r=a.tier*.52+.4;
+    const spread=10+Math.random()*9;
+    const ang=i*2.618;
+    const px=st.x+Math.cos(ang)*spread, py=14+(Math.random()-.5)*13, pz=st.z+Math.sin(ang)*spread;
+    const m=mkSphere(r,gcH,.45+a.tier*.1); m.position.set(px,py,pz); m.userData={artistId:a.id};
+    webGroup.add(m);
+    const pos=new THREE.Vector3(px,py,pz);
+    nodeMap2[a.id]={mesh:m,pos,type:'artist',label:a.n,data:a};
+    hitTargets.push({mesh:m,id:a.id});
+    if(a.tier>=4){const lb=mkSprite(a.n,gc,.68);lb.position.set(px,py+r+2,pz);webGroup.add(lb);}
+    const sn=nodeMap2[st.id+'_web']; if(sn) addLine3(sn.pos,pos,gcH,.09);
+    ARTISTS.slice(0,i).forEach(b=>{if(b.g===a.g&&b.s!==a.s){const nb=nodeMap2[b.id];if(nb&&Math.random()<.25)addLine3(pos,nb.pos,gcH,.05);}});
+  });
+}
+
+function mkSphere(r,col,emI=.5){
+  return new THREE.Mesh(new THREE.SphereGeometry(r,16,16),new THREE.MeshStandardMaterial({color:new THREE.Color(col),emissive:new THREE.Color(col),emissiveIntensity:emI,roughness:.25,metalness:.6}));
+}
+function addLine3(a,b,col,op){
+  const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a.clone(),b.clone()]),new THREE.LineBasicMaterial({color:new THREE.Color(col),transparent:true,opacity:op}));
+  webGroup.add(l);
+}
+function mkSprite(text,color,scale=1){
+  const cv2=document.createElement('canvas'); cv2.width=256; cv2.height=60;
+  const ctx=cv2.getContext('2d'); const fs=Math.round(15*scale+3);
+  ctx.font=`700 ${fs}px Orbitron,sans-serif`; ctx.fillStyle=color; ctx.textAlign='center';
+  ctx.fillText(text.length>16?text.substring(0,14)+'…':text,128,34);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv2),transparent:true,opacity:.9,depthTest:false}));
+  sp.scale.set(11*scale,2.8*scale,1); return sp;
+}
+buildWeb();
+
+/* ── GENRE FILTER BAR ── */
+const gbarEl=document.getElementById('gbar');
+const gList=[{id:'all',l:'ALL',h:'#e2e8f0'},...Object.entries(GC).map(([k,v])=>({id:k,l:k.toUpperCase(),h:v}))];
+gList.forEach(g=>{
+  const b=document.createElement('button'); b.className='gchip'+(g.id==='all'?' on':'');
+  b.textContent=g.l; b.dataset.id=g.id; b.style.borderColor=g.h; b.style.color=g.h;
+  if(g.id==='all')b.style.background=g.h+'22';
+  b.onclick=()=>setGenre(g.id); gbarEl.appendChild(b);
+});
+
+function setGenre(gid){
+  activeGenre=gid;
+  gbarEl.querySelectorAll('.gchip').forEach(b=>{
+    const on=b.dataset.id===gid; b.classList.toggle('on',on);
+    b.style.background=on?(gList.find(g=>g.id===gid)?.h||'#fff')+'22':'transparent';
+  });
+  hitTargets.forEach(e=>{
+    const n=nodeMap2[e.id]; if(!n) return;
+    const vis=gid==='all'||(n.type==='artist'?n.data.g===gid:true);
+    n.mesh.material.opacity=vis?1:.04;
+    n.mesh.material.emissiveIntensity=vis?(n.type==='artist'?.45+n.data.tier*.1:.85):.01;
+    n.mesh.material.transparent=!vis;
+  });
+}
+
+/* ── MODE ── */
+function setMode(mode,el){
+  viewMode=mode;
+  document.querySelectorAll('.mchip').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  stageGroupList.forEach(s=>s.g.visible=mode!=='web');
+  crowdMesh.visible=mode!=='web'&&mode!=='heat';
+  webGroup.visible=mode!=='map'&&mode!=='heat';
+  if(hmCanvas) hmCanvas.style.opacity=mode==='heat'?'1':'0';
+  if(mode==='web'){tgtPhi=1.0;sph.r=125;}
+  else if(mode==='map'){tgtPhi=.45;sph.r=92;}
+  else if(mode==='heat'){tgtPhi=.35;sph.r=88;}
+  else{tgtPhi=.78;sph.r=105;}
+}
+
+/* ── WALKING ETA (BFS path × walking speed) ── */
+// 1 Three.js unit ≈ 10 meters at LV Motor Speedway. Festival walking speed ≈ 1.0 m/s accounting for crowds.
+const UNIT_METERS=10, WALK_MPS=1.0;
+function userPosition(){
+  if(playerGroup&&playerGroup.visible)return {x:playerGroup.position.x,z:playerGroup.position.z,src:'your location'};
+  return {x:0,z:0,src:'festival centre'}; // default to centre waypoint
+}
+function walkingETA(toX,toZ){
+  const from=userPosition();
+  const fromWP=nearestWP(from.x,from.z), toWP=nearestWP(toX,toZ);
+  const path=findPath(fromWP.id,toWP.id);
+  // distance = from→fromWP + path segments + toWP→to
+  let d=Math.hypot(from.x-fromWP.x,from.z-fromWP.z);
+  for(let i=0;i<path.length-1;i++){d+=wpDist(wpMap[path[i]],wpMap[path[i+1]]);}
+  d+=Math.hypot(toX-toWP.x,toZ-toWP.z);
+  const meters=Math.round(d*UNIT_METERS);
+  const minutes=Math.max(1,Math.round(meters/WALK_MPS/60));
+  return {meters,minutes,src:from.src};
+}
+
+/* ── INFO PANEL ── */
+function showInfo(id){
+  selectedId=id;
+  const n=nodeMap2[id]; if(!n) return;
+  const panel=document.getElementById('info-panel');
+  const nameEl=document.getElementById('ip-name'),subEl=document.getElementById('ip-sub');
+  const bdEl=document.getElementById('ip-bd'),tgEl=document.getElementById('ip-tags');
+  const spEl=document.getElementById('ip-sp'),actsEl=document.getElementById('ip-acts');
+  const etaEl=document.getElementById('ip-eta');
+  etaEl.classList.remove('on'); etaEl.innerHTML='';
+  panel.style.display='block';
+  if(n.type==='festival'){
+    nameEl.textContent='EDC LAS VEGAS 2026'; nameEl.style.color='#f0c040';
+    subEl.textContent='30TH ANNIVERSARY'; subEl.style.color='#f0c040';
+    bdEl.textContent='May 15–17 · Las Vegas Motor Speedway · 9 stages · 200+ artists · 500k+ headliners';
+    tgEl.innerHTML=''; spEl.style.display='none'; actsEl.innerHTML='<button class="ip-btn btn-close" onclick="closeInfo()">✕ CLOSE</button>';
+  } else if(n.type==='stage'){
+    const st=n.data;
+    nameEl.textContent=st.name; nameEl.style.color=st.col;
+    subEl.textContent=st.genre.toUpperCase(); subEl.style.color=st.col;
+    bdEl.textContent=`Capacity: ${st.cap} · ${st.genre}`;
+    const eta=walkingETA(st.x,st.z);
+    etaEl.innerHTML=`🚶 ~${eta.minutes} min walk · ${eta.meters}m <span class="eta-src">from ${eta.src}</span>`;
+    etaEl.classList.add('on');
+    const arts=ARTISTS.filter(a=>a.s===st.id).slice(0,5);
+    tgEl.innerHTML=arts.map(a=>`<span class="ip-tag" style="background:${st.col}15;color:${st.col};border:1px solid ${st.col}30">${a.n}</span>`).join('');
+    spEl.style.display='none';
+    actsEl.innerHTML='<button class="ip-btn btn-close" onclick="closeInfo()">✕ CLOSE</button>';
+  } else {
+    const a=n.data; const gc=GC[a.g]||'#888'; const st=STAGES.find(s=>s.id===a.s);
+    nameEl.textContent=a.n; nameEl.style.color=gc;
+    subEl.textContent=TIER_LABELS[a.tier].toUpperCase()+' · '+'★'.repeat(a.tier); subEl.style.color=gc;
+    bdEl.textContent=`${st?st.name:a.s} · ${a.t} · ${a.d.toUpperCase()}`;
+    if(st){const eta=walkingETA(st.x,st.z);etaEl.innerHTML=`🚶 ~${eta.minutes} min walk to ${st.short} · ${eta.meters}m <span class="eta-src">from ${eta.src}</span>`;etaEl.classList.add('on');}
+    tgEl.innerHTML=`<span class="ip-tag" style="background:${gc}20;color:${gc};border:1px solid ${gc}35">${a.g.toUpperCase()}</span>`;
+    if(a.sp){spEl.style.display='block';document.getElementById('sp-track').textContent=a.sp;}
+    else spEl.style.display='none';
+    const inL=lineup.some(x=>x.id===a.id);
+    actsEl.innerHTML=`
+      <button class="ip-btn ${inL?'btn-added':'btn-add'}" id="ip-add-btn" onclick="toggleA('${a.id}')">${inL?'✓ ADDED':'+ ADD'}</button>
+      <button class="ip-btn btn-sp" onclick="spotifyPlay('${a.n.replace(/'/g,"\\'")}')" aria-label="Play on Spotify">♪ PLAY</button>
+      <button class="ip-btn btn-close" onclick="closeInfo()">✕</button>
+    `;
+  }
+}
+function closeInfo(){document.getElementById('info-panel').style.display='none';selectedId=null;}
+
+/* ── LINEUP ── */
+function toggleA(id){
+  const a=ARTISTS.find(x=>x.id===id); if(!a) return;
+  const idx=lineup.findIndex(x=>x.id===id);
+  if(idx>=0){lineup.splice(idx,1);toast('Removed: '+a.n);}
+  else{lineup.push(a);toast(a.n+' ★'.repeat(a.tier));}
+  updBadge(); renderLineup(); if(selectedId===id)showInfo(id);
+  updateNextSet();
+  if(typeof setVS==='function')setVS('lineup',lineup);
+  if(typeof scheduleAlerts==='function'&&alertsEnabled)scheduleAlerts();
+  if(typeof dismissOnboard==='function'&&document.getElementById('onboard')?.classList.contains('on'))dismissOnboard();
+}
+function updBadge(){document.getElementById('lbadge').textContent=lineup.length?` (${lineup.length})`:''; const bar=document.getElementById('lu-export-bar');if(bar)bar.style.display=lineup.length?'block':'none';}
+
+function exportICS(){
+  if(!lineup.length){toast('Add sets first');return;}
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=d=>d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+'T'+pad(d.getUTCHours())+pad(d.getUTCMinutes())+'00Z';
+  const now=new Date(), dtstamp=fmt(now);
+  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Vibestar//EDC LV 2026//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Vibestar · EDC LV 2026','X-WR-TIMEZONE:America/Los_Angeles'];
+  let skipped=0;
+  for(const a of lineup){
+    const t=setTimeMs(a); if(!t){skipped++;continue;}
+    const start=new Date(t), end=new Date(t+60*60*1000); // 60-min default set
+    const st=STAGES.find(s=>s.id===a.s);
+    const uid='vs-'+a.id+'-'+t+'@vibestar';
+    const summary=`${a.n} · ${st?st.name:a.s}`;
+    const desc=`Tier ${a.tier} · ${a.g}\\nSet time: ${a.t} ${a.d.toUpperCase()}\\nVibestar lineup · EDC Las Vegas 2026`;
+    const loc='Las Vegas Motor Speedway, 7000 N Las Vegas Blvd, Las Vegas NV';
+    lines.push('BEGIN:VEVENT',`UID:${uid}`,`DTSTAMP:${dtstamp}`,`DTSTART:${fmt(start)}`,`DTEND:${fmt(end)}`,`SUMMARY:${summary}`,`DESCRIPTION:${desc}`,`LOCATION:${loc}`,'BEGIN:VALARM','TRIGGER:-PT15M','ACTION:DISPLAY',`DESCRIPTION:${a.n} in 15 min`,'END:VALARM','END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  const blob=new Blob([lines.join('\r\n')],{type:'text/calendar;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a'); link.href=url; link.download='vibestar-edc-2026.ics'; document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast(skipped?`📅 Exported ${lineup.length-skipped} sets (${skipped} skipped)`:`📅 Exported ${lineup.length} sets`);
+}
+function renderLineup(){
+  const cont=document.getElementById('lu-content');
+  document.getElementById('s1').textContent=lineup.length;
+  document.getElementById('s2').textContent=[...new Set(lineup.map(a=>a.s))].length;
+  document.getElementById('s3').textContent=[...new Set(lineup.map(a=>a.g))].length;
+  const conflicts=[];
+  for(let i=0;i<lineup.length;i++)for(let j=i+1;j<lineup.length;j++)
+    if(lineup[i].d===lineup[j].d&&lineup[i].t===lineup[j].t)conflicts.push(lineup[i].n+' vs '+lineup[j].n);
+  document.getElementById('s4').textContent=conflicts.length;
+  const cb=document.getElementById('cbar');
+  if(conflicts.length){cb.style.display='block';cb.textContent='⚠ Conflicts: '+conflicts.join(' · ');}
+  else cb.style.display='none';
+  if(!lineup.length){cont.innerHTML='<div class="lu-empty"><div style="font-size:32px;opacity:.15;margin-bottom:10px">✦</div><div style="font-family:Orbitron,sans-serif;font-size:11px;letter-spacing:2px">LINEUP EMPTY</div><div style="font-size:11px;margin-top:8px">Tap any artist node on the map to add</div></div>';return;}
+  const dl={fri:'Friday May 15',sat:'Saturday May 16',sun:'Sunday May 17'};
+  cont.innerHTML='<div class="lu-grid">'+lineup.map(a=>{
+    const gc=GC[a.g]||'#888';const st=STAGES.find(x=>x.id===a.s);
+    return`<div class="lu-card"><div class="lu-av" style="background:${gc}18;color:${gc};border-color:${gc}44">${a.n.substring(0,2).toUpperCase()}</div><div class="lu-info"><div class="lu-aname">${a.n}</div><div class="lu-detail">${a.t} · ${st?st.name:a.s}</div></div><button class="lu-rm" onclick="toggleA('${a.id}')">✕</button></div>`;
+  }).join('')+'</div>';
+}
+
+/* ── TABS ── */
+function goTab(id,el){
+  document.querySelectorAll('.ntab').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on'); document.getElementById('p-'+id).classList.add('on');
+  if(id==='lineup')renderLineup();
+}
+
+/* ── LIVE BAR ── */
+const liveArts=['Charlotte de Witte · neonGARDEN','Tiësto · circuitGROUNDS','Martin Garrix · kineticFIELD','Excision · bassPOD','The Prodigy · cosmicMEADOW','Angerfist · wasteLAND','Above & Beyond · quantumVALLEY','Noizu · stereoBLOOM'];
+let liveIdx=0;
+const liveEl=document.getElementById('live-art'); liveEl.style.transition='opacity .3s';
+setInterval(()=>{liveEl.style.opacity='0';setTimeout(()=>{liveIdx=(liveIdx+1)%liveArts.length;liveEl.textContent=liveArts[liveIdx];liveEl.style.opacity='1';},320);},3800);
+
+/* ── SURVIVAL ── */
+function drinkWater(){hydrateLevel=Math.min(100,hydrateLevel+30);hydrateLast=Date.now();updateSurvival();toast('💧 Hydration boosted!');if(typeof setVS==='function'){setVS('hydrateLevel',hydrateLevel);setVS('hydrateLast',hydrateLast);}}
+function resetFeet(){feetStart=Date.now();updateSurvival();toast('😮‍💨 Rest timer reset!');if(typeof setVS==='function')setVS('feetStart',feetStart);}
+function updateSurvival(){
+  const mins=Math.floor((Date.now()-hydrateLast)/60000);
+  hydrateLevel=Math.max(0,100-mins*4);
+  const hv=document.getElementById('hydrate-val'),hf=document.getElementById('hydrate-fill'),hs=document.getElementById('hydrate-sub');
+  if(hv){hv.textContent=Math.round(hydrateLevel)+'%';hv.style.color=hydrateLevel>60?'#38bdf8':hydrateLevel>30?'#f0c040':'#f87171';hf.style.width=hydrateLevel+'%';hf.style.background=hydrateLevel>60?'linear-gradient(90deg,#38bdf8,#34d399)':hydrateLevel>30?'linear-gradient(90deg,#f0c040,#fb923c)':'#f87171';hs.textContent=hydrateLevel>60?'Hydrated!':hydrateLevel>30?'Drink soon':'DRINK NOW!';}
+  const feetMins=Math.floor((Date.now()-feetStart)/60000);
+  const fv=document.getElementById('feet-val'),fs=document.getElementById('feet-sub');
+  if(fv){fv.textContent=Math.floor(feetMins/60)+':'+(feetMins%60).toString().padStart(2,'0');fv.style.color=feetMins<90?'#34d399':feetMins<120?'#f0c040':'#f87171';fs.textContent=feetMins<90?'Good! Keep moving':feetMins<120?'Consider a break soon':'Time to rest!';}
+  // Night progress
+  const np=document.getElementById('night-prog');
+  if(np){const now=new Date();const h=now.getHours(),m=now.getMinutes();const totalMins=(h>=22?((h-22)*60+m):((h+2)*60+m));const pct=Math.min(100,Math.max(0,Math.round(totalMins/(7.5*60)*100)));np.textContent=pct+'%';}
+}
+function updateNextSet(){
+  const ns=document.getElementById('next-set-time'),nn=document.getElementById('next-set-name');
+  if(!ns)return;
+  if(!lineup.length){ns.textContent='—';nn.textContent='Add sets to your lineup';return;}
+  const timeOrder=['10PM','11PM','12AM','1AM','2AM','3AM','4AM','5AM'];
+  const sorted=[...lineup].sort((a,b)=>timeOrder.indexOf(a.t)-timeOrder.indexOf(b.t));
+  const next=sorted[0];
+  if(next){ns.textContent=next.t;nn.textContent=next.n+' · '+next.d.toUpperCase();}
+}
+setInterval(updateSurvival,30000); updateSurvival();
+
+/* ── FRIENDS ── */
+function genCode(){return Math.random().toString(36).substring(2,8).toUpperCase();}
+const myCode=localStorage.getItem('vs_code')||genCode();
+localStorage.setItem('vs_code',myCode);
+document.getElementById('my-code').textContent=myCode;
+
+const DEMO_FRIENDS=[
+  {name:'Alex',loc:'kineticFIELD',dist:'320m',col:'#38bdf8'},
+  {name:'Maya',loc:'neonGARDEN',dist:'580m',col:'#f472b6'},
+  {name:'Jordan',loc:'bassPOD',dist:'210m',col:'#fb923c'},
+];
+function renderFriends(){
+  document.getElementById('friends-list').innerHTML=DEMO_FRIENDS.map(f=>`
+    <div class="friend-item">
+      <div class="friend-av" style="background:${f.col}18;color:${f.col};border:2px solid ${f.col}44">${f.name.substring(0,2).toUpperCase()}</div>
+      <div class="friend-info"><div class="friend-name">${f.name}</div><div class="friend-loc">${f.loc}</div></div>
+      <div class="friend-dist" style="color:${f.col}">${f.dist}</div>
+    </div>
+  `).join('');
+}
+renderFriends();
+function copyCode(){navigator.clipboard?.writeText(myCode);toast('Code copied: '+myCode);}
+function joinFriend(){
+  const v=document.getElementById('join-input').value.trim().toUpperCase();
+  if(!v||v.length<4){toast('Enter a valid code');return;}
+  toast('Friend '+v+' added!');
+  document.getElementById('join-input').value='';
+}
+
+/* ── AI ASSISTANT ── */
+async function askAI(question){
+  const input=document.getElementById('ai-input'); input.value=question; sendAI();
+}
+async function sendAI(){
+  const input=document.getElementById('ai-input');
+  const q=input.value.trim(); if(!q) return;
+  input.value='';
+  const msgs=document.getElementById('ai-msgs');
+  msgs.innerHTML+=`<div class="ai-msg user">${q}</div>`;
+  msgs.innerHTML+=`<div class="ai-msg typing" id="typing-msg"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+  msgs.scrollTop=msgs.scrollHeight;
+
+  const lineupText=lineup.length?lineup.map(a=>`${a.n} at ${a.t} (${a.s})`).join(', '):'No sets added yet';
+  const systemPrompt=`You are the Vibestar AI guide for EDC Las Vegas 2026. You know everything about the festival. Be fun, enthusiastic, and concise. Use emojis occasionally. Current user lineup: ${lineupText}. 
+
+Key facts: EDC Las Vegas 2026 runs May 15-17 at Las Vegas Motor Speedway. Stages: kineticFIELD (mainstage - Martin Garrix, Kaskade, FISHER, Zedd, The Chainsmokers), circuitGROUNDS (house/techno - Tiësto, Solomun, Chris Stussy), cosmicMEADOW (multi-genre - Underworld, The Prodigy, Seven Lions), neonGARDEN (techno - Charlotte de Witte, Peggy Gou, Joseph Capriati), bassPOD (bass/dubstep - Excision, Subtronics, ATLiens), wasteLAND (hardstyle - Angerfist, Sub Zero Project), quantumVALLEY (trance - Above & Beyond sunrise set, Paul van Dyk, Gareth Emery), stereoBLOOM (house - Noizu, Wax Motif), bionicJUNGLE (deep house). Gates open 5PM Fri, 7PM Sat/Sun. Festival runs until 5:30AM. Tickets sold out. Keep answers under 120 words.`;
+
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:200,
+        system:systemPrompt,
+        messages:[{role:'user',content:q}]
+      })
+    });
+    const data=await resp.json();
+    document.getElementById('typing-msg')?.remove();
+    const reply=data.content?.[0]?.text||'Sorry, something went wrong. Try again!';
+    msgs.innerHTML+=`<div class="ai-msg ai">${reply.replace(/\n/g,'<br>')}</div>`;
+  }catch(e){
+    document.getElementById('typing-msg')?.remove();
+    msgs.innerHTML+=`<div class="ai-msg ai">🤖 AI guide is offline right now — but I know EDC inside out! Ask me about stages, artists, or tips and I'll answer from memory.</div>`;
+  }
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+/* ── CAMERA ── */
+let isDrag=false,pM={x:0,y:0};
+let sph={t:.4,p:.78,r:105},tgtPhi=.78;
+let tgtT=.4,autoRot=true;
+
+canvas.addEventListener('mousedown',e=>{isDrag=true;autoRot=false;pM={x:e.clientX,y:e.clientY};});
+window.addEventListener('mouseup',()=>isDrag=false);
+canvas.addEventListener('mousemove',e=>{
+  if(isDrag){tgtT-=(e.clientX-pM.x)*.005;tgtPhi=Math.max(.12,Math.min(1.48,tgtPhi+(e.clientY-pM.y)*.005));pM={x:e.clientX,y:e.clientY};}
+  doHover(e.clientX,e.clientY);
+});
+canvas.addEventListener('wheel',e=>{sph.r=Math.max(18,Math.min(190,sph.r+e.deltaY*.09));autoRot=false;e.preventDefault();},{passive:false});
+canvas.addEventListener('click',e=>doClick(e.clientX,e.clientY));
+canvas.addEventListener('touchstart',e=>{isDrag=true;autoRot=false;const t=e.touches[0];pM={x:t.clientX,y:t.clientY};},{passive:true});
+canvas.addEventListener('touchmove',e=>{if(!isDrag)return;const t=e.touches[0];tgtT-=(t.clientX-pM.x)*.005;tgtPhi=Math.max(.12,Math.min(1.48,tgtPhi+(t.clientY-pM.y)*.005));pM={x:t.clientX,y:t.clientY};},{passive:true});
+canvas.addEventListener('touchend',e=>{isDrag=false;if(e.changedTouches.length){const t=e.changedTouches[0];doClick(t.clientX,t.clientY);}});
+
+function zIn(){sph.r=Math.max(18,sph.r-16);}
+function zOut(){sph.r=Math.min(190,sph.r+16);}
+function resetCam(){tgtT=.4;tgtPhi=.78;sph.r=105;autoRot=true;closeInfo();}
+function toggleTilt(){tgtPhi=tgtPhi<.4?.78:.28;}
+
+const ray=new THREE.Raycaster(),mn=new THREE.Vector2();
+function getNDC(cx,cy){const r=canvas.getBoundingClientRect();mn.x=((cx-r.left)/r.width)*2-1;mn.y=-((cy-r.top)/r.height)*2+1;}
+function getHits(cx,cy){getNDC(cx,cy);ray.setFromCamera(mn,camera);const tgts=[...hitTargets.map(h=>h.mesh)];if(viewMode!=='web')tgts.push(...stageMeshList);return ray.intersectObjects(tgts);}
+let hovered2=null;
+function doHover(cx,cy){
+  const hits=getHits(cx,cy);
+  if(hits.length){canvas.style.cursor='pointer';const hm=hits[0].object;const we=hitTargets.find(x=>x.mesh===hm);if(we&&we.id!==hovered2){hovered2=we.id;}}
+  else{canvas.style.cursor='grab';hovered2=null;}
+}
+function doClick(cx,cy){
+  const hits=getHits(cx,cy);if(!hits.length){closeInfo();return;}
+  const hm=hits[0].object;
+  const we=hitTargets.find(x=>x.mesh===hm);
+  if(we){showInfo(we.id);flyTo(nodeMap2[we.id]?.pos);return;}
+  const se=stageGroupList.find(s=>s.body===hm);
+  if(se)showInfo(se.st.id+'_web');
+}
+function flyTo(pos){if(!pos)return;sph.r=48;tgtT=Math.atan2(pos.x,pos.z)+.25;tgtPhi=.9;autoRot=false;}
+
+/* ── TOAST ── */
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2400);}
+
+/* ══════════════════════════════════════════════════
+   PERSISTENCE — IndexedDB key/value for user state
+   ══════════════════════════════════════════════════ */
+const IDB_NAME='vibestar', IDB_STORE='kv';
+let _dbPromise=null;
+function openDB(){
+  if(_dbPromise)return _dbPromise;
+  _dbPromise=new Promise((res,rej)=>{
+    const req=indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded=e=>{const db=e.target.result; if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE);};
+    req.onsuccess=e=>res(e.target.result);
+    req.onerror=e=>rej(e.target.error);
+  });
+  return _dbPromise;
+}
+async function getVS(key){
+  try{const db=await openDB();return await new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readonly');const r=tx.objectStore(IDB_STORE).get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+  catch(e){console.warn('[vs] getVS fail',key,e);return undefined;}
+}
+async function setVS(key,val){
+  try{const db=await openDB();return await new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+  catch(e){console.warn('[vs] setVS fail',key,e);}
+}
+async function hydrateFromDB(){
+  const [ln,hl,hlt,fst]=await Promise.all([getVS('lineup'),getVS('hydrateLevel'),getVS('hydrateLast'),getVS('feetStart')]);
+  if(Array.isArray(ln)&&ln.length){lineup=ln;updBadge();if(document.getElementById('p-lineup').classList.contains('on'))renderLineup();updateNextSet();}
+  if(typeof hl==='number')hydrateLevel=hl;
+  if(typeof hlt==='number')hydrateLast=hlt;
+  if(typeof fst==='number')feetStart=fst;
+  updateSurvival();
+}
+hydrateFromDB();
+
+/* ══════════════════════════════════════════════════
+   SET-TIME ALERTS — local Notification scheduler
+   ══════════════════════════════════════════════════ */
+const FEST_DAYS={fri:new Date(2026,4,15),sat:new Date(2026,4,16),sun:new Date(2026,4,17)};
+const ALERT_LEAD_MS=15*60*1000; // 15 min before set
+const pendingTimers=new Map(); // artistId -> timeoutId
+let alertsEnabled=false;
+
+function setTimeMs(artist){
+  const base=FEST_DAYS[artist.d]; if(!base)return null;
+  const m=artist.t.match(/^(\d{1,2})(AM|PM)$/i); if(!m)return null;
+  let h=parseInt(m[1]); const pm=m[2].toUpperCase()==='PM';
+  if(h===12&&!pm)h=0; else if(pm&&h!==12)h+=12;
+  const d=new Date(base);
+  if(!pm&&h<12)d.setDate(d.getDate()+1); // AM hours = next calendar day
+  d.setHours(h,0,0,0);
+  return d.getTime();
+}
+
+function clearAllTimers(){for(const id of pendingTimers.values())clearTimeout(id); pendingTimers.clear();}
+
+function scheduleAlerts(){
+  clearAllTimers();
+  if(!alertsEnabled)return 0;
+  if(!('Notification' in window)||Notification.permission!=='granted')return 0;
+  const now=Date.now(); let scheduled=0;
+  for(const a of lineup){
+    const t=setTimeMs(a); if(!t)continue;
+    const when=t-ALERT_LEAD_MS-now;
+    if(when<=0)continue;
+    const tid=setTimeout(()=>{
+      const st=STAGES.find(s=>s.id===a.s);
+      try{new Notification(`${a.n} in 15 min`,{body:`${a.t} at ${st?st.name:a.s}`,icon:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><polygon points="16,2 20,12 30,12 22,19 26,30 16,23 6,30 10,19 2,12 12,12" fill="%23f0c040"/></svg>',tag:'vs-'+a.id});}catch(e){}
+      pendingTimers.delete(a.id);
+    },when);
+    pendingTimers.set(a.id,tid);
+    scheduled++;
+  }
+  updateAlertsUI(scheduled);
+  return scheduled;
+}
+
+function updateAlertsUI(count){
+  const btn=document.getElementById('alerts-toggle-btn');
+  const st=document.getElementById('alerts-status'); if(!btn||!st)return;
+  const perm=('Notification' in window)?Notification.permission:'unsupported';
+  if(perm==='unsupported'){btn.textContent='NOT SUPPORTED';btn.disabled=true;btn.style.opacity=.5;st.textContent='Your browser blocks notifications.';return;}
+  if(perm==='denied'){btn.textContent='BLOCKED';btn.style.background='transparent';btn.style.color='#f87171';btn.style.borderColor='#f87171';st.textContent='Notifications blocked. Enable in browser settings to turn on alerts.';return;}
+  if(alertsEnabled&&perm==='granted'){btn.textContent='ALERTS ON';btn.style.background='transparent';btn.style.color='var(--gold)';btn.style.borderColor='var(--gold)';st.textContent=count>0?`${count} upcoming set alert${count===1?'':'s'} scheduled. Keep this tab open or install the PWA.`:(lineup.length?'Add future sets to your lineup to schedule alerts.':'Your lineup is empty — tap artists on the map to add.');return;}
+  btn.textContent='TURN ON ALERTS';btn.style.background='var(--gold)';btn.style.color='#000';btn.style.borderColor='var(--gold)';st.textContent='Get a buzz 15 min before every set in your lineup.';
+}
+
+async function toggleAlerts(){
+  if(!('Notification' in window)){toast('Notifications not supported');return;}
+  if(alertsEnabled){alertsEnabled=false;clearAllTimers();await setVS('alertsEnabled',false);updateAlertsUI(0);toast('🔕 Alerts off');return;}
+  let perm=Notification.permission;
+  if(perm==='default'){perm=await Notification.requestPermission();}
+  if(perm!=='granted'){updateAlertsUI(0);toast('Notifications blocked');return;}
+  alertsEnabled=true;await setVS('alertsEnabled',true);
+  const n=scheduleAlerts();
+  toast(n>0?`🔔 ${n} alert${n===1?'':'s'} scheduled`:'🔔 Alerts on — add sets to your lineup');
+}
+
+function testAlert(){
+  if(!('Notification' in window)){toast('Notifications not supported');return;}
+  (async()=>{
+    let perm=Notification.permission;
+    if(perm==='default')perm=await Notification.requestPermission();
+    if(perm!=='granted'){toast('Allow notifications to test');return;}
+    setTimeout(()=>{try{new Notification('Vibestar test alert 🎉',{body:'Real set-time alerts will look just like this — 15 min before each set.',tag:'vs-test'});}catch(e){}},5000);
+    toast('🔔 Test alert in 5 seconds…');
+  })();
+}
+
+(async()=>{
+  const saved=await getVS('alertsEnabled');
+  if(saved&&('Notification' in window)&&Notification.permission==='granted'){alertsEnabled=true;scheduleAlerts();}
+  else updateAlertsUI(0);
+})();
+
+/* ══════════════════════════════════════════════════
+   WEATHER — Open-Meteo (no key, no auth, offline-cached)
+   ══════════════════════════════════════════════════ */
+const LVMS_LAT=36.2726, LVMS_LNG=-115.0117;
+function uvLabel(uv){if(uv>=11)return'extreme';if(uv>=8)return'very high';if(uv>=6)return'high';if(uv>=3)return'moderate';return'low';}
+function renderWeather(w){
+  const body=document.getElementById('weather-body'); if(!body)return;
+  if(!w){body.innerHTML='<span style="color:#f87171">Weather unavailable offline.</span>';return;}
+  const t=Math.round(w.temperature_2m),app=Math.round(w.apparent_temperature);
+  const uv=typeof w.uv_index==='number'?w.uv_index.toFixed(1):'—';
+  const wind=Math.round(w.wind_speed_10m);
+  const rainIcon=w.rain>0?'🌧':(w.is_day?'☀':'🌙');
+  body.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:28px">${rainIcon}</span><div><div style="font-family:Orbitron,sans-serif;font-size:22px;color:var(--text);line-height:1">${t}°F</div><div style="font-size:10px">feels like ${app}°F · wind ${wind} mph</div></div></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px"><span>☀ <strong style="color:${uv>=8?'#f87171':uv>=6?'#f0c040':'var(--text)'}">UV ${uv}</strong> <span style="color:var(--muted);font-size:10px">(${uvLabel(+uv||0)})</span></span>${w.sunrise?`<span>🌅 ${w.sunrise}</span>`:''}${w.sunset?`<span>🌇 ${w.sunset}</span>`:''}</div>
+    ${w.stale?'<div style="margin-top:6px;font-size:10px;color:var(--muted)">Offline · last updated '+new Date(w.ts).toLocaleTimeString()+'</div>':''}`;
+}
+async function fetchWeather(){
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${LVMS_LAT}&longitude=${LVMS_LNG}&current=temperature_2m,apparent_temperature,is_day,rain,wind_speed_10m,uv_index&daily=sunrise,sunset&timezone=America%2FLos_Angeles&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
+    const resp=await fetch(url); if(!resp.ok)throw new Error('http '+resp.status);
+    const j=await resp.json();
+    const timeFmt=s=>{const d=new Date(s);return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});};
+    const w={...j.current,sunrise:j.daily?.sunrise?.[0]?timeFmt(j.daily.sunrise[0]):null,sunset:j.daily?.sunset?.[0]?timeFmt(j.daily.sunset[0]):null,ts:Date.now()};
+    renderWeather(w);
+    if(typeof setVS==='function')setVS('weather',w);
+  }catch(e){
+    const cached=typeof getVS==='function'?await getVS('weather'):null;
+    if(cached){cached.stale=true;renderWeather(cached);}else renderWeather(null);
+  }
+}
+fetchWeather();
+setInterval(fetchWeather,30*60*1000); // refresh every 30 min
+
+/* ══════════════════════════════════════════════════
+   RIDESHARE DEEP LINKS — Uber, Lyft, Waze
+   ══════════════════════════════════════════════════ */
+function openRide(provider){
+  const lat=LVMS_LAT, lng=LVMS_LNG;
+  const urls={
+    uber:`https://m.uber.com/ul/?action=setPickup&pickup=my_location`,
+    lyft:`https://lyft.com/ride?id=lyft&pickup=${lat},${lng}`,
+    waze:`https://www.waze.com/ul?ll=${lat},${lng}&navigate=yes`
+  };
+  const url=urls[provider]; if(!url)return;
+  window.open(url,'_blank','noopener');
+  toast('Opening '+provider.charAt(0).toUpperCase()+provider.slice(1)+'…');
+}
+
+/* ══════════════════════════════════════════════════
+   SHARE MY LOCATION — native Web Share + SMS fallback
+   ══════════════════════════════════════════════════ */
+function currentShareCoords(){
+  if(playerGroup&&playerGroup.visible){
+    // Best-effort: invert affine projection — for v1, just share festival gate coords
+    return {lat:LVMS_LAT,lng:LVMS_LNG,label:'at EDC Las Vegas (near my position)'};
+  }
+  return {lat:LVMS_LAT,lng:LVMS_LNG,label:'at EDC Las Vegas Motor Speedway'};
+}
+async function shareLocation(){
+  const c=currentShareCoords();
+  const mapsUrl=`https://maps.google.com/?q=${c.lat},${c.lng}`;
+  const msg=`Find me ${c.label} — ${mapsUrl}`;
+  if(navigator.share){
+    try{await navigator.share({title:'My Vibestar location',text:msg,url:mapsUrl});toast('📍 Location shared');return;}
+    catch(e){if(e.name!=='AbortError')console.warn(e);}
+  }
+  try{await navigator.clipboard.writeText(msg);toast('📍 Location link copied');}
+  catch(e){prompt('Copy this to share your location:',msg);}
+}
+async function shareSquadMsg(){
+  const code=document.getElementById('my-code')?.textContent||'';
+  const msg=`Join my Vibestar squad at EDC! Code: ${code}`;
+  if(navigator.share){try{await navigator.share({title:'Vibestar squad',text:msg});toast('Squad code shared');return;}catch(e){if(e.name!=='AbortError')console.warn(e);}}
+  try{await navigator.clipboard.writeText(msg);toast('Squad message copied');}
+  catch(e){prompt('Copy this:',msg);}
+}
+
+/* ══════════════════════════════════════════════════
+   SPOTIFY — PKCE OAuth + preview player + playlist
+   ══════════════════════════════════════════════════ */
+const SP_CID='spotifyClientId', SP_TOK='spotifyToken', SP_VER='spotifyVerifier';
+function spRand(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a,b=>('0'+b.toString(16)).slice(-2)).join('').slice(0,n);}
+async function spSha256(s){const b=new TextEncoder().encode(s);const h=await crypto.subtle.digest('SHA-256',b);return btoa(String.fromCharCode(...new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function spRedirectUri(){return location.origin+location.pathname;}
+
+async function spotifyConnect(){
+  let cid=await getVS(SP_CID);
+  if(!cid){
+    cid=prompt('Paste your Spotify Client ID.\n\n1. Go to developer.spotify.com/dashboard\n2. Create app\n3. Redirect URI: '+spRedirectUri()+'\n4. Copy Client ID and paste below');
+    if(!cid)return;
+    cid=cid.trim(); await setVS(SP_CID,cid);
+  }
+  const verifier=spRand(64);
+  await setVS(SP_VER,verifier);
+  const challenge=await spSha256(verifier);
+  const scope='user-read-private playlist-modify-private playlist-modify-public user-read-email';
+  const url=`https://accounts.spotify.com/authorize?client_id=${encodeURIComponent(cid)}&response_type=code&redirect_uri=${encodeURIComponent(spRedirectUri())}&code_challenge_method=S256&code_challenge=${challenge}&scope=${encodeURIComponent(scope)}`;
+  location.href=url;
+}
+
+async function spotifyHandleCallback(){
+  const params=new URLSearchParams(location.search);
+  const code=params.get('code'), err=params.get('error');
+  if(err){toast('Spotify error: '+err); history.replaceState({},'',location.pathname); return;}
+  if(!code)return;
+  const [cid,verifier]=await Promise.all([getVS(SP_CID),getVS(SP_VER)]);
+  if(!cid||!verifier){history.replaceState({},'',location.pathname); return;}
+  try{
+    const resp=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:spRedirectUri(),client_id:cid,code_verifier:verifier})});
+    const j=await resp.json();
+    if(j.access_token){
+      await setVS(SP_TOK,{access:j.access_token,refresh:j.refresh_token,exp:Date.now()+j.expires_in*1000});
+      toast('✓ Spotify connected!');
+    } else toast('Spotify auth failed');
+  }catch(e){toast('Spotify auth error');}
+  history.replaceState({},'',location.pathname);
+}
+
+async function spotifyToken(){
+  const t=await getVS(SP_TOK); if(!t)return null;
+  if(t.exp-Date.now()>60000)return t.access;
+  const cid=await getVS(SP_CID); if(!cid)return null;
+  try{
+    const resp=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:t.refresh,client_id:cid})});
+    const j=await resp.json();
+    if(j.access_token){t.access=j.access_token;t.exp=Date.now()+j.expires_in*1000;if(j.refresh_token)t.refresh=j.refresh_token;await setVS(SP_TOK,t);return t.access;}
+  }catch(e){}
+  return null;
+}
+
+async function spotifyPlay(artistName){
+  const tok=await spotifyToken();
+  if(!tok){
+    // No token yet — deep-link to Spotify search; works for free + premium
+    window.open('https://open.spotify.com/search/'+encodeURIComponent(artistName),'_blank','noopener');
+    toast('Opening Spotify…');
+    return;
+  }
+  toast('🎵 Finding '+artistName+'…');
+  try{
+    const r=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"'+artistName+'"')}&type=track&limit=1`,{headers:{Authorization:'Bearer '+tok}});
+    const j=await r.json();
+    const t=j.tracks?.items?.[0];
+    const url=t?.external_urls?.spotify||('https://open.spotify.com/search/'+encodeURIComponent(artistName));
+    window.open(url,'_blank','noopener');
+    toast('▶ '+(t?.name||artistName)+' on Spotify');
+  }catch(e){
+    window.open('https://open.spotify.com/search/'+encodeURIComponent(artistName),'_blank','noopener');
+    toast('Opening Spotify…');
+  }
+}
+
+async function spotifyCreatePlaylist(){
+  if(!lineup.length){toast('Add sets to your lineup first');return;}
+  const tok=await spotifyToken(); if(!tok){toast('Connect Spotify first');return;}
+  const btn=document.getElementById('spotify-btn'); const orig=btn?.textContent;
+  if(btn){btn.textContent='BUILDING…';btn.disabled=true;}
+  try{
+    const me=await fetch('https://api.spotify.com/v1/me',{headers:{Authorization:'Bearer '+tok}}).then(r=>r.json());
+    if(!me.id)throw new Error('no user');
+    const pl=await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({name:'My EDC LV 2026 Lineup',description:'Generated by Vibestar · '+lineup.length+' sets',public:false})}).then(r=>r.json());
+    const uris=[];
+    for(const a of lineup){
+      try{
+        const r=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"'+a.n+'"')}&type=track&limit=1`,{headers:{Authorization:'Bearer '+tok}}).then(r=>r.json());
+        const t=r.tracks?.items?.[0]; if(t?.uri)uris.push(t.uri);
+      }catch(e){}
+    }
+    if(uris.length){
+      // Spotify caps at 100 URIs per request
+      for(let i=0;i<uris.length;i+=100){
+        await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({uris:uris.slice(i,i+100)})});
+      }
+    }
+    toast(`🎵 Playlist created — ${uris.length}/${lineup.length} tracks`);
+    if(pl.external_urls?.spotify)window.open(pl.external_urls.spotify,'_blank','noopener');
+  }catch(e){toast('Playlist creation failed');}
+  if(btn){btn.textContent=orig||'✓ CREATE PLAYLIST';btn.disabled=false;}
+}
+
+async function spotifyDisconnect(){
+  await setVS(SP_TOK,null);
+  toast('Spotify disconnected');
+  updateSpotifyUI();
+}
+
+async function updateSpotifyUI(){
+  const t=await getVS(SP_TOK);
+  const btn=document.getElementById('spotify-btn'); if(!btn)return;
+  const dis=document.getElementById('spotify-disconnect');
+  if(t&&t.access){
+    btn.textContent='🎵 CREATE EDC PLAYLIST';
+    btn.onclick=spotifyCreatePlaylist;
+    btn.style.background='#1DB954'; btn.style.color='#000';
+    if(dis)dis.style.display='block';
+  } else {
+    btn.textContent='🎵 CONNECT SPOTIFY';
+    btn.onclick=spotifyConnect;
+    btn.style.background='transparent'; btn.style.color='#1DB954';
+    if(dis)dis.style.display='none';
+  }
+}
+(async()=>{await spotifyHandleCallback();updateSpotifyUI();})();
+
+/* ══════════════════════════════════════════════════
+   ONBOARDING — one-time coachmark for empty lineup
+   ══════════════════════════════════════════════════ */
+let _obTimer=null;
+async function maybeShowOnboard(){
+  const done=await getVS('onboarded');
+  if(done)return;
+  if(lineup.length>0){setVS('onboarded',true);return;}
+  const el=document.getElementById('onboard'); if(!el)return;
+  el.classList.add('on');
+  _obTimer=setTimeout(()=>dismissOnboard(),12000);
+}
+function dismissOnboard(){
+  const el=document.getElementById('onboard'); if(!el)return;
+  el.classList.remove('on');
+  if(_obTimer){clearTimeout(_obTimer);_obTimer=null;}
+  setVS('onboarded',true);
+}
+setTimeout(maybeShowOnboard,1200);
+
+/* ══════════════════════════════════════════════════
+   GPS OVERLAY — projects real GPS onto festival map
+   ══════════════════════════════════════════════════ */
+// Pre-calibrated anchors (Las Vegas Motor Speedway)
+const GPS_ANCHORS=[
+  {lat:36.2715,lng:-115.0128,mapX:0,   mapZ:-50}, // Entrance Gate P
+  {lat:36.2748,lng:-115.0115,mapX:0,   mapZ:-36}, // kineticFIELD
+  {lat:36.2735,lng:-115.0142,mapX:-29, mapZ:4  }, // cosmicMEADOW
+];
+// Solve affine transform: [mapX,mapZ] = M * [lat,lng,1] via 3-point Cramer
+function solveAffine(anchors){
+  const [a,b,c]=anchors;
+  const det=(a.lat*(b.lng-c.lng)-a.lng*(b.lat-c.lat)+(b.lat*c.lng-c.lat*b.lng));
+  const solve=(v1,v2,v3)=>{
+    const A=(v1*(b.lng-c.lng)-a.lng*(v2-v3)+(b.lng*v3-c.lng*v2))/det;
+    const B=(a.lat*(v2-v3)-v1*(b.lat-c.lat)+(b.lat*v3-c.lat*v2))/det;
+    const C=(a.lat*(b.lng*v3-c.lng*v2)-a.lng*(b.lat*v3-c.lat*v2)+v1*(b.lat*c.lng-c.lat*b.lng))/det;
+    return [A,B,C];
+  };
+  return {x:solve(a.mapX,b.mapX,c.mapX), z:solve(a.mapZ,b.mapZ,c.mapZ)};
+}
+const AFFINE=solveAffine(GPS_ANCHORS);
+function gpsToMap(lat,lng){
+  return {
+    x: AFFINE.x[0]*lat + AFFINE.x[1]*lng + AFFINE.x[2],
+    z: AFFINE.z[0]*lat + AFFINE.z[1]*lng + AFFINE.z[2]
+  };
+}
+
+let gpsWatch=null, lastGPS=null;
+function toggleGPS(){
+  if(gpsWatch){stopGPS();return;}
+  if(!navigator.geolocation){toast('GPS not supported on this device');return;}
+  document.getElementById('gps-lbl').textContent='GPS LOCATING…';
+  gpsWatch=navigator.geolocation.watchPosition(
+    pos=>{
+      const {latitude:lat,longitude:lng,accuracy}=pos.coords;
+      lastGPS={lat,lng,accuracy,ts:Date.now()};
+      const {x,z}=gpsToMap(lat,lng);
+      playerGroup.position.set(x,0,z);
+      playerGroup.visible=true;
+      const pill=document.getElementById('gps-pill');
+      pill.classList.add('live');
+      document.getElementById('gps-lbl').textContent='GPS · '+Math.round(accuracy)+'m';
+      try{localStorage.setItem('vs-gps',JSON.stringify(lastGPS));}catch(e){}
+    },
+    err=>{
+      document.getElementById('gps-lbl').textContent='GPS DENIED';
+      toast('GPS error: '+err.message);
+    },
+    {enableHighAccuracy:true,maximumAge:3000,timeout:15000}
+  );
+}
+function stopGPS(){
+  if(gpsWatch){navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;}
+  playerGroup.visible=false;
+  document.getElementById('gps-pill').classList.remove('live');
+  document.getElementById('gps-lbl').textContent='GPS OFF';
+}
+
+/* ── RECALIBRATE (manual "I'm at stage X") ── */
+function openRecal(){
+  const grid=document.getElementById('recal-grid');
+  grid.innerHTML=STAGES.map(st=>`<button class="recal-btn" style="color:${st.col};border-color:${st.col}66" onclick="recalTo('${st.id}')">${st.short}</button>`).join('');
+  document.getElementById('recal').style.display='block';
+}
+function closeRecal(){document.getElementById('recal').style.display='none';}
+function recalTo(id){
+  const st=STAGES.find(s=>s.id===id); if(!st)return;
+  playerGroup.position.set(st.x,0,st.z);
+  playerGroup.visible=true;
+  document.getElementById('gps-pill').classList.add('live');
+  document.getElementById('gps-lbl').textContent='MANUAL · '+st.short;
+  closeRecal();
+  toast('📍 Placed at '+st.name);
+}
+
+/* ══════════════════════════════════════════════════
+   PWA — Service Worker + Install Prompt
+   ══════════════════════════════════════════════════ */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW register failed',e));
+  });
+}
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); deferredPrompt=e;
+  if(!localStorage.getItem('vs-install-dismissed'))
+    document.getElementById('install-banner').classList.add('on');
+});
+function installPWA(){
+  if(!deferredPrompt){toast('Already installed or not supported');return;}
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(c=>{
+    if(c.outcome==='accepted')toast('🎉 Vibestar installed! Works offline.');
+    deferredPrompt=null;
+    document.getElementById('install-banner').classList.remove('on');
+  });
+}
+function dismissInstall(){
+  document.getElementById('install-banner').classList.remove('on');
+  localStorage.setItem('vs-install-dismissed','1');
+}
+window.addEventListener('appinstalled',()=>{toast('✨ Installed to home screen');document.getElementById('install-banner').classList.remove('on');});
+
+/* ── ANIMATION ── */
+let tick=0, batterySaver=false, _frame=0;
+const camLookAt=new THREE.Vector3(0,4,0);
+(function animate(){
+  requestAnimationFrame(animate);
+  _frame++;
+  // Battery saver: cap 3D at ~30fps (skip every other frame) and pause ambient motion
+  if(batterySaver&&(_frame&1))return;
+  tick+=.003;
+  if(autoRot&&!batterySaver)tgtT+=.0018;
+  sph.t+=(tgtT-sph.t)*.045;
+  sph.p+=(tgtPhi-sph.p)*.045;
+  const sp=Math.sin(sph.p);
+  camera.position.x=sph.r*sp*Math.sin(sph.t);
+  camera.position.y=sph.r*Math.cos(sph.p);
+  camera.position.z=sph.r*sp*Math.cos(sph.t);
+  camera.lookAt(camLookAt);
+  if(!batterySaver){
+    stagePL.forEach((pl,i)=>{pl.intensity=2.8+Math.sin(tick*1.8+i*.9)*1.8;});
+    Object.values(nodeMap2).forEach((n,i)=>{
+      if(n.type==='artist')n.mesh.position.y=n.pos.y+Math.sin(tick*1.1+i*.7)*.9;
+      else if(n.type==='festival'){n.mesh.position.y=28+Math.sin(tick*.8)*1.5;n.mesh.rotation.y=tick*.5;}
+    });
+    stageGroupList.forEach((s,i)=>{s.face.material.emissiveIntensity=.72+Math.sin(tick*2.2+i*1.1)*.3;});
+  }
+  if(playerGroup.visible){
+    const pp=(tick*2)%1; playerPulse.scale.set(1+pp*2,1+pp*2,1); playerPulse.material.opacity=.35*(1-pp);
+    playerDot.material.emissiveIntensity=1+Math.sin(tick*4)*.4;
+  }
+  if(!batterySaver&&viewMode!=='web')animateCrowd2();
+  if(viewMode==='heat')renderHeatmap();
+  renderer.render(scene,camera);
+})();
+
+async function toggleBattery(){
+  batterySaver=!batterySaver;
+  if(batterySaver)autoRot=false;
+  const btn=document.getElementById('battery-toggle-btn'),st=document.getElementById('battery-status');
+  if(batterySaver){btn.textContent='ON · SAVING BATTERY';btn.style.background='var(--green)';btn.style.color='#000';btn.style.borderColor='var(--green)';st.textContent='Battery saver active — animations paused, 30fps cap.';}
+  else{btn.textContent='TURN ON';btn.style.background='transparent';btn.style.color='var(--text)';btn.style.borderColor='var(--border)';st.textContent='Pauses crowd animation + auto-rotation, caps 3D at 30fps. Roughly +2–3 hrs phone life on festival day.';}
+  if(typeof setVS==='function')await setVS('batterySaver',batterySaver);
+  toast(batterySaver?'🔋 Battery saver ON':'🔋 Full quality');
+}
+(async()=>{const saved=await getVS('batterySaver');if(saved){batterySaver=true;autoRot=false;const btn=document.getElementById('battery-toggle-btn'),st=document.getElementById('battery-status');if(btn){btn.textContent='ON · SAVING BATTERY';btn.style.background='var(--green)';btn.style.color='#000';btn.style.borderColor='var(--green)';st.textContent='Battery saver active — animations paused, 30fps cap.';}}})();
+</script>
+</body>
+</html>
