@@ -1,8 +1,8 @@
 // Vibestar Service Worker — offline-first cache for EDC LV 2026
-const CACHE = 'vibestar-v1';
+const CACHE = 'vibestar-v2';
 const PRECACHE = [
   './',
-  './vibestar_edc2026.html',
+  './index.html',
   './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
   'https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@300;400;500;600&display=swap',
@@ -57,7 +57,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(req, clone));
         }
         return resp;
-      }).catch(() => caches.match('./vibestar_edc2026.html'));
+      }).catch(() => caches.match('./index.html'));
     })
   );
 });

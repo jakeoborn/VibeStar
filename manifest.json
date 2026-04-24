@@ -2,7 +2,7 @@
   "name": "Vibestar - EDC Las Vegas 2026",
   "short_name": "VIBESTAR",
   "description": "The world's most immersive festival companion. 3D live map, artist spider web, AI guide. Works offline.",
-  "start_url": "./vibestar_edc2026.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
