@@ -1,5 +1,53 @@
 // Home / "Today" screen — now playing + schedule preview
 
+// 1 map unit ≈ 1.8 min walk; matches map.jsx
+function stageWalkMinutes(fromId, toId) {
+  if (fromId === toId) return 0;
+  const a = STAGES.find(s => s.id === fromId), b = STAGES.find(s => s.id === toId);
+  if (!a || !b) return 0;
+  const d = Math.hypot(a.x - b.x, a.y - b.y);
+  return Math.max(2, Math.round(d * 1.8));
+}
+
+// What's playing at every stage right now (uses current NOW.time)
+function liveAcrossStages() {
+  const now = toNightMin(NOW.time);
+  return STAGES.map(s => {
+    const live = ARTISTS.find(a => {
+      if (a.stage !== s.id || a.day !== NOW.day) return false;
+      const start = toNightMin(a.start), end = toNightMin(a.end);
+      return now >= start && now < end;
+    });
+    return { stage: s, artist: live };
+  });
+}
+
+// Build Tonight's Plan: saved sets sorted by start, with prev-stage walk
+// times and "leave by" warnings when transitions would make you late.
+function buildTonightsPlan(state) {
+  const nowMin = toNightMin(NOW.time);
+  const sets = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(a => a && a.day === NOW.day)
+    .sort((x, y) => toNightMin(x.start) - toNightMin(y.start));
+
+  return sets.map((a, i) => {
+    const prev      = sets[i - 1];
+    const walk      = prev ? stageWalkMinutes(prev.stage, a.stage) : 0;
+    const startMin  = toNightMin(a.start);
+    const endMin    = toNightMin(a.end);
+    const minsUntil = startMin - nowMin;
+    const isLive    = nowMin >= startMin && nowMin < endMin;
+    const isPast    = nowMin >= endMin;
+    const leaveBy   = walk > 0 ? startMin - walk : null;
+    // Tight transition flag — only meaningful if previous set actually overlaps walk window
+    const prevEnd   = prev ? toNightMin(prev.end) : null;
+    const tight     = prev && walk > 0 && (startMin - prevEnd) < walk;
+    const conflict  = prev && overlaps(prev, a);
+    return { artist: a, prev, walk, minsUntil, isLive, isPast, leaveBy, tight, conflict };
+  });
+}
+
 function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
@@ -13,11 +61,10 @@ function HomeScreen({ state, setState }) {
   const progress = NOW.elapsedMin / totalMin;
   const minsLeft = totalMin - NOW.elapsedMin;
 
-  // Upcoming today for saved lineup
-  const savedToday = state.saved
-    .map(id => ARTISTS.find(a => a.id === id))
-    .filter(a => a && a.day === NOW.day && a.id !== NOW.currentArtistId)
-    .slice(0, 4);
+  // Up Next countdown derived from clock — was hardcoded "48 MIN"
+  const upNextMin = Math.max(0, toNightMin(next.start) - toNightMin(NOW.time));
+  const tonight   = buildTonightsPlan(state);
+  const liveStrip = liveAcrossStages();
 
   return (
     <Screen bg="var(--paper)">
@@ -151,7 +198,7 @@ function HomeScreen({ state, setState }) {
           <ArtistSwatch artist={next} size={48} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "var(--muted)" }}>
-              UP NEXT · IN 48 MIN
+              UP NEXT · {upNextMin > 0 ? `IN ${upNextMin} MIN` : "STARTING"}
             </div>
             <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, marginTop: 2 }}>
               {next.name}
@@ -167,32 +214,11 @@ function HomeScreen({ state, setState }) {
           }}>OPEN</button>
         </div>
 
-        {/* Your schedule */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-          <div className="serif" style={{ fontSize: 24, letterSpacing: -0.3 }}>
-            Your night, <span style={{ fontStyle: "italic" }}>mapped</span>
-          </div>
-          <button onClick={() => setState({ ...state, tab: "lineup" })} className="mono" style={{
-            background: "none", border: "none", fontSize: 10, letterSpacing: 1.2,
-            color: "var(--muted)", cursor: "pointer", textTransform: "uppercase",
-          }}>All →</button>
-        </div>
+        {/* LIVE ACROSS STAGES — what's on right now at every stage */}
+        <LiveAcrossStrip strip={liveStrip} setState={setState} state={state} />
 
-        {savedToday.length === 0 ? (
-          <div style={{
-            border: "1px dashed var(--line-2)", borderRadius: 14, padding: "20px 16px",
-            textAlign: "center",
-          }}>
-            <div className="serif" style={{ fontSize: 18, color: "var(--muted)", fontStyle: "italic" }}>
-              No sets saved for tonight
-            </div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 6 }}>
-              TAP + ON ANY ARTIST TO ADD
-            </div>
-          </div>
-        ) : savedToday.map(a => (
-          <SetRow key={a.id} artist={a} onClick={() => setState({ ...state, tab: "home", artist: a.id })} />
-        ))}
+        {/* TONIGHT'S PLAN — chronological saved sets with walking ETAs + leave-by */}
+        <TonightsPlan plan={tonight} setState={setState} state={state} />
 
         {/* Safety/info strip */}
         <div style={{
@@ -249,31 +275,184 @@ function HomeScreen({ state, setState }) {
   );
 }
 
-function SetRow({ artist, onClick }) {
-  const stage = STAGES.find(s => s.id === artist.stage);
+function LiveAcrossStrip({ strip, state, setState }) {
   return (
-    <div onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 12,
-      padding: "12px 4px",
-      borderBottom: "1px solid var(--line)",
-      cursor: "pointer",
-    }}>
-      <div className="mono" style={{
-        fontSize: 11, letterSpacing: 1, width: 44,
-        color: "var(--ink)",
-      }}>{artist.start}</div>
-      <div style={{
-        width: 3, alignSelf: "stretch", background: stage.color, borderRadius: 3,
-      }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="serif" style={{ fontSize: 20, lineHeight: 1.1 }}>{artist.name}</div>
-        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2 }}>
-          {stage.name.toUpperCase()} · {artist.genre.toUpperCase()}
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", fontWeight: 600 }}>
+          LIVE ACROSS STAGES
         </div>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--ember)" }}>
+          {strip.filter(s => s.artist).length}/{strip.length} ON
+        </span>
       </div>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.6" strokeLinecap="round">
-        <path d="M9 6 L15 12 L9 18" />
-      </svg>
+      <div className="no-scrollbar" style={{ display: "flex", gap: 7, overflowX: "auto", scrollbarWidth: "none", marginRight: -16, paddingRight: 16 }}>
+        {strip.map(({ stage, artist }) => (
+          <button
+            key={stage.id}
+            onClick={() => artist
+              ? setState({ ...state, tab: "home", artist: artist.id })
+              : setState({ ...state, tab: "map", focusStage: stage.id })}
+            style={{
+              flexShrink: 0, width: 132, textAlign: "left",
+              padding: "9px 11px", borderRadius: 13,
+              background: artist ? "var(--paper-2)" : "transparent",
+              border: `1px solid ${artist ? "var(--line)" : "var(--line-2)"}`,
+              borderLeft: `3px solid ${stage.color}`,
+              cursor: "pointer",
+              opacity: artist ? 1 : 0.55,
+            }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              {artist && (
+                <span style={{
+                  width: 6, height: 6, borderRadius: 6, background: stage.color,
+                  boxShadow: `0 0 0 3px ${stage.color}33`,
+                  animation: "pulse 1.6s ease-in-out infinite",
+                  flexShrink: 0,
+                }}/>
+              )}
+              <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: stage.color, fontWeight: 700 }}>
+                {stage.short}
+              </span>
+            </div>
+            <div className="serif" style={{
+              fontSize: 14, lineHeight: 1.1, marginTop: 4,
+              color: artist ? "var(--ink)" : "var(--muted)",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {artist ? artist.name : "Stage dark"}
+            </div>
+            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+              {artist ? `${artist.start}–${artist.end}` : stage.name.toUpperCase()}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TonightsPlan({ plan, state, setState }) {
+  const tightCount = plan.filter(p => p.tight || p.conflict).length;
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="serif" style={{ fontSize: 24, letterSpacing: -0.3 }}>
+          Tonight's <span style={{ fontStyle: "italic" }}>plan</span>
+        </div>
+        <button onClick={() => setState({ ...state, tab: "lineup" })} className="mono" style={{
+          background: "none", border: "none", fontSize: 10, letterSpacing: 1.2,
+          color: "var(--muted)", cursor: "pointer", textTransform: "uppercase",
+        }}>All →</button>
+      </div>
+
+      {plan.length === 0 ? (
+        <div style={{
+          border: "1px dashed var(--line-2)", borderRadius: 14, padding: "20px 16px",
+          textAlign: "center",
+        }}>
+          <div className="serif" style={{ fontSize: 18, color: "var(--muted)", fontStyle: "italic" }}>
+            No sets saved for tonight
+          </div>
+          <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 6 }}>
+            TAP + ON ANY ARTIST TO ADD
+          </div>
+        </div>
+      ) : (
+        <>
+          {tightCount > 0 && (
+            <div className="mono" style={{
+              fontSize: 9.5, letterSpacing: 1.3, color: "var(--ember)",
+              padding: "6px 10px", marginBottom: 10,
+              background: "rgba(232,93,46,0.07)", borderRadius: 8,
+              border: "1px solid rgba(232,93,46,0.2)",
+            }}>
+              ⚠ {tightCount} TIGHT TRANSITION{tightCount > 1 ? "S" : ""} · CHECK LEAVE-BY TIMES
+            </div>
+          )}
+          {plan.map(p => <PlanRow key={p.artist.id} entry={p} state={state} setState={setState} />)}
+        </>
+      )}
+    </>
+  );
+}
+
+function PlanRow({ entry, state, setState }) {
+  const { artist: a, prev, walk, minsUntil, isLive, isPast, leaveBy, tight, conflict } = entry;
+  const stage = STAGES.find(s => s.id === a.stage);
+  const leaveByLabel = leaveBy != null ? (() => {
+    const m = ((leaveBy % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const h = Math.floor(m / 60) % 24;
+    const mm = m % 60;
+    return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  })() : null;
+
+  return (
+    <div>
+      {/* Walking transition pill from previous set */}
+      {prev && walk > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "4px 0 4px 56px", marginBottom: 2,
+        }}>
+          <div style={{ width: 1, height: 18, background: tight ? "var(--ember)" : "var(--line-2)" }}/>
+          <span className="mono" style={{
+            fontSize: 9, letterSpacing: 1.2,
+            color: tight ? "var(--ember)" : "var(--muted)",
+            fontWeight: tight ? 700 : 500,
+          }}>
+            {walk} MIN WALK · {prev.stage === a.stage ? "SAME STAGE" : `${STAGES.find(s=>s.id===prev.stage).short} → ${stage.short}`}
+            {tight && leaveByLabel && ` · LEAVE BY ${leaveByLabel}`}
+          </span>
+        </div>
+      )}
+
+      {/* The set row */}
+      <div onClick={() => setState({ ...state, tab: "home", artist: a.id })}
+        style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "12px 4px",
+          borderBottom: "1px solid var(--line)",
+          cursor: "pointer",
+          opacity: isPast ? 0.45 : 1,
+          background: conflict ? "rgba(232,93,46,0.04)" : "transparent",
+        }}>
+        <div style={{ width: 44 }}>
+          <div className="mono" style={{
+            fontSize: 11, letterSpacing: 1,
+            color: isLive ? stage.color : "var(--ink)",
+            fontWeight: isLive ? 700 : 500,
+          }}>{a.start}</div>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)" }}>
+            {isLive ? "LIVE" : isPast ? "DONE" : minsUntil < 60 ? `${minsUntil}m` : `${Math.floor(minsUntil/60)}h${(minsUntil%60).toString().padStart(2,"0")}`}
+          </div>
+        </div>
+        <div style={{ width: 3, alignSelf: "stretch", background: stage.color, borderRadius: 3 }}/>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="serif" style={{ fontSize: 20, lineHeight: 1.1, textDecoration: isPast ? "line-through" : "none" }}>{a.name}</div>
+            {isLive && (
+              <span className="mono" style={{
+                fontSize: 8, letterSpacing: 1.3, color: "#fff", background: stage.color,
+                padding: "1px 5px", borderRadius: 3, fontWeight: 700,
+              }}>LIVE</span>
+            )}
+            {conflict && (
+              <span className="mono" style={{
+                fontSize: 8, letterSpacing: 1.3, color: "var(--ember)",
+                padding: "1px 5px", borderRadius: 3, fontWeight: 700,
+                border: "1px solid var(--ember)",
+              }}>CLASH</span>
+            )}
+          </div>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2 }}>
+            {stage.name.toUpperCase()} · {a.genre.toUpperCase()}
+          </div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.6" strokeLinecap="round">
+          <path d="M9 6 L15 12 L9 18" />
+        </svg>
+      </div>
     </div>
   );
 }

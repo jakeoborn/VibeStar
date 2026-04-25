@@ -166,8 +166,15 @@ function LineupScreen({ state, setState }) {
   );
 }
 
+// Treat times before 08:00 as "next day" so 23:00 < 01:30 etc. compares correctly.
+function toNightMin(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h < 8 ? h + 24 : h) * 60 + m;
+}
 function overlaps(a, b) {
-  return a.start < b.end && b.start < a.end;
+  const aS = toNightMin(a.start), aE = toNightMin(a.end);
+  const bS = toNightMin(b.start), bE = toNightMin(b.end);
+  return aS < bE && bS < aE;
 }
 
 function ConflictResolver({ conflicts, onKeep, onSplit }) {
@@ -272,4 +279,4 @@ function toggleSave(state, setState, id) {
   setState({ ...state, saved: has ? state.saved.filter(x => x !== id) : [...state.saved, id] });
 }
 
-Object.assign(window, { LineupScreen, toggleSave });
+Object.assign(window, { LineupScreen, toggleSave, toNightMin, overlaps });

@@ -264,8 +264,8 @@ const DAYS = [
 ];
 
 const NOW = {
-  currentArtistId: "k9",     // Kaskade at Kinetic Field
-  nextArtistId:    "k11",    // Porter Robinson up next
+  currentArtistId: "k11",    // Porter Robinson at Kinetic Field (22:00–23:15 Fri)
+  nextArtistId:    "k9",     // Kaskade up next at 23:15
   elapsedMin: 42,
   day: 1,
   time: "22:42",
