@@ -296,7 +296,47 @@ function MapScreen({ state, setState }) {
   const [chatFriend, setChatFriend] = React.useState(null);
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
-  const [iso, setIso] = React.useState(false);
+  // Compass mode — rotate the entire map so the user's facing direction is
+  // always "up". Uses DeviceOrientationEvent (with iOS permission gate).
+  const [compass, setCompass] = React.useState(false);
+  const [compassHeading, setCompassHeading] = React.useState(0);
+  const [compassStatus, setCompassStatus] = React.useState("off"); // off/locating/live/denied/unavailable
+
+  const enableCompass = React.useCallback(async () => {
+    if (typeof DeviceOrientationEvent === "undefined") {
+      setCompassStatus("unavailable"); return;
+    }
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      try {
+        const result = await DeviceOrientationEvent.requestPermission();
+        if (result !== "granted") { setCompassStatus("denied"); return; }
+      } catch { setCompassStatus("denied"); return; }
+    }
+    setCompassStatus("locating");
+    setCompass(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!compass) return;
+    const handler = (e) => {
+      let h = null;
+      // iOS Safari exposes calibrated true-north heading directly
+      if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
+      // Android Chrome / others: alpha is rotation around Z, with absolute=true
+      else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;
+      else if (e.alpha != null) h = (360 - e.alpha) % 360; // best effort
+      if (h != null) {
+        setCompassHeading(h);
+        setCompassStatus("live");
+      }
+    };
+    window.addEventListener("deviceorientationabsolute", handler);
+    window.addEventListener("deviceorientation", handler);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", handler);
+      window.removeEventListener("deviceorientation", handler);
+    };
+  }, [compass]);
 
   // Real GPS → on-site map coords, off-site distance, or null
   const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
@@ -436,14 +476,24 @@ function MapScreen({ state, setState }) {
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
           }}>LABELS</button>
-          <button onClick={() => setIso(s => !s)} title="Toggle iso (3D) view" style={{
-            background: iso ? "var(--ember)" : "var(--paper)",
-            color: iso ? "#fff" : "var(--muted)",
-            border: iso ? "none" : "1px solid var(--line-2)",
+          <button onClick={() => {
+            if (compass) { setCompass(false); setCompassStatus("off"); }
+            else enableCompass();
+          }} title="Heading-up compass mode" style={{
+            display: "flex", alignItems: "center", gap: 4,
+            background: compass && compassStatus === "live" ? "var(--horizon)" : "var(--paper)",
+            color: compass && compassStatus === "live" ? "#fff" : "var(--muted)",
+            border: compass && compassStatus === "live" ? "none" : "1px solid var(--line-2)",
             borderRadius: 999, padding: "3px 8px",
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
-          }}>3D</button>
+          }}>
+            <span style={{ fontSize: 10 }}>⌖</span>
+            {compass && compassStatus === "denied" ? "BLOCKED"
+              : compass && compassStatus === "unavailable" ? "N/A"
+              : compass && compassStatus === "locating" ? "FINDING…"
+              : "COMPASS"}
+          </button>
           <button onClick={() => setGpsLive(g => !g)} style={{
             display: "flex", alignItems: "center", gap: 5,
             background: gpsActive ? "var(--ember)" : "var(--paper)",
@@ -550,8 +600,9 @@ function MapScreen({ state, setState }) {
         }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
-          saved={state.saved} showLabels={showLabels} iso={iso}
-          accuracy={liveAvatar?.accuracy}
+          saved={state.saved} showLabels={showLabels}
+          compass={compass && compassStatus === "live"}
+          compassHeading={compassHeading}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
@@ -679,15 +730,12 @@ function MapScreen({ state, setState }) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, iso = false, accuracy, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
-  // Tilt angle for the iso "Pokémon-Go" view. Standing labels counter-rotate
-  // by the same angle so they billboard back toward the camera. 56° gives a
-  // strong sense of depth while keeping the far edge of the map on-screen.
-  const TILT = 56;
-  const stand = iso ? ` rotateX(-${TILT}deg)` : "";
-  // GPS accuracy radius in map units (map ≈ 1.5km × 0.8km → ~13m per unit on
-  // the long axis). Used to draw the translucent triangulation halo.
-  const accU = accuracy ? Math.min(8, Math.max(0.6, accuracy / 13)) : 0;
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+  // Compass mode: rotate the entire map by -heading so the user's facing
+  // direction is always "up" on screen. Readable text labels counter-rotate
+  // back to upright so they stay legible at any heading.
+  const mapRotate = compass ? -compassHeading : 0;
+  const counterRot = compass ? ` rotate(${compassHeading}deg)` : "";
   const sel = stages.find(s => s.id === selected);
 
   // Stages where the user has an upcoming saved set today — used to draw a
@@ -724,15 +772,14 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
       position: "absolute", inset: 0, overflow: "hidden",
       // Warm dune letterbox — matches the website palette
       background: "var(--paper-2)",
-      perspective: iso ? "1400px" : undefined,
-      perspectiveOrigin: iso ? "50% 35%" : undefined,
     }}>
     <div style={{
       position: "absolute", inset: 0,
-      transformStyle: iso ? "preserve-3d" : undefined,
-      transform: iso ? `rotateX(${TILT}deg) translateY(-2%)` : undefined,
-      transformOrigin: "50% 65%",
-      transition: "transform 0.45s ease",
+      transform: compass ? `rotate(${mapRotate}deg)` : undefined,
+      transformOrigin: "50% 50%",
+      // Linear (not ease) so heading changes feel responsive like a real
+      // compass needle rather than spongy.
+      transition: "transform 0.18s linear",
     }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
         onClick={onClick}
@@ -936,7 +983,6 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         position: "absolute", top: "50%", left: 0, width: "100%",
         aspectRatio: "1 / 1", transform: "translateY(-50%)",
         pointerEvents: "none",
-        transformStyle: iso ? "preserve-3d" : undefined,
       }}>
         <div style={{
           position: "absolute", left: "50%", top: "43%",
@@ -953,7 +999,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         ].map((g, i) => (
           <div key={i} style={{
             position: "absolute", left: `${g.x}%`, top: `${g.y}%`,
-            transform: `translate(-50%, -50%)${stand}`,
+            transform: `translate(-50%, -50%)${counterRot}`,
             fontFamily: "Geist Mono, monospace", fontSize: 5.6, letterSpacing: 1.4, fontWeight: 700,
             color: "var(--success)",
             whiteSpace: "nowrap", pointerEvents: "none",
@@ -1006,10 +1052,10 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           const pos = { left: `${s.x}%`, top: `${s.y}%` };
           const off = 18;
           const tx = {
-            N: { transform: `translate(-50%, calc(-100% - ${off}px))${stand}` },
-            S: { transform: `translate(-50%, ${off}px)${stand}` },
-            E: { transform: `translate(${off}px, -50%)${stand}` },
-            W: { transform: `translate(calc(-100% - ${off}px), -50%)${stand}` },
+            N: { transform: `translate(-50%, calc(-100% - ${off}px))${counterRot}` },
+            S: { transform: `translate(-50%, ${off}px)${counterRot}` },
+            E: { transform: `translate(${off}px, -50%)${counterRot}` },
+            W: { transform: `translate(calc(-100% - ${off}px), -50%)${counterRot}` },
           }[anchor];
           return (
             <div key={s.id} onClick={(e) => { e.stopPropagation(); onPickStage(s.id); }}
@@ -1043,7 +1089,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         {friends.map(f => f.id === meetWith && (
           <div key={f.id} style={{
             position: "absolute", left: `${f.x}%`, top: `${f.y}%`,
-            transform: `translate(-50%, 14px)${stand}`,
+            transform: `translate(-50%, 14px)${counterRot}`,
             background: f.color, color: "#fff",
             padding: "2px 7px", borderRadius: 999,
             fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.2, fontWeight: 700,
@@ -1053,47 +1099,50 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           </div>
         ))}
 
-        {/* Iso-mode sprite character — stands above the avatar dot, billboards
-            toward the camera and bobs gently. Accuracy halo visualises the
-            live GPS confidence radius from the 3-anchor affine triangulation. */}
-        {iso && accU > 0 && (
-          <div style={{
-            position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
-            width: `${accU * 2}%`, aspectRatio: "1 / 1",
-            transform: "translate(-50%, -50%)",
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(245,154,54,0.28) 0%, rgba(245,154,54,0) 70%)",
-            border: "1px dashed rgba(245,154,54,0.55)",
-            pointerEvents: "none",
-            animation: "isoShadowPulse 2.4s ease-in-out infinite",
-          }}/>
-        )}
-        {iso && (
-          <div style={{
-            position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
-            transform: `translate(-50%, -100%)${stand}`,
-            transformOrigin: "50% 100%",
-            pointerEvents: "none",
-            transformStyle: "preserve-3d",
-          }}>
-            <div style={{
-              fontSize: 34, lineHeight: 1,
-              filter: "drop-shadow(0 8px 6px rgba(0,0,0,0.5))",
-              animation: "isoBob 1.6s ease-in-out infinite",
-            }}>🕺</div>
-          </div>
-        )}
-
         <div style={{
           position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
-          transform: `translate(-50%, ${iso ? "-58px" : "-22px"})${stand}`,
+          transform: `translate(-50%, -22px)${counterRot}`,
           background: "rgba(245,154,54,0.95)", color: "#fff",
           padding: "2px 8px", borderRadius: 999,
           fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700,
           pointerEvents: "none", boxShadow: "0 3px 10px rgba(245,154,54,0.45)",
-        }}>{iso && accuracy ? `YOU · ±${Math.round(accuracy)}M` : "YOU"}</div>
+        }}>YOU</div>
       </div>
     </div>
+
+      {/* Compass rose — fixed-position badge in the upper-right of the map.
+          The needle inside rotates so the red tip always points to true north
+          regardless of which way the user is facing. Tells you at a glance
+          "which direction am I oriented?" without obscuring the map. */}
+      {compass && (
+        <div style={{
+          position: "absolute", top: 12, right: 12,
+          width: 44, height: 44, borderRadius: 44,
+          background: "rgba(247,237,224,0.92)",
+          border: "1px solid var(--line-2)",
+          boxShadow: "0 3px 10px rgba(26,18,13,0.18)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 5, pointerEvents: "none",
+        }}>
+          <div style={{
+            width: 32, height: 32, position: "relative",
+            transform: `rotate(${mapRotate}deg)`,
+            transition: "transform 0.18s linear",
+          }}>
+            <div style={{
+              position: "absolute", top: 0, left: "50%",
+              transform: "translateX(-50%)",
+              fontFamily: "Geist Mono, monospace", fontSize: 8, fontWeight: 800,
+              color: "#c14a4a", letterSpacing: 0.5,
+            }}>N</div>
+            <svg width="32" height="32" viewBox="-16 -16 32 32" style={{ position: "absolute", inset: 0 }}>
+              <path d="M0,-9 L2.5,2 L0,0 L-2.5,2 Z" fill="#c14a4a"/>
+              <path d="M0,9 L2.5,-2 L0,0 L-2.5,-2 Z" fill="rgba(26,18,13,0.45)"/>
+              <circle cx="0" cy="0" r="1.2" fill="var(--ink)"/>
+            </svg>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
