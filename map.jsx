@@ -468,6 +468,38 @@ function MapScreen({ state, setState }) {
             </span>
           </div>
         )}
+
+        {/* Find-nearest quick actions — tap to draw a route line to the
+            closest amenity of that type. Works at any festival as long as
+            AMENITIES are populated. */}
+        {!search && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            {[
+              { type: "water",  label: "WATER",    emoji: "💧", color: "#38bdf8" },
+              { type: "med",    label: "MEDIC",    emoji: "✚",  color: "#f87171" },
+              { type: "toilet", label: "RESTROOM", emoji: "🚻", color: "#94a3b8" },
+            ].map(c => (
+              <button key={c.type} onClick={() => {
+                const matches = (typeof AMENITIES !== "undefined" ? AMENITIES : []).filter(a => a.type === c.type);
+                if (!matches.length) return;
+                const nearest = matches
+                  .map(a => ({ ...a, _d: Math.hypot(a.x - avatar.x, a.y - avatar.y) }))
+                  .sort((a, b) => a._d - b._d)[0];
+                setMeetTarget({ x: nearest.x, y: nearest.y, label: nearest.label, isAmenity: true });
+                setMeetMode(true);
+              }} style={{
+                flex: 1, padding: "6px 6px", borderRadius: 999,
+                background: "var(--paper-2)", border: `1px solid ${c.color}55`,
+                color: "var(--ink)", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+              }}>
+                <span style={{ fontSize: 11 }}>{c.emoji}</span>
+                <span>NEAREST {c.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {search && (
           <div style={{ marginTop: 6, maxHeight: 140, overflowY: "auto", background: "var(--paper-2)", borderRadius: 8 }}>
             {filteredStages.map(s => (
@@ -502,6 +534,7 @@ function MapScreen({ state, setState }) {
         }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
+          saved={state.saved}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
@@ -527,7 +560,9 @@ function MapScreen({ state, setState }) {
             {meetTarget ? (
               <>
                 <span style={{ width: 7, height: 7, borderRadius: 7, background: "#fff", animation: "pulse 1.4s infinite" }}/>
-                {meetTarget.label.toUpperCase()} · BOTH WALKING
+                {meetTarget.isAmenity
+                  ? `→ ${meetTarget.label.toUpperCase()}`
+                  : `${meetTarget.label.toUpperCase()} · BOTH WALKING`}
               </>
             ) : "PICK A FRIEND OR TAP MAP"}
           </div>
@@ -627,8 +662,28 @@ function MapScreen({ state, setState }) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
   const sel = stages.find(s => s.id === selected);
+
+  // Stages where the user has an upcoming saved set today — used to draw a
+  // gold ★ overlay so users can spot at a glance "where am I going next?"
+  const savedByStage = React.useMemo(() => {
+    const nowMin = toNightMin(NOW.time);
+    const map = {};
+    saved.forEach(id => {
+      const a = ARTISTS.find(x => x.id === id);
+      if (!a || a.day !== NOW.day) return;
+      const startMin = toNightMin(a.start);
+      const endMin = toNightMin(a.end);
+      if (endMin <= nowMin) return; // already over
+      const minsUntil = startMin - nowMin;
+      const existing = map[a.stage];
+      if (!existing || minsUntil < existing.minsUntil) {
+        map[a.stage] = { artist: a, minsUntil, isLive: nowMin >= startMin };
+      }
+    });
+    return map;
+  }, [saved]);
 
   // Push label OUT from stage in the direction farthest from the Daisy Lane
   // plaza centre (50,50), so labels never collide with the central rectangle.
@@ -786,6 +841,7 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         {stages.map(s => {
           const on = s.id === selected;
           const r = 2.8 + (s.size - 1) * 1.1;
+          const savedHere = savedByStage[s.id];
           return (
             <g key={s.id} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPickStage(s.id); }}>
               {on && (
@@ -797,6 +853,14 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
               <circle cx={s.x} cy={s.y} r={r + 1.8} fill={s.color} opacity={on ? 0.18 : 0.09} filter="url(#stageglow)"/>
               <circle cx={s.x} cy={s.y} r={r} fill={s.color} opacity={on ? 1 : 0.88}/>
               <circle cx={s.x} cy={s.y} r={r * 0.38} fill="rgba(255,255,255,0.9)"/>
+              {/* Gold ★ pin if the user has an upcoming saved set on this stage */}
+              {savedHere && (
+                <g transform={`translate(${s.x + r * 0.85}, ${s.y - r * 0.85})`}>
+                  <circle r="1.9" fill="rgba(13,8,4,0.85)" stroke="#fbbf24" strokeWidth="0.25"/>
+                  <text y="0.85" textAnchor="middle" fontSize="2.4" fontWeight="900" fill="#fbbf24"
+                    fontFamily="Geist Mono, monospace">★</text>
+                </g>
+              )}
             </g>
           );
         })}
