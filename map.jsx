@@ -296,6 +296,7 @@ function MapScreen({ state, setState }) {
   const [chatFriend, setChatFriend] = React.useState(null);
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
+  const [iso, setIso] = React.useState(false);
 
   // Real GPS → on-site map coords, off-site distance, or null
   const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
@@ -435,6 +436,14 @@ function MapScreen({ state, setState }) {
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
           }}>LABELS</button>
+          <button onClick={() => setIso(s => !s)} title="Toggle iso (3D) view" style={{
+            background: iso ? "var(--ember)" : "var(--paper)",
+            color: iso ? "#fff" : "var(--muted)",
+            border: iso ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, padding: "3px 8px",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+            cursor: "pointer",
+          }}>3D</button>
           <button onClick={() => setGpsLive(g => !g)} style={{
             display: "flex", alignItems: "center", gap: 5,
             background: gpsActive ? "var(--ember)" : "var(--paper)",
@@ -541,7 +550,8 @@ function MapScreen({ state, setState }) {
         }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
-          saved={state.saved} showLabels={showLabels}
+          saved={state.saved} showLabels={showLabels} iso={iso}
+          accuracy={liveAvatar?.accuracy}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
@@ -669,7 +679,14 @@ function MapScreen({ state, setState }) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, iso = false, accuracy, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+  // Tilt angle for the iso "Pokémon-Go" view. Standing labels counter-rotate
+  // by the same angle so they billboard back toward the camera.
+  const TILT = 58;
+  const stand = iso ? ` rotateX(-${TILT}deg)` : "";
+  // GPS accuracy radius in map units (map ≈ 1.5km × 0.8km → ~13m per unit on
+  // the long axis). Used to draw the translucent triangulation halo.
+  const accU = accuracy ? Math.min(8, Math.max(0.6, accuracy / 13)) : 0;
   const sel = stages.find(s => s.id === selected);
 
   // Stages where the user has an upcoming saved set today — used to draw a
@@ -706,6 +723,15 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
       position: "absolute", inset: 0, overflow: "hidden",
       // Warm dune letterbox — matches the website palette
       background: "var(--paper-2)",
+      perspective: iso ? "1400px" : undefined,
+      perspectiveOrigin: iso ? "50% 35%" : undefined,
+    }}>
+    <div style={{
+      position: "absolute", inset: 0,
+      transformStyle: iso ? "preserve-3d" : undefined,
+      transform: iso ? `rotateX(${TILT}deg) translateY(-2%)` : undefined,
+      transformOrigin: "50% 65%",
+      transition: "transform 0.45s ease",
     }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
         onClick={onClick}
@@ -895,6 +921,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         position: "absolute", top: "50%", left: 0, width: "100%",
         aspectRatio: "1 / 1", transform: "translateY(-50%)",
         pointerEvents: "none",
+        transformStyle: iso ? "preserve-3d" : undefined,
       }}>
         <div style={{
           position: "absolute", left: "50%", top: "43%",
@@ -911,7 +938,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         ].map((g, i) => (
           <div key={i} style={{
             position: "absolute", left: `${g.x}%`, top: `${g.y}%`,
-            transform: "translate(-50%, -50%)",
+            transform: `translate(-50%, -50%)${stand}`,
             fontFamily: "Geist Mono, monospace", fontSize: 5.6, letterSpacing: 1.4, fontWeight: 700,
             color: "var(--success)",
             whiteSpace: "nowrap", pointerEvents: "none",
@@ -964,10 +991,10 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           const pos = { left: `${s.x}%`, top: `${s.y}%` };
           const off = 18;
           const tx = {
-            N: { transform: `translate(-50%, calc(-100% - ${off}px))` },
-            S: { transform: `translate(-50%, ${off}px)` },
-            E: { transform: `translate(${off}px, -50%)` },
-            W: { transform: `translate(calc(-100% - ${off}px), -50%)` },
+            N: { transform: `translate(-50%, calc(-100% - ${off}px))${stand}` },
+            S: { transform: `translate(-50%, ${off}px)${stand}` },
+            E: { transform: `translate(${off}px, -50%)${stand}` },
+            W: { transform: `translate(calc(-100% - ${off}px), -50%)${stand}` },
           }[anchor];
           return (
             <div key={s.id} onClick={(e) => { e.stopPropagation(); onPickStage(s.id); }}
@@ -1001,7 +1028,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         {friends.map(f => f.id === meetWith && (
           <div key={f.id} style={{
             position: "absolute", left: `${f.x}%`, top: `${f.y}%`,
-            transform: "translate(-50%, 14px)",
+            transform: `translate(-50%, 14px)${stand}`,
             background: f.color, color: "#fff",
             padding: "2px 7px", borderRadius: 999,
             fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.2, fontWeight: 700,
@@ -1011,15 +1038,40 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           </div>
         ))}
 
+        {/* Iso-mode sprite character — stands above the avatar dot, billboards
+            toward the camera. Accuracy halo below visualises the live GPS
+            confidence radius from the 3-anchor affine triangulation. */}
+        {iso && accU > 0 && (
+          <div style={{
+            position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
+            width: `${accU * 2}%`, aspectRatio: "1 / 1",
+            transform: "translate(-50%, -50%)",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(245,154,54,0.28) 0%, rgba(245,154,54,0) 70%)",
+            border: "1px dashed rgba(245,154,54,0.55)",
+            pointerEvents: "none",
+          }}/>
+        )}
+        {iso && (
+          <div style={{
+            position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
+            transform: `translate(-50%, -100%)${stand}`,
+            transformOrigin: "50% 100%",
+            fontSize: 30, lineHeight: 1, pointerEvents: "none",
+            filter: "drop-shadow(0 6px 8px rgba(0,0,0,0.4))",
+          }}>🕺</div>
+        )}
+
         <div style={{
           position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
-          transform: "translate(-50%, -22px)",
+          transform: `translate(-50%, ${iso ? "-58px" : "-22px"})${stand}`,
           background: "rgba(245,154,54,0.95)", color: "#fff",
           padding: "2px 8px", borderRadius: 999,
           fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700,
           pointerEvents: "none", boxShadow: "0 3px 10px rgba(245,154,54,0.45)",
-        }}>YOU</div>
+        }}>{iso && accuracy ? `YOU · ±${Math.round(accuracy)}M` : "YOU"}</div>
       </div>
+    </div>
     </div>
   );
 }
