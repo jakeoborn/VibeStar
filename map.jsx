@@ -1,6 +1,142 @@
 // Hybrid map — top-down navigation (default) + ground-level peek when a stage is selected.
 // Designed to feel like a real wayfinding app: glanceable, easy to meet friends, easy to route.
 
+// ── Wellness state ── persists across sessions in localStorage
+//
+// Hydration drifts down -1% every 90s while the page is open. We don't try
+// to back-fill drift while the page is closed (that'd punish someone who
+// closed the app at 100% and reopened next day at 0%); instead we cap
+// computed drift at 6 hrs since last drink.
+const HYD_DRIFT_PER_MIN = 60 / 90;       // ~0.67%/min
+const HYD_DRIFT_CAP_MIN = 6 * 60;        // 6h max drift
+
+function readWellness() {
+  try {
+    const raw = localStorage.getItem("wellness");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { lastDrink: Date.now(), lastRest: Date.now() };
+}
+function writeWellness(w) {
+  try { localStorage.setItem("wellness", JSON.stringify(w)); } catch {}
+}
+function computeHydration(lastDrink) {
+  const minsSince = Math.min(HYD_DRIFT_CAP_MIN, (Date.now() - lastDrink) / 60000);
+  return Math.max(0, Math.round(100 - minsSince * HYD_DRIFT_PER_MIN));
+}
+
+function WellnessPill() {
+  const [w, setW] = React.useState(readWellness);
+  const [open, setOpen] = React.useState(false);
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hyd = computeHydration(w.lastDrink);
+  const restMin = Math.floor((Date.now() - w.lastRest) / 60000);
+  const hydColor = hyd > 70 ? "#34d399" : hyd > 40 ? "#f59a36" : "#f87171";
+  const restColor = restMin < 75 ? "rgba(247,237,224,0.85)" : restMin < 120 ? "#f59a36" : "#f87171";
+
+  const drank = () => {
+    const nw = { ...w, lastDrink: Date.now() };
+    setW(nw); writeWellness(nw); setTick(t => t + 1);
+  };
+  const rested = () => {
+    const nw = { ...w, lastRest: Date.now() };
+    setW(nw); writeWellness(nw); setTick(t => t + 1);
+  };
+  const restLabel = restMin < 60 ? `${restMin}m` : `${Math.floor(restMin / 60)}h${(restMin % 60).toString().padStart(2, "0")}`;
+
+  return (
+    <>
+      <button onClick={() => setOpen(o => !o)} style={{
+        position: "absolute", top: 14, left: 10, zIndex: 4,
+        display: "flex", alignItems: "center", gap: 7,
+        padding: "5px 10px 5px 7px", borderRadius: 999,
+        background: "rgba(8,18,6,0.86)",
+        border: `1px solid ${hyd < 40 || restMin > 120 ? "#f87171" : "rgba(180,240,130,0.18)"}`,
+        backdropFilter: "blur(10px)",
+        color: "rgba(247,237,224,0.95)",
+        fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1, fontWeight: 600,
+        cursor: "pointer",
+        boxShadow: hyd < 40 ? "0 0 0 4px rgba(248,113,113,0.18)" : "none",
+      }}>
+        <span style={{ color: hydColor, fontSize: 12 }}>💧</span>
+        <span style={{ color: hydColor }}>{hyd}%</span>
+        <span style={{ width: 1, height: 10, background: "rgba(247,237,224,0.18)" }}/>
+        <span style={{ color: restColor }}>{restLabel}</span>
+      </button>
+
+      {open && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 6 }}>
+          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }}/>
+          <div style={{
+            position: "absolute", left: 14, right: 14, top: 100,
+            background: "var(--paper)", color: "var(--ink)",
+            borderRadius: 16, padding: 16,
+            boxShadow: "0 14px 40px rgba(0,0,0,0.4)",
+          }}>
+            <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", marginBottom: 6 }}>
+              WELLNESS · DESERT DEFAULTS
+            </div>
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, marginBottom: 12 }}>
+              Take care of you.
+            </div>
+
+            {/* Hydration */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: hydColor, fontWeight: 700 }}>HYDRATION</span>
+                <span className="serif" style={{ fontSize: 24, color: hydColor }}>{hyd}%</span>
+              </div>
+              <div style={{ height: 6, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
+                <div style={{ width: `${hyd}%`, height: "100%", background: hydColor, borderRadius: 6, transition: "width .35s" }}/>
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 5, lineHeight: 1.4 }}>
+                {hyd > 70 ? "Cruising — top up next set." : hyd > 40 ? "Hit a water station soon." : "Drink water now. ~−1% per 90 sec in the heat."}
+              </div>
+              <button onClick={drank} style={{
+                marginTop: 8, width: "100%",
+                background: "#38bdf8", color: "#fff", border: "none",
+                borderRadius: 10, padding: "10px 12px",
+                fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1.2, fontWeight: 700,
+                cursor: "pointer",
+              }}>💧 LOGGED · DRANK WATER</button>
+            </div>
+
+            {/* Rest */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: restColor, fontWeight: 700 }}>ON FEET</span>
+                <span className="serif" style={{ fontSize: 24, color: restColor }}>{restLabel}</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 0, lineHeight: 1.4 }}>
+                {restMin < 75 ? "Pace is good." : restMin < 120 ? "Sit down at the next break." : "Take 10 min off your feet — you'll dance harder later."}
+              </div>
+              <button onClick={rested} style={{
+                marginTop: 8, width: "100%",
+                background: "var(--paper-2)", color: "var(--ink)", border: "1px solid var(--line-2)",
+                borderRadius: 10, padding: "10px 12px",
+                fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1.2, fontWeight: 700,
+                cursor: "pointer",
+              }}>🦵 LOGGED · TOOK A BREAK</button>
+            </div>
+
+            <button onClick={() => setOpen(false)} style={{
+              marginTop: 12, width: "100%",
+              background: "transparent", border: "none",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.4, color: "var(--muted)",
+              cursor: "pointer", textTransform: "uppercase",
+            }}>Close</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function MapScreen({ state, setState }) {
   const [selectedStage, setSelectedStage] = React.useState(state.focusStage || null);
   const [gpsLive, setGpsLive] = React.useState(true);
@@ -129,6 +265,7 @@ function MapScreen({ state, setState }) {
 
       {/* MAP + PEEK WINDOW */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "#0d1a12" }}>
+        <WellnessPill />
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}

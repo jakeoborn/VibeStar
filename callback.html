@@ -52,11 +52,15 @@
         return;
       }
 
-      const verifier = localStorage.getItem("spotify_pkce_verifier");
+      // iOS PWA standalone-vs-Safari split storage: try both
+      const verifier =
+        localStorage.getItem("spotify_pkce_verifier") ||
+        sessionStorage.getItem("spotify_pkce_verifier");
       if (!verifier) {
-        label.innerHTML = '<span class="error">SESSION EXPIRED</span>';
-        msg.textContent = "Please try connecting again.";
-        setTimeout(() => window.location.href = "/", 2200);
+        label.innerHTML = '<span class="error">SESSION LOST</span>';
+        msg.innerHTML = "If you connected from the installed app, " +
+          "open <strong>plursky.com</strong> in Safari/Chrome instead and try again.";
+        setTimeout(() => window.location.href = "/", 4500);
         return;
       }
 
@@ -80,10 +84,29 @@
           localStorage.setItem("spotify_refresh_token", data.refresh_token || "");
           localStorage.setItem("spotify_expires",       Date.now() + data.expires_in * 1000);
           localStorage.removeItem("spotify_pkce_verifier");
+          sessionStorage.removeItem("spotify_pkce_verifier");
+          // Pre-fetch profile (display name + avatar) so the home/me screen
+          // can render personalised state on first paint after redirect.
+          try {
+            const profRes = await fetch("https://api.spotify.com/v1/me", {
+              headers: { Authorization: "Bearer " + data.access_token },
+            });
+            if (profRes.ok) {
+              const p = await profRes.json();
+              localStorage.setItem("spotify_profile", JSON.stringify({
+                id: p.id,
+                name: p.display_name || p.id,
+                email: p.email || null,
+                image: p.images?.[0]?.url || null,
+                country: p.country || null,
+                product: p.product || null,
+              }));
+            }
+          } catch {}
           label.innerHTML = '<span style="color:#1DB954;letter-spacing:2px">SPOTIFY CONNECTED ✓</span>';
           msg.textContent = "Loading your lineup…";
         } else {
-          throw new Error(data.error || "unknown");
+          throw new Error(data.error_description || data.error || "unknown");
         }
       } catch (err) {
         label.innerHTML = '<span class="error">CONNECTION FAILED</span>';

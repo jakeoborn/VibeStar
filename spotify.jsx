@@ -2,7 +2,7 @@
 
 const SPOTIFY_CLIENT_ID = "2219c68606c54629a8799f467a996a81";
 const SPOTIFY_REDIRECT  = "https://plursky.com/callback";
-const SPOTIFY_SCOPES    = "user-top-read user-read-private";
+const SPOTIFY_SCOPES    = "user-top-read user-read-private user-read-email playlist-modify-public playlist-modify-private";
 
 // Genre keywords → EDC stage affinity
 const STAGE_GENRES = {
@@ -32,10 +32,38 @@ function _b64url(buf) {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+// iOS PWA + Android TWA in "standalone" mode have their own localStorage
+// silo. OAuth redirects break out to the system browser, which can't see
+// the PKCE verifier we just saved → connect fails. Detect that case and
+// warn the user before redirecting.
+function isStandalonePWA() {
+  return (typeof window !== "undefined") &&
+    (window.matchMedia?.("(display-mode: standalone)").matches ||
+     window.navigator.standalone === true);
+}
+function isMobile() {
+  return /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+}
+
 async function startSpotifyAuth() {
+  // Mobile-PWA OAuth gotcha: warn once, and let user opt out of the redirect
+  if (isStandalonePWA() && isMobile()) {
+    const ack = confirm(
+      "Heads up: Spotify login is more reliable in your phone's browser " +
+      "than in this installed app.\n\n" +
+      "Tap OK to continue here (may fail), or Cancel and open plursky.com " +
+      "in Safari/Chrome to connect there first."
+    );
+    if (!ack) return;
+  }
+
   const verifier  = _randString(128);
   const challenge = _b64url(await _sha256(verifier));
-  localStorage.setItem("spotify_pkce_verifier", verifier);
+  // Persist verifier in BOTH localStorage and sessionStorage. iOS Safari
+  // sometimes loses one across the auth-domain redirect; the other usually
+  // survives.
+  try { localStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
+  try { sessionStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
   const params = new URLSearchParams({
     client_id:             SPOTIFY_CLIENT_ID,
     response_type:         "code",
@@ -48,9 +76,117 @@ async function startSpotifyAuth() {
 }
 
 function disconnectSpotify(setState, state) {
-  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_pkce_verifier"]
+  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_pkce_verifier","spotify_profile"]
     .forEach(k => localStorage.removeItem(k));
-  setState({ ...state, spotifyConnected: false });
+  try { sessionStorage.removeItem("spotify_pkce_verifier"); } catch {}
+  setState({ ...state, spotifyConnected: false, spotifyProfile: null });
+}
+
+// Read the cached Spotify profile (set by callback.html on first connect).
+// Falls back to fetching /me if missing — runs lazily on demand.
+function getSpotifyProfileSync() {
+  try {
+    const raw = localStorage.getItem("spotify_profile");
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+async function ensureSpotifyProfile() {
+  const cached = getSpotifyProfileSync();
+  if (cached) return cached;
+  const token = localStorage.getItem("spotify_token");
+  if (!token) return null;
+  try {
+    const res = await fetch("https://api.spotify.com/v1/me", {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!res.ok) return null;
+    const p = await res.json();
+    const prof = {
+      id: p.id,
+      name: p.display_name || p.id,
+      email: p.email || null,
+      image: p.images?.[0]?.url || null,
+      country: p.country || null,
+      product: p.product || null,
+    };
+    localStorage.setItem("spotify_profile", JSON.stringify(prof));
+    return prof;
+  } catch { return null; }
+}
+
+// #12 Build my playlist — push the user's saved EDC sets into a
+// Spotify playlist on their account. Skips artists Spotify can't find.
+async function createEdcPlaylist(state) {
+  const token   = localStorage.getItem("spotify_token");
+  const profile = await ensureSpotifyProfile();
+  if (!token || !profile) return { ok: false, reason: "not_connected" };
+
+  const saved = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(Boolean);
+  if (saved.length === 0) return { ok: false, reason: "empty" };
+
+  // 1) Create empty playlist on user's account
+  const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "My EDC LV 2026 Lineup",
+      description: `${saved.length} sets · built with Plursky · ${dateStr}`,
+      public: false,
+    }),
+  });
+  if (!plRes.ok) {
+    const err = await plRes.json().catch(() => ({}));
+    return { ok: false, reason: "create_fail", status: plRes.status, error: err.error };
+  }
+  const playlist = await plRes.json();
+
+  // 2) Find a top track per artist (parallel, throttled to ~6 in flight)
+  const uris = [];
+  let missed = 0;
+  const search = async (artist) => {
+    try {
+      const r = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"' + artist.name + '"')}&type=track&limit=1`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!r.ok) { missed++; return; }
+      const j = await r.json();
+      const t = j.tracks?.items?.[0];
+      if (t?.uri) uris.push(t.uri);
+      else missed++;
+    } catch { missed++; }
+  };
+  // 6-wide concurrency to stay friendly to Spotify rate limits
+  for (let i = 0; i < saved.length; i += 6) {
+    await Promise.all(saved.slice(i, i + 6).map(search));
+  }
+
+  // 3) Add tracks (Spotify caps at 100 URIs per request)
+  for (let i = 0; i < uris.length; i += 100) {
+    await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ uris: uris.slice(i, i + 100) }),
+    });
+  }
+
+  return {
+    ok: true,
+    added:    uris.length,
+    total:    saved.length,
+    missed,
+    url:      playlist.external_urls?.spotify,
+    id:       playlist.id,
+  };
 }
 
 // Returns full artist objects (with .genres array, deduped across all 3 time ranges,
@@ -276,6 +412,9 @@ function SpotifyScreen({ state, setState }) {
                 {saveFlash ? `✓ SAVED ${matched.length} ARTISTS` : `SAVE ALL ${matched.length} ARTISTS`}
               </button>
             )}
+            {connected && state.saved.length > 0 && (
+              <BuildPlaylistButton state={state} />
+            )}
             <button
               onClick={() => connected ? disconnectSpotify(setState, state) : startSpotifyAuth()}
               style={{
@@ -435,6 +574,100 @@ function SpotifyScreen({ state, setState }) {
 }
 
 // ── ME SCREEN ─────────────────────────────────────────────────
+// ── Safety & Wellness — harm-reduction surface ────────────────
+const SAFETY_LINKS = [
+  {
+    id: "ground",
+    title: "Ground Control",
+    sub: "Free water · cool down · friendly faces. Look for the high-vis vests.",
+    color: "var(--horizon)",
+    icon: "shield",
+    href: "https://insomniac.com/festival/edc-las-vegas/2026/info/health-safety/",
+  },
+  {
+    id: "amnesty",
+    title: "Amnesty Boxes",
+    sub: "Drop unwanted substances at any entrance. No questions, no consequences.",
+    color: "var(--ember)",
+    icon: "amnesty",
+    href: "https://insomniac.com/festival/edc-las-vegas/2026/info/health-safety/",
+  },
+  {
+    id: "dancesafe",
+    title: "DanceSafe",
+    sub: "Drug-checking, harm-reduction info, peer support. Independent nonprofit.",
+    color: "#34d399",
+    icon: "info",
+    href: "https://dancesafe.org",
+  },
+  {
+    id: "consent",
+    title: "Consent Reporting",
+    sub: "Report anonymously. Insomniac Cares + 24/7 confidential line.",
+    color: "var(--ink)",
+    icon: "consent",
+    href: "https://insomniac.com/cares",
+  },
+  {
+    id: "medical",
+    title: "Medical · 24/7",
+    sub: "3 medic tents on-site · roamers in the crowd. Tap → map.",
+    color: "#f87171",
+    icon: "med",
+    onClick: (state, setState) => setState({ ...state, tab: "map" }),
+  },
+];
+
+function SafetyIcon({ kind, color }) {
+  const stroke = color || "currentColor";
+  if (kind === "shield") return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C20 17 16 20.5 12 22 C8 20.5 4 17 4 12 V6 Z"/><path d="M9 12 L11 14 L15 10"/></svg>;
+  if (kind === "amnesty") return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="1.5"/><path d="M8 8 V6 a4 4 0 0 1 8 0 V8"/><path d="M9 14 H15"/></svg>;
+  if (kind === "info") return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11 V16"/><circle cx="12" cy="8" r="0.7" fill={stroke}/></svg>;
+  if (kind === "consent") return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12 a9 9 0 1 1-3-6.7"/><path d="M21 4 V10 H15"/></svg>;
+  if (kind === "med") return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M12 10 V16"/><path d="M9 13 H15"/></svg>;
+  return null;
+}
+
+function SafetyCards() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {SAFETY_LINKS.map(item => {
+        const onClick = item.href
+          ? () => window.open(item.href, "_blank", "noopener")
+          : () => item.onClick?.();
+        return (
+          <button key={item.id} onClick={onClick} style={{
+            display: "flex", alignItems: "flex-start", gap: 12,
+            padding: "12px 14px", borderRadius: 12,
+            background: "var(--paper)", border: "1px solid var(--line)",
+            borderLeft: `3px solid ${item.color}`,
+            cursor: "pointer", textAlign: "left", color: "var(--ink)",
+            fontFamily: "inherit",
+          }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10,
+              background: `${item.color}1f`, color: item.color,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}>
+              <SafetyIcon kind={item.icon} color={item.color} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="serif" style={{ fontSize: 17, lineHeight: 1.1 }}>{item.title}</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.45 }}>{item.sub}</div>
+            </div>
+            {item.href && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" style={{ flexShrink: 0, marginTop: 4 }}>
+                <path d="M7 17 L17 7"/><path d="M9 7 H17 V15"/>
+              </svg>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function MeScreen({ state, setState }) {
   const friends = [
     { name: "Remi", color: "#e85d2e", at: "Bionic Jungle",   dist: "Here" },
@@ -442,6 +675,21 @@ function MeScreen({ state, setState }) {
     { name: "Kai",  color: "#f59a36", at: "Stereo Bloom",    dist: "8 min walk" },
     { name: "Sage", color: "#6f8fb8", at: "Circuit Grounds", dist: "Approaching" },
   ];
+
+  // Build identity from Spotify profile when available, else fall back to demo
+  const [profile, setProfile] = React.useState(getSpotifyProfileSync);
+  React.useEffect(() => {
+    if (state.spotifyConnected && !profile) {
+      ensureSpotifyProfile().then(setProfile);
+    }
+  }, [state.spotifyConnected]);
+
+  const displayName = profile?.name || "Ava Torres";
+  const initial = (displayName.match(/[A-Za-z0-9]/) || ["A"])[0].toUpperCase();
+  const subline = profile
+    ? `${profile.product === "premium" ? "PREMIUM" : "FREE"} · ${profile.country || "—"} · 3-DAY PASS`
+    : "3-DAY PASS · GA+ · WRISTBAND #EDC-9122";
+
   return (
     <Screen bg="var(--paper)">
       <div style={{ padding: "8px 20px" }}>
@@ -453,17 +701,32 @@ function MeScreen({ state, setState }) {
           display: "flex", alignItems: "center", gap: 14, padding: 16,
           background: "var(--paper-2)", borderRadius: 16, marginBottom: 18,
         }}>
-          <div style={{
-            width: 60, height: 60, borderRadius: 60,
-            background: "linear-gradient(135deg, var(--ember), var(--horizon))",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "Instrument Serif, serif", fontSize: 26, color: "#fff",
-          }}>A</div>
-          <div style={{ flex: 1 }}>
-            <div className="serif" style={{ fontSize: 22, lineHeight: 1 }}>Ava Torres</div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
-              3-DAY PASS · GA+ · WRISTBAND #EDC-9122
+          {profile?.image ? (
+            <img src={profile.image} alt="" style={{
+              width: 60, height: 60, borderRadius: 60, flexShrink: 0,
+              objectFit: "cover", border: "2px solid var(--ember)",
+            }}/>
+          ) : (
+            <div style={{
+              width: 60, height: 60, borderRadius: 60,
+              background: "linear-gradient(135deg, var(--ember), var(--horizon))",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "Instrument Serif, serif", fontSize: 26, color: "#fff",
+              flexShrink: 0,
+            }}>{initial}</div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {displayName}
             </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
+              {subline}
+            </div>
+            {profile && (
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "#1DB954", marginTop: 4, fontWeight: 700 }}>
+                ✓ SPOTIFY LINKED
+              </div>
+            )}
           </div>
         </div>
 
@@ -516,6 +779,15 @@ function MeScreen({ state, setState }) {
           </div>
         ))}
 
+        {/* Safety & Wellness — harm-reduction one tap away */}
+        <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 3 }}>
+          Safety & <span style={{ fontStyle: "italic" }}>care</span>
+        </div>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", marginBottom: 12 }}>
+          ON-SITE TEAMS · NO QUESTIONS ASKED
+        </div>
+        <SafetyCards />
+
         {/* Memories */}
         <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 10 }}>Memories</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
@@ -537,4 +809,52 @@ function MeScreen({ state, setState }) {
   );
 }
 
-Object.assign(window, { SpotifyScreen, MeScreen, fetchPreviewUrl });
+function BuildPlaylistButton({ state }) {
+  const [status, setStatus] = React.useState("idle"); // idle | working | done | err
+  const [result, setResult] = React.useState(null);
+
+  const onClick = async () => {
+    if (status === "working") return;
+    setStatus("working");
+    const r = await createEdcPlaylist(state);
+    setResult(r);
+    if (r.ok) {
+      setStatus("done");
+      // Open the playlist in Spotify after a short delay
+      if (r.url) setTimeout(() => window.open(r.url, "_blank", "noopener"), 800);
+      setTimeout(() => setStatus("idle"), 4000);
+    } else {
+      setStatus("err");
+      setTimeout(() => setStatus("idle"), 3500);
+    }
+  };
+
+  let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
+  if (status === "working") label = "BUILDING…";
+  else if (status === "done") {
+    label = `✓ ADDED ${result?.added}/${result?.total}`;
+    bg = "#1DB954"; color = "#000"; border = "none";
+  } else if (status === "err") {
+    label = result?.reason === "create_fail"
+      ? `✕ FAILED · ${result?.status || "?"}`
+      : "✕ TRY AGAIN";
+    bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
+  } else {
+    label = "BUILD MY PLAYLIST";
+  }
+
+  return (
+    <button onClick={onClick} disabled={status === "working"} style={{
+      background: bg, color, border,
+      borderRadius: 999, padding: "10px 16px",
+      cursor: status === "working" ? "wait" : "pointer",
+      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+      transition: "all .2s",
+    }}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  SpotifyScreen, MeScreen, fetchPreviewUrl,
+  ensureSpotifyProfile, getSpotifyProfileSync, createEdcPlaylist,
+});
