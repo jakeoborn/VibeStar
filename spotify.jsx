@@ -53,21 +53,39 @@ function disconnectSpotify(setState, state) {
   setState({ ...state, spotifyConnected: false });
 }
 
-// Returns full artist objects (with .genres array) or null on token expiry
+// Returns full artist objects (with .genres array, deduped across all 3 time ranges,
+// each tagged with a `_score` weighting recent listens 3×, 6mo 2×, all-time 1×).
+// Returns null on token expiry, [] on error.
 async function fetchSpotifyTopArtists() {
   const token = localStorage.getItem("spotify_token");
   if (!token) return [];
+  const ranges = [
+    { range: "short_term",  weight: 3 },  // last 4 weeks
+    { range: "medium_term", weight: 2 },  // last 6 months
+    { range: "long_term",   weight: 1 },  // all-time
+  ];
   try {
-    const res = await fetch(
-      "https://api.spotify.com/v1/me/top/artists?limit=50&time_range=medium_term",
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (res.status === 401) {
+    const responses = await Promise.all(ranges.map(({ range }) =>
+      fetch(`https://api.spotify.com/v1/me/top/artists?limit=50&time_range=${range}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    ));
+    if (responses.some(r => r.status === 401)) {
       ["spotify_token","spotify_expires"].forEach(k => localStorage.removeItem(k));
       return null;
     }
-    const data = await res.json();
-    return data.items || [];
+    const datas = await Promise.all(responses.map(r => r.ok ? r.json() : { items: [] }));
+    // Dedupe by artist id; score = Σ weight × (51 − rank) across the ranges they appear in.
+    const byId = new Map();
+    ranges.forEach(({ weight }, i) => {
+      (datas[i]?.items || []).forEach((artist, idx) => {
+        const score = (51 - (idx + 1)) * weight;
+        const cur = byId.get(artist.id);
+        if (cur) cur._score += score;
+        else byId.set(artist.id, { ...artist, _score: score });
+      });
+    });
+    return Array.from(byId.values()).sort((a, b) => b._score - a._score);
   } catch {
     return [];
   }
@@ -140,6 +158,35 @@ function analyzeGenres(spotifyArtists) {
   return { topGenres, stageRecs };
 }
 
+// EDC artists you'd probably love but aren't already in your Spotify top.
+// Scored by stage affinity (your genre profile → stage weights) + tier bonus.
+function getDiscoveries(spotifyArtists, matched, savedIds, max = 8) {
+  if (!spotifyArtists?.length) return [];
+  const matchedIds = new Set((matched || []).map(a => a.id));
+  const savedSet   = new Set(savedIds || []);
+  // Stage profile: count how many of your top artist genres map to each EDC stage.
+  const stageProfile = {};
+  STAGES.forEach(s => { stageProfile[s.id] = 0; });
+  spotifyArtists.forEach(a => {
+    (a.genres || []).forEach(g => {
+      Object.entries(STAGE_GENRES).forEach(([sid, kws]) => {
+        if (kws.some(k => g.includes(k))) stageProfile[sid] += 1;
+      });
+    });
+  });
+  const total = Math.max(1, Object.values(stageProfile).reduce((a, b) => a + b, 0));
+  const scored = ARTISTS
+    .filter(a => !matchedIds.has(a.id) && !savedSet.has(a.id) && a.tier >= 2)
+    .map(a => {
+      const stageWeight = (stageProfile[a.stage] || 0) / total;
+      const tierBonus   = a.tier * 0.5; // light nudge toward primetime/headliner picks
+      return { artist: a, score: stageWeight * 100 + tierBonus };
+    });
+  // Filter out anyone with zero genre fit AND no headliner status — avoid random fallbacks
+  const meaningful = scored.filter(s => s.score > 0.6);
+  return meaningful.sort((a, b) => b.score - a.score).slice(0, max).map(s => s.artist);
+}
+
 // ── SPOTIFY SCREEN ────────────────────────────────────────────
 function SpotifyScreen({ state, setState }) {
   const connected = state.spotifyConnected;
@@ -159,9 +206,12 @@ function SpotifyScreen({ state, setState }) {
   const { topGenres, stageRecs } = spotifyArtists?.length
     ? analyzeGenres(spotifyArtists)
     : { topGenres: [], stageRecs: [] };
-  const maxCount  = topGenres[0]?.count || 1;
-  const fallback  = ARTISTS.filter(a => a.tier === 3).slice(0, 8);
-  const recs      = matched.length ? matched : fallback;
+  const maxCount    = topGenres[0]?.count || 1;
+  const discoveries = spotifyArtists?.length
+    ? getDiscoveries(spotifyArtists, matched, state.saved, 8)
+    : [];
+  const fallback    = ARTISTS.filter(a => a.tier === 3).slice(0, 8);
+  const recs        = matched.length ? matched : fallback;
 
   const handleSaveAll = () => {
     const newSaved = [...new Set([...state.saved, ...matched.map(a => a.id)])];
@@ -203,8 +253,8 @@ function SpotifyScreen({ state, setState }) {
           <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: 16, maxWidth: "88%" }}>
             {connected
               ? matched.length
-                ? `${matched.length} EDC artists match your Spotify top 50.`
-                : spotifyArtists === null ? "Loading your taste…" : "No direct matches — showing genre-based picks."
+                ? `${matched.length} EDC artists match your Spotify · scanned across recent, 6-month and all-time listens.`
+                : spotifyArtists === null ? "Loading your taste…" : "No direct matches — showing genre-based picks below."
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
 
@@ -340,6 +390,45 @@ function SpotifyScreen({ state, setState }) {
             </div>
           );
         })}
+
+        {/* ── Discoveries: EDC artists you don't listen to yet, but should ── */}
+        {connected && discoveries.length > 0 && (
+          <>
+            <div className="serif" style={{ fontSize: 22, letterSpacing: -0.3, marginTop: 24, marginBottom: 3 }}>
+              Recommended for you
+            </div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", marginBottom: 14 }}>
+              EDC ARTISTS THAT MATCH YOUR TASTE · NOT IN YOUR TOP YET
+            </div>
+            {discoveries.map(a => {
+              const stg     = STAGES.find(s => s.id === a.stage);
+              const isSaved = state.saved.includes(a.id);
+              return (
+                <div key={a.id} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 0", borderBottom: "1px solid var(--line)",
+                }}>
+                  <ArtistSwatch artist={a} size={48} />
+                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                       onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
+                    <div className="serif" style={{ fontSize: 18, lineHeight: 1.1 }}>{a.name}</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
+                      {stg.name} · DAY {a.day} · {a.start}
+                    </div>
+                  </div>
+                  <button onClick={() => toggleSave(state, setState, a.id)} style={{
+                    width: 34, height: 34, borderRadius: 34,
+                    background: isSaved ? "var(--ember)" : "transparent",
+                    color: isSaved ? "#fff" : "var(--ink)",
+                    border: isSaved ? "none" : "1px solid var(--line-2)",
+                    cursor: "pointer", fontSize: 18, fontWeight: 300,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>{isSaved ? "✓" : "+"}</button>
+                </div>
+              );
+            })}
+          </>
+        )}
       </ScrollBody>
     </Screen>
   );
