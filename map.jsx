@@ -725,6 +725,32 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.55)" strokeWidth="0.3"/>
         <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.95)"/>
 
+        {/* Amenity markers — water, medics, food, restrooms, info, art.
+            Coloured dots so users can spot an amenity type at a glance
+            (blue = water, red+ = medic, etc.). Drawn before stages so
+            stage markers always sit on top. */}
+        {(typeof AMENITIES !== "undefined" ? AMENITIES : []).map(a => {
+          const cfg = ({
+            water:  { color: "#38bdf8", letter: ""  },
+            food:   { color: "#fb923c", letter: ""  },
+            med:    { color: "#f87171", letter: "+" },
+            toilet: { color: "#94a3b8", letter: ""  },
+            art:    { color: "#fbbf24", letter: ""  },
+            info:   { color: "#22c55e", letter: "i" },
+          })[a.type] || { color: "#fff", letter: "" };
+          return (
+            <g key={a.id}>
+              <circle cx={a.x} cy={a.y} r="1.5" fill={cfg.color} opacity="0.78" stroke="rgba(0,0,0,0.45)" strokeWidth="0.18"/>
+              {cfg.letter && (
+                <text x={a.x} y={a.y + 0.7} textAnchor="middle" fontSize="2"
+                  fill="#fff" fontFamily="Geist Mono, monospace" fontWeight="900">
+                  {cfg.letter}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
         {/* Route line to selected stage or meet point */}
         {(sel || meetTarget) && (() => {
           const target = meetTarget || sel;
@@ -813,15 +839,24 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
 
         {/* Named landmarks + walkways from the official EDC map */}
         {[
-          { label: "KINETIC TRAIL",  x: 41, y: 28, rot: -55, color: "rgba(251,191,36,0.85)",  size: 6.8, ls: 1.6 },
-          { label: "MEMORY LANE",    x: 33, y: 55, rot: -90, color: "rgba(247,237,224,0.7)",  size: 6.8, ls: 1.6 },
-          { label: "POWER PATH",     x: 67, y: 38, rot: -90, color: "rgba(167,139,250,0.85)", size: 6.8, ls: 1.6 },
-          { label: "RAINBOW ROAD",   x: 65, y: 64, rot: -90, color: "rgba(244,114,182,0.85)", size: 6.8, ls: 1.6 },
-          { label: "NOMADS ALLEY",   x: 22, y: 70, rot: -22, color: "rgba(247,237,224,0.7)",  size: 6.5, ls: 1.5 },
-          { label: "FLOWER TUNNEL",  x: 45, y: 33, rot: 0,   color: "rgba(244,114,182,0.9)",  size: 6.2, ls: 1.5 },
-          { label: "PIXEL FOREST",   x: 78, y: 60, rot: 0,   color: "rgba(244,114,182,0.85)", size: 6.2, ls: 1.5 },
-          { label: "DOWNTOWN EDC",   x: 50, y: 55, rot: 0,   color: "rgba(251,191,36,0.95)",  size: 6.5, ls: 1.6 },
-          { label: "NOMADS PORTAL",  x: 40, y: 76, rot: 0,   color: "rgba(244,114,182,0.85)", size: 5.8, ls: 1.4 },
+          // Walkways
+          { label: "KINETIC TRAIL",   x: 41, y: 28, rot: -55, color: "rgba(251,191,36,0.85)",  size: 6.8, ls: 1.6 },
+          { label: "MEMORY LANE",     x: 33, y: 55, rot: -90, color: "rgba(247,237,224,0.7)",  size: 6.8, ls: 1.6 },
+          { label: "POWER PATH",      x: 67, y: 38, rot: -90, color: "rgba(167,139,250,0.85)", size: 6.8, ls: 1.6 },
+          { label: "RAINBOW ROAD",    x: 65, y: 64, rot: -90, color: "rgba(244,114,182,0.85)", size: 6.8, ls: 1.6 },
+          { label: "ELECTRIC AVENUE", x: 50, y: 62, rot: 0,   color: "rgba(252,211,77,0.95)",  size: 6.8, ls: 2.0 },
+          { label: "BASS LANE",       x: 56, y: 71, rot: -90, color: "rgba(96,165,250,0.85)",  size: 6.5, ls: 1.6 },
+          { label: "NOMADS ALLEY",    x: 22, y: 70, rot: -22, color: "rgba(247,237,224,0.7)",  size: 6.5, ls: 1.5 },
+          // Sub-areas / districts
+          { label: "DAISY FIELDS",    x: 40, y: 24, rot: 0,   color: "rgba(252,211,77,0.85)",  size: 5.8, ls: 1.4 },
+          { label: "NOMADS LAND",     x: 38, y: 70, rot: 0,   color: "rgba(252,211,77,0.95)",  size: 6.5, ls: 1.6 },
+          // Inside-plaza landmarks
+          { label: "RAINBOW BAZAAR",  x: 50, y: 47, rot: 0,   color: "rgba(255,255,255,0.92)", size: 5.8, ls: 1.4 },
+          { label: "DOWNTOWN EDC",    x: 50, y: 55, rot: 0,   color: "rgba(251,191,36,0.95)",  size: 6.5, ls: 1.6 },
+          // Standalone landmarks
+          { label: "FLOWER TUNNEL",   x: 45, y: 33, rot: 0,   color: "rgba(244,114,182,0.9)",  size: 6.2, ls: 1.5 },
+          { label: "PIXEL FOREST",    x: 78, y: 60, rot: 0,   color: "rgba(244,114,182,0.85)", size: 6.2, ls: 1.5 },
+          { label: "NOMADS PORTAL",   x: 38, y: 76, rot: 0,   color: "rgba(244,114,182,0.85)", size: 5.6, ls: 1.4 },
         ].map((lm, i) => (
           <div key={i} style={{
             position: "absolute", left: `${lm.x}%`, top: `${lm.y}%`,
