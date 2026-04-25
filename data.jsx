@@ -12,16 +12,27 @@ const FESTIVAL = {
 // straightaways top + bottom, semicircle turns on left/right ends), so
 // kineticFIELD sits along the north straight, basspod along the south
 // straight, and cosmic/neon anchor the east + west turns.
+//
+// Stage colours mirror the official EDC poster's zone palette:
+//   kineticFIELD    — ember red (mainstage)
+//   quantumVALLEY   — sky cyan (trance)
+//   bionicJUNGLE    — teal (jungle/house)
+//   stereoBLOOM     — green
+//   cosmicMEADOW    — yellow
+//   neonGARDEN      — hot pink
+//   wasteLAND       — orange (desert)
+//   bassPOD         — royal blue
+//   circuitGROUNDS  — navy blue (paired blue zone with bassPOD)
 const STAGES = [
   { id: "kinetic", name: "Kinetic Field",   short: "KIN", color: "#e85d2e", x: 50, y: 20, size: 1.7, desc: "Mainstage · headliners, sunrise sets" },
   { id: "quantum", name: "Quantum Valley",  short: "QNT", color: "#38bdf8", x: 68, y: 28, size: 1.1, desc: "Trance, psytrance" },
-  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#34d399", x: 28, y: 30, size: 1.0, desc: "House, tech house" },
-  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#f472b6", x: 34, y: 40, size: 0.95, desc: "Tech house, underground" },
-  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#a78bfa", x: 18, y: 50, size: 1.2, desc: "Open-air · big room, legends" },
-  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#c8452a", x: 82, y: 50, size: 1.05, desc: "House, deep techno" },
-  { id: "waste",   name: "Wasteland",       short: "WST", color: "#6f8fb8", x: 30, y: 72, size: 1.0, desc: "Dubstep, bass" },
-  { id: "basspod", name: "Basspod",         short: "BAS", color: "#7b3d9a", x: 50, y: 80, size: 1.05, desc: "Dubstep, hard bass" },
-  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#f59a36", x: 70, y: 72, size: 1.15, desc: "Techno, big room" },
+  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#14b8a6", x: 28, y: 30, size: 1.0, desc: "House, tech house" },
+  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#22c55e", x: 34, y: 40, size: 0.95, desc: "Tech house, underground" },
+  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#fbbf24", x: 18, y: 50, size: 1.2, desc: "Open-air · big room, legends" },
+  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#ec4899", x: 82, y: 50, size: 1.05, desc: "House, deep techno" },
+  { id: "waste",   name: "Wasteland",       short: "WST", color: "#f97316", x: 30, y: 72, size: 1.0, desc: "Dubstep, bass" },
+  { id: "basspod", name: "Basspod",         short: "BAS", color: "#2563eb", x: 50, y: 80, size: 1.05, desc: "Dubstep, hard bass" },
+  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#1e40af", x: 70, y: 72, size: 1.15, desc: "Techno, big room" },
 ];
 
 const AMENITIES = [

@@ -811,6 +811,29 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           color: "rgba(255,210,150,0.95)", textShadow: "0 0 6px rgba(245,154,54,0.7)",
         }}>DAISY LANE</div>
 
+        {/* Named landmarks + walkways from the official EDC map */}
+        {[
+          { label: "KINETIC TRAIL",  x: 41, y: 28, rot: -55, color: "rgba(251,191,36,0.85)",  size: 6.8, ls: 1.6 },
+          { label: "MEMORY LANE",    x: 33, y: 55, rot: -90, color: "rgba(247,237,224,0.7)",  size: 6.8, ls: 1.6 },
+          { label: "POWER PATH",     x: 67, y: 38, rot: -90, color: "rgba(167,139,250,0.85)", size: 6.8, ls: 1.6 },
+          { label: "RAINBOW ROAD",   x: 65, y: 64, rot: -90, color: "rgba(244,114,182,0.85)", size: 6.8, ls: 1.6 },
+          { label: "NOMADS ALLEY",   x: 22, y: 70, rot: -22, color: "rgba(247,237,224,0.7)",  size: 6.5, ls: 1.5 },
+          { label: "FLOWER TUNNEL",  x: 45, y: 33, rot: 0,   color: "rgba(244,114,182,0.9)",  size: 6.2, ls: 1.5 },
+          { label: "PIXEL FOREST",   x: 78, y: 60, rot: 0,   color: "rgba(244,114,182,0.85)", size: 6.2, ls: 1.5 },
+          { label: "DOWNTOWN EDC",   x: 50, y: 55, rot: 0,   color: "rgba(251,191,36,0.95)",  size: 6.5, ls: 1.6 },
+          { label: "NOMADS PORTAL",  x: 40, y: 76, rot: 0,   color: "rgba(244,114,182,0.85)", size: 5.8, ls: 1.4 },
+        ].map((lm, i) => (
+          <div key={i} style={{
+            position: "absolute", left: `${lm.x}%`, top: `${lm.y}%`,
+            transform: `translate(-50%, -50%) rotate(${lm.rot}deg)`,
+            fontFamily: "Geist Mono, monospace",
+            fontSize: lm.size, letterSpacing: lm.ls, fontWeight: 700,
+            color: lm.color,
+            textShadow: "0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.4)",
+            whiteSpace: "nowrap", pointerEvents: "none",
+          }}>{lm.label}</div>
+        ))}
+
         {stages.map(s => {
           const on = s.id === selected;
           const anchor = anchorFor(s);
