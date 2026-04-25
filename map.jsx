@@ -614,17 +614,22 @@ function MapScreen({ state, setState }) {
 function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
   const sel = stages.find(s => s.id === selected);
 
+  // Push label OUT from stage in the direction farthest from the Daisy Lane
+  // plaza centre (50,50), so labels never collide with the central rectangle.
   const anchorFor = (s) => {
-    if (s.y < 20) return "S";
-    if (s.y > 78) return "N";
-    if (s.x < 25) return "E";
-    if (s.x > 72) return "W";
-    return "S";
+    const cx = 50, cy = 50;
+    const dx = s.x - cx, dy = s.y - cy;
+    if (Math.abs(dy) > Math.abs(dx) * 1.2) return dy < 0 ? "N" : "S";
+    return dx < 0 ? "W" : "E";
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: "var(--paper-2)", overflow: "hidden" }}>
-      <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
+    <div style={{
+      position: "absolute", inset: 0, overflow: "hidden",
+      // Letterbox colour blends with the dune perimeter so `meet` mode looks intentional
+      background: "#d9bf94",
+    }}>
+      <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
@@ -740,8 +745,13 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         </g>
       </svg>
 
-      {/* HTML label overlay */}
-      <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {/* HTML label overlay — sized to match the SVG's xMidYMid-meet square so
+          left/top % values align exactly with the dots inside the SVG. */}
+      <div style={{
+        position: "absolute", top: "50%", left: 0, width: "100%",
+        aspectRatio: "1 / 1", transform: "translateY(-50%)",
+        pointerEvents: "none",
+      }}>
         <div style={{
           position: "absolute", left: "50%", top: "43%",
           transform: "translate(-50%, -130%)",
