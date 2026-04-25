@@ -84,6 +84,99 @@ const FESTIVAL_CONFIG = {
 // FESTIVAL_CONFIG directly.
 const FESTIVAL = FESTIVAL_CONFIG;
 
+// ─────────────────────────────────────────────────────────────
+// FESTIVALS_REGISTRY (Phase 2)
+// ─────────────────────────────────────────────────────────────
+// All festivals the platform knows about. Currently only EDC LV
+// 2026 has full data (STAGES + ARTISTS + AMENITIES). The rest are
+// "preview" entries — visible in the festival switcher as "Coming
+// soon" so users see the platform's roadmap, but not selectable
+// until their data layer is filled in.
+const FESTIVALS_REGISTRY = [
+  {
+    config: FESTIVAL_CONFIG,
+    available: true,
+    accent: "#e85d2e",
+    emoji: "🌵",
+    region: "North America",
+  },
+  {
+    config: {
+      id: "ultra-mia-2026",
+      name: "Ultra Miami 2026",
+      shortName: "Ultra MIA 2026",
+      brand: "Ultra",
+      tagline: "March in Miami",
+      location: "Bayfront Park · Miami, FL",
+      dates: "March 27–29, 2026",
+    },
+    available: false,
+    accent: "#38bdf8",
+    emoji: "🌴",
+    region: "North America",
+  },
+  {
+    config: {
+      id: "coachella-2026",
+      name: "Coachella 2026",
+      shortName: "Coachella 2026",
+      brand: "Coachella",
+      tagline: "Empire Polo Club",
+      location: "Indio · Coachella Valley, CA",
+      dates: "April 10–19, 2026",
+    },
+    available: false,
+    accent: "#ec4899",
+    emoji: "🌺",
+    region: "North America",
+  },
+  {
+    config: {
+      id: "tomorrowland-2026",
+      name: "Tomorrowland 2026",
+      shortName: "TML 2026",
+      brand: "Tomorrowland",
+      tagline: "We are one",
+      location: "De Schorre · Boom, Belgium",
+      dates: "July 17–26, 2026",
+    },
+    available: false,
+    accent: "#f59a36",
+    emoji: "🦋",
+    region: "Europe",
+  },
+  {
+    config: {
+      id: "burning-man-2026",
+      name: "Burning Man 2026",
+      shortName: "Burning Man",
+      brand: "Burning Man",
+      tagline: "Black Rock City",
+      location: "Black Rock Desert · Nevada",
+      dates: "Aug 30 – Sep 7, 2026",
+    },
+    available: false,
+    accent: "#fbbf24",
+    emoji: "🔥",
+    region: "North America",
+  },
+];
+
+// Read the user's chosen festival from localStorage. Defaults to the
+// first registered festival. Switching festivals reloads the page so
+// the new FESTIVAL_CONFIG takes effect cleanly.
+function getActiveFestivalId() {
+  try {
+    const stored = localStorage.getItem("active_festival_id");
+    if (stored && FESTIVALS_REGISTRY.find(f => f.config.id === stored && f.available)) return stored;
+  } catch {}
+  return FESTIVALS_REGISTRY[0].config.id;
+}
+function setActiveFestivalAndReload(id) {
+  try { localStorage.setItem("active_festival_id", id); } catch {}
+  window.location.reload();
+}
+
 // Stage positions on the LVMS infield. The track is E-W elongated (long
 // straightaways top + bottom, semicircle turns on left/right ends), so
 // kineticFIELD sits along the north straight, basspod along the south
@@ -379,4 +472,8 @@ const ESSENTIALS = [
   { id: "e6", icon: "consent", title: "Consent & Reporting",       sub: "Tap for anonymous report line",   tone: "ember" },
 ];
 
-Object.assign(window, { FESTIVAL, FESTIVAL_CONFIG, STAGES, AMENITIES, AVATAR_START, FRIENDS, ARTISTS, DAYS, NOW, ALERTS, ESSENTIALS });
+Object.assign(window, {
+  FESTIVAL, FESTIVAL_CONFIG, STAGES, AMENITIES, AVATAR_START, FRIENDS, ARTISTS,
+  DAYS, NOW, ALERTS, ESSENTIALS,
+  FESTIVALS_REGISTRY, getActiveFestivalId, setActiveFestivalAndReload,
+});

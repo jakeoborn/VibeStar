@@ -312,7 +312,10 @@ function HomeScreen({ state, setState }) {
         borderBottom: "1px solid var(--line)",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <Wordmark size={16} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Wordmark size={16} />
+            <FestivalChip compact />
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => setOffline(o => !o)} title="Offline mode" style={{
               display: "flex", alignItems: "center", gap: 4,

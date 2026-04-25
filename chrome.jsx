@@ -466,8 +466,134 @@ function NotificationsCard({ state }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// Festival switcher (Phase 2)
+// ─────────────────────────────────────────────────────────────
+// Small "EDC LV 2026 ▾" pill that opens a sheet listing every
+// festival in FESTIVALS_REGISTRY. Selectable festivals reload the
+// page with their config; "coming soon" festivals are visible as
+// a roadmap preview but not selectable.
+function FestivalChip({ compact = false, accent = "var(--ink)" }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        background: "var(--paper-2)", border: "1px solid var(--line-2)",
+        color: accent,
+        borderRadius: 999, padding: compact ? "3px 8px 3px 7px" : "4px 10px 4px 8px",
+        fontFamily: "Geist Mono, monospace",
+        fontSize: compact ? 9 : 9.5, letterSpacing: 1.2, fontWeight: 700,
+        cursor: "pointer", whiteSpace: "nowrap",
+      }}>
+        <span style={{ fontSize: compact ? 11 : 12 }}>
+          {FESTIVALS_REGISTRY.find(f => f.config.id === FESTIVAL_CONFIG.id)?.emoji || "🎪"}
+        </span>
+        <span>{FESTIVAL_CONFIG.shortName.toUpperCase()}</span>
+        <svg width={compact ? 8 : 9} height={compact ? 8 : 9} viewBox="0 0 12 12" fill="none">
+          <path d="M3 4.5 L6 7.5 L9 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {open && <FestivalSwitcher onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function FestivalSwitcher({ onClose }) {
+  const activeId = FESTIVAL_CONFIG.id;
+  const onPick = (id, available) => {
+    if (!available || id === activeId) { onClose(); return; }
+    setActiveFestivalAndReload(id);
+  };
+  const byRegion = {};
+  FESTIVALS_REGISTRY.forEach(f => {
+    (byRegion[f.region] = byRegion[f.region] || []).push(f);
+  });
+  return (
+    <div onClick={onClose} style={{
+      position: "absolute", inset: 0, zIndex: 60,
+      background: "rgba(13,8,4,0.55)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "flex-end",
+      animation: "fadeIn .2s",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "var(--paper)", color: "var(--ink)",
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        width: "100%", padding: "14px 20px 24px",
+        boxShadow: "0 -10px 40px rgba(0,0,0,0.4)",
+        maxHeight: "85%", overflowY: "auto",
+      }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--line-2)" }}/>
+        </div>
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", marginBottom: 4 }}>
+          PICK A FESTIVAL
+        </div>
+        <div className="serif" style={{ fontSize: 26, lineHeight: 1.05, marginBottom: 18 }}>
+          Where are you raving?
+        </div>
+
+        {Object.entries(byRegion).map(([region, fests]) => (
+          <div key={region} style={{ marginBottom: 18 }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>
+              {region.toUpperCase()}
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {fests.map(f => {
+                const isActive = f.config.id === activeId;
+                const dimmed = !f.available;
+                return (
+                  <button key={f.config.id} onClick={() => onPick(f.config.id, f.available)}
+                    disabled={!f.available && !isActive}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12,
+                      padding: "12px 14px", borderRadius: 14,
+                      background: isActive ? f.accent : "var(--paper-2)",
+                      color: isActive ? "#fff" : "var(--ink)",
+                      border: `1px solid ${isActive ? f.accent : "var(--line-2)"}`,
+                      cursor: f.available ? "pointer" : "default",
+                      opacity: dimmed && !isActive ? 0.55 : 1,
+                      textAlign: "left", fontFamily: "inherit",
+                      transition: "transform .12s",
+                    }}>
+                    <span style={{ fontSize: 22 }}>{f.emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="serif" style={{ fontSize: 18, lineHeight: 1.05, fontWeight: 400 }}>
+                        {f.config.name}
+                      </div>
+                      <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1, marginTop: 3, opacity: 0.85 }}>
+                        {f.config.location.toUpperCase()} · {f.config.dates.toUpperCase()}
+                      </div>
+                    </div>
+                    {isActive && (
+                      <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, padding: "3px 7px", borderRadius: 999, background: "rgba(255,255,255,0.25)" }}>
+                        ACTIVE
+                      </div>
+                    )}
+                    {!isActive && !f.available && (
+                      <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, padding: "3px 7px", borderRadius: 999, background: "var(--paper)", color: "var(--muted)", border: "1px solid var(--line-2)" }}>
+                        SOON
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 6, textAlign: "center", lineHeight: 1.5 }}>
+          More festivals coming through 2026.<br/>
+          Switching reloads the app with the new festival's data.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   Screen, ScrollBody, TopBar, TabBar, Pill, ArtistSwatch, Wordmark,
   useInstallPrompt, InstallBanner,
   useNotifications, NotificationsCard, scheduleReminders,
+  FestivalChip, FestivalSwitcher,
 });
