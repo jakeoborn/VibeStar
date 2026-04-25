@@ -53,14 +53,19 @@
   <script type="text/babel" src="app.jsx"></script>
 
   <script>
-    // Nuke all old service workers + caches, then register fresh
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        Promise.all(regs.map(r => r.unregister())).then(() =>
-          caches.keys().then(keys =>
-            Promise.all(keys.filter(k => k !== 'vibestar-v6').map(k => caches.delete(k)))
-          )
-        ).then(() => navigator.serviceWorker.register('./sw.js'));
+      // Purge any stale caches the page itself can see, then register.
+      caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== 'vibestar-v7').map(k => caches.delete(k)))
+      ).then(() => navigator.serviceWorker.register('./sw.js'));
+
+      // When a new SW takes over an open tab, reload once so the page picks
+      // up fresh HTML/JSX instead of stale code from before the SW upgrade.
+      let _reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (_reloaded) return;
+        _reloaded = true;
+        window.location.reload();
       });
     }
   </script>

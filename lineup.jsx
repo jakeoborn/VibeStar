@@ -78,7 +78,7 @@ function LineupScreen({ state, setState }) {
       {/* Filter row */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "10px 20px",
+        padding: "10px 20px", gap: 8,
       }}>
         <div style={{ display: "flex", gap: 6 }}>
           {[["all","All"],["saved","Mine"]].map(([k,l]) => (
@@ -93,8 +93,13 @@ function LineupScreen({ state, setState }) {
             }}>{l}{k === "saved" && state.saved.length ? ` · ${state.saved.filter(id => ARTISTS.find(a => a.id === id)?.day === day).length}` : ""}</button>
           ))}
         </div>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
-          {dayArtists.length} SETS
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {state.saved.length > 0 && (
+            <ShareLineupButton state={state} />
+          )}
+          <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
+            {dayArtists.length} SETS
+          </div>
         </div>
       </div>
 
@@ -274,9 +279,183 @@ function TierStars({ tier }) {
   );
 }
 
+function ShareLineupButton({ state }) {
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const onClick = async () => {
+    if (busy) return;
+    setBusy(true);
+    const r = await shareLineupImage(state);
+    setBusy(false);
+    if (r.ok) {
+      setDone(true);
+      setTimeout(() => setDone(false), 1800);
+    }
+  };
+  return (
+    <button onClick={onClick} disabled={busy} style={{
+      display: "flex", alignItems: "center", gap: 5,
+      padding: "5px 10px", borderRadius: 999,
+      background: done ? "var(--success)" : "var(--ink)",
+      color: "var(--paper)", border: "none",
+      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+      cursor: busy ? "wait" : "pointer", textTransform: "uppercase",
+      opacity: busy ? 0.65 : 1,
+    }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 4 V14"/><path d="M7 9 L12 4 L17 9"/><path d="M5 14 V20 H19 V14"/>
+      </svg>
+      {done ? "SAVED" : busy ? "…" : "SHARE"}
+    </button>
+  );
+}
+
 function toggleSave(state, setState, id) {
   const has = state.saved.includes(id);
   setState({ ...state, saved: has ? state.saved.filter(x => x !== id) : [...state.saved, id] });
 }
 
-Object.assign(window, { LineupScreen, toggleSave, toNightMin, overlaps });
+// ── Share lineup image (canvas → PNG → Web Share / download) ──
+async function shareLineupImage(state) {
+  const saved = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(Boolean)
+    .sort((a, b) => a.day - b.day || toNightMin(a.start) - toNightMin(b.start));
+
+  if (saved.length === 0) return { ok: false, reason: "empty" };
+
+  // Make sure custom fonts are loaded before drawing — canvas needs them ready
+  try { await document.fonts?.ready; } catch {}
+
+  // 1080×1920 = IG/TikTok story aspect
+  const W = 1080, H = 1920;
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+
+  // Paper-tone gradient ground
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,    "#f7ede0");
+  bg.addColorStop(0.55, "#eee0cb");
+  bg.addColorStop(1,    "#e6d3b6");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sun-glow corner — distinct EDC desert vibe
+  const glow = ctx.createRadialGradient(W * 0.85, 220, 30, W * 0.85, 220, 600);
+  glow.addColorStop(0, "rgba(245,154,54,0.42)");
+  glow.addColorStop(1, "rgba(245,154,54,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, 700);
+
+  // Header
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(26,18,13,0.55)";
+  ctx.font = '600 22px "Geist Mono", monospace';
+  ctx.fillText("PLURSKY · MY EDC LV 2026", 80, 130);
+
+  ctx.fillStyle = "#1a120d";
+  ctx.font = '108px "Instrument Serif", serif';
+  ctx.fillText("My EDC", 80, 280);
+  ctx.font = 'italic 108px "Instrument Serif", serif';
+  ctx.fillStyle = "#e85d2e";
+  ctx.fillText("plan", 380, 280);
+
+  ctx.fillStyle = "rgba(26,18,13,0.6)";
+  ctx.font = '500 26px "Geist Mono", monospace';
+  const stages = [...new Set(saved.map(a => a.stage))].length;
+  ctx.fillText(`${saved.length} SETS · ${stages} STAGES · 3 NIGHTS`, 80, 340);
+
+  // Set list
+  let y = 470;
+  let lastDay = null;
+  const dayMeta = { 1: { label: "FRI", date: "MAY 15" }, 2: { label: "SAT", date: "MAY 16" }, 3: { label: "SUN", date: "MAY 17" } };
+
+  for (const a of saved) {
+    if (a.day !== lastDay) {
+      lastDay = a.day;
+      // Day section header
+      const dm = dayMeta[a.day];
+      ctx.fillStyle = "rgba(26,18,13,0.18)";
+      ctx.fillRect(80, y - 20, W - 160, 1);
+      ctx.fillStyle = "#1a120d";
+      ctx.font = '500 28px "Geist Mono", monospace';
+      ctx.fillText(`${dm.label} · ${dm.date}`, 80, y + 18);
+      ctx.fillStyle = "rgba(26,18,13,0.4)";
+      const dayCount = saved.filter(s => s.day === a.day).length;
+      ctx.textAlign = "right";
+      ctx.fillText(`${dayCount} SETS`, W - 80, y + 18);
+      ctx.textAlign = "left";
+      y += 70;
+    }
+
+    const stage = STAGES.find(s => s.id === a.stage);
+
+    // Stage colour stripe
+    ctx.fillStyle = stage.color;
+    ctx.fillRect(80, y, 6, 78);
+
+    // Time
+    ctx.fillStyle = "#1a120d";
+    ctx.font = '500 28px "Geist Mono", monospace';
+    ctx.fillText(a.start, 110, y + 32);
+    ctx.fillStyle = "rgba(26,18,13,0.45)";
+    ctx.font = '400 20px "Geist Mono", monospace';
+    ctx.fillText(a.end, 110, y + 60);
+
+    // Name + stage
+    ctx.fillStyle = "#1a120d";
+    ctx.font = '46px "Instrument Serif", serif';
+    let name = a.name;
+    if (ctx.measureText(name).width > 760) {
+      while (ctx.measureText(name + "…").width > 760 && name.length > 0) name = name.slice(0, -1);
+      name = name + "…";
+    }
+    ctx.fillText(name, 250, y + 38);
+
+    ctx.fillStyle = stage.color;
+    ctx.font = '600 18px "Geist Mono", monospace';
+    ctx.fillText(stage.name.toUpperCase() + " · " + a.genre.toUpperCase(), 250, y + 64);
+
+    y += 92;
+    if (y > H - 180) break; // safety: don't overflow story height
+  }
+
+  // Footer
+  ctx.fillStyle = "#1a120d";
+  ctx.font = '500 22px "Geist Mono", monospace';
+  ctx.textAlign = "center";
+  ctx.fillText("plursky.com", W / 2, H - 110);
+
+  ctx.fillStyle = "rgba(26,18,13,0.45)";
+  ctx.font = 'italic 26px "Instrument Serif", serif';
+  ctx.fillText("Three nights under the electric sky", W / 2, H - 70);
+
+  // Export
+  return new Promise((resolve) => {
+    cv.toBlob(async (blob) => {
+      if (!blob) { resolve({ ok: false, reason: "encode_fail" }); return; }
+      const file = new File([blob], "my-edc-2026.png", { type: "image/png" });
+      // Try Web Share API w/ files first (iOS 15+, Android Chrome)
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        try {
+          await navigator.share({ files: [file], title: "My EDC 2026 plan" });
+          resolve({ ok: true, mode: "share" });
+          return;
+        } catch (e) {
+          if (e.name === "AbortError") { resolve({ ok: true, mode: "abort" }); return; }
+          // fall through to download
+        }
+      }
+      // Fallback: trigger download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "my-edc-2026.png";
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      resolve({ ok: true, mode: "download" });
+    }, "image/png");
+  });
+}
+
+Object.assign(window, { LineupScreen, toggleSave, toNightMin, overlaps, shareLineupImage });

@@ -1,5 +1,30 @@
 // Home / "Today" screen — now playing + schedule preview
 
+// EDC LV 2026 gates open Friday May 15 at 17:00 PDT (UTC-7).
+const FESTIVAL_START_MS = Date.UTC(2026, 4, 16, 0, 0, 0); // May 15 17:00 PDT == May 16 00:00 UTC
+const FESTIVAL_END_MS   = Date.UTC(2026, 4, 18, 12, 0, 0); // May 18 05:00 PDT (Sunday sunrise close)
+
+function preEventCountdown() {
+  const now = Date.now();
+  if (now >= FESTIVAL_START_MS) return null;
+  const diff = FESTIVAL_START_MS - now;
+  return {
+    days:  Math.floor(diff / 86400000),
+    hours: Math.floor((diff / 3600000) % 24),
+    mins:  Math.floor((diff / 60000) % 60),
+    secs:  Math.floor((diff / 1000) % 60),
+  };
+}
+
+// Bumps every 30s so countdown stays accurate without spamming renders
+function useTick(intervalMs) {
+  const [, setT] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setT(t => t + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+}
+
 // 1 map unit ≈ 1.8 min walk; matches map.jsx
 function stageWalkMinutes(fromId, toId) {
   if (fromId === toId) return 0;
@@ -52,6 +77,10 @@ function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
   const unread = (state.alerts || ALERTS).filter(a => a.unread).length;
+
+  // Re-render every minute so the pre-event countdown stays accurate
+  useTick(60000);
+  const countdown = preEventCountdown();
 
   const current = ARTISTS.find(a => a.id === NOW.currentArtistId);
   const next    = ARTISTS.find(a => a.id === NOW.nextArtistId);
@@ -115,13 +144,33 @@ function HomeScreen({ state, setState }) {
             </div>
           </div>
         </div>
-        <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
-          Friday at <span style={{ fontStyle: "italic", color: "var(--ember)" }}>EDC</span>
-        </div>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6 }}>
-          LAS VEGAS MOTOR SPEEDWAY · MAY 15–17 · 97°F · SUNSET 19:52
-        </div>
+        {countdown ? (
+          <>
+            <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
+              Under the <span style={{ fontStyle: "italic", color: "var(--ember)" }}>electric sky</span> in
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginTop: 10 }}>
+              <CountdownPart n={countdown.days}  label="DAYS" />
+              <CountdownPart n={countdown.hours} label="HRS" />
+              <CountdownPart n={countdown.mins}  label="MIN" />
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 8 }}>
+              LAS VEGAS MOTOR SPEEDWAY · MAY 15–17, 2026
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
+              Friday at <span style={{ fontStyle: "italic", color: "var(--ember)" }}>EDC</span>
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6 }}>
+              LAS VEGAS MOTOR SPEEDWAY · MAY 15–17 · 97°F · SUNSET 19:52
+            </div>
+          </>
+        )}
       </div>
+
+      <InstallBanner />
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
         {/* NOW PLAYING hero card */}
@@ -452,6 +501,26 @@ function PlanRow({ entry, state, setState }) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.6" strokeLinecap="round">
           <path d="M9 6 L15 12 L9 18" />
         </svg>
+      </div>
+    </div>
+  );
+}
+
+function CountdownPart({ n, label }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+      <div className="serif" style={{
+        fontSize: 56, lineHeight: 0.92, letterSpacing: -1.5,
+        color: "var(--ink)",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {String(n).padStart(2, "0")}
+      </div>
+      <div className="mono" style={{
+        fontSize: 9, letterSpacing: 1.5, color: "var(--muted)",
+        marginTop: 2, fontWeight: 600,
+      }}>
+        {label}
       </div>
     </div>
   );

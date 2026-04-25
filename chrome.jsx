@@ -203,6 +203,107 @@ function Wordmark({ size = 18, color = "var(--ink)" }) {
   );
 }
 
+// ── PWA install prompt ────────────────────────────────────────
+// Android (Chrome/Edge): captures beforeinstallprompt and exposes prompt().
+// iOS (Safari): no native install prompt — show "Add to Home Screen" hint.
+// Standalone (already installed): suppress everything.
+function useInstallPrompt() {
+  const [deferred, setDeferred] = React.useState(null);
+  const [dismissed, setDismissed] = React.useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem("install_dismissed") === "1"
+  );
+
+  React.useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setDeferred(e); };
+    const installed = () => {
+      setDeferred(null);
+      try { localStorage.setItem("install_dismissed", "1"); } catch {}
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone =
+    (typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)").matches) ||
+    window.navigator.standalone === true;
+
+  const canInstall = !dismissed && !isStandalone && (deferred || isIOS);
+
+  return {
+    canInstall,
+    isIOS,
+    install: async () => {
+      if (!deferred) return;
+      deferred.prompt();
+      try {
+        const { outcome } = await deferred.userChoice;
+        if (outcome === "accepted") setDeferred(null);
+      } catch {}
+    },
+    dismiss: () => {
+      try { localStorage.setItem("install_dismissed", "1"); } catch {}
+      setDismissed(true);
+    },
+  };
+}
+
+function InstallBanner() {
+  const ip = useInstallPrompt();
+  if (!ip.canInstall) return null;
+
+  return (
+    <div style={{
+      margin: "8px 16px 0",
+      padding: "10px 12px",
+      borderRadius: 14,
+      background: "var(--ink)",
+      color: "var(--paper)",
+      display: "flex", alignItems: "center", gap: 11,
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 9,
+        background: "linear-gradient(135deg, var(--ember), var(--horizon))",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+      }}>
+        <span className="serif" style={{ fontSize: 22, color: "#fff", fontStyle: "italic" }}>P</span>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--flare)", fontWeight: 700 }}>
+          INSTALL PLURSKY
+        </div>
+        <div style={{ fontSize: 12, lineHeight: 1.35, marginTop: 2, color: "rgba(247,237,224,0.85)" }}>
+          {ip.isIOS
+            ? <>Tap <span style={{ display: "inline-flex", verticalAlign: "middle", padding: "0 2px" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3 L12 16"/><path d="M7 8 L12 3 L17 8"/><rect x="5" y="13" width="14" height="8" rx="1.5"/>
+                </svg></span> then <strong style={{ color: "var(--paper)" }}>Add to Home Screen</strong> for offline + full-screen.</>
+            : <>Add to home screen for offline lineup + full-screen map.</>}
+        </div>
+      </div>
+      {!ip.isIOS && (
+        <button onClick={ip.install} style={{
+          background: "var(--ember)", color: "#fff", border: "none",
+          borderRadius: 999, padding: "7px 12px", cursor: "pointer",
+          fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+          flexShrink: 0,
+        }}>INSTALL</button>
+      )}
+      <button onClick={ip.dismiss} aria-label="Dismiss" style={{
+        background: "transparent", border: "none", cursor: "pointer",
+        color: "rgba(247,237,224,0.55)", padding: 4, flexShrink: 0,
+        fontSize: 18, lineHeight: 1,
+      }}>×</button>
+    </div>
+  );
+}
+
 Object.assign(window, {
   Screen, ScrollBody, TopBar, TabBar, Pill, ArtistSwatch, Wordmark,
+  useInstallPrompt, InstallBanner,
 });
