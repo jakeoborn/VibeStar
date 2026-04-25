@@ -44,8 +44,10 @@ function App() {
 // Keyframes
 const styleTag = document.createElement("style");
 styleTag.textContent = `
-  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.1); } }
-  @keyframes spin  { to { transform: rotate(360deg); } }
+  @keyframes pulse  { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.1); } }
+  @keyframes spin   { to { transform: rotate(360deg); } }
+  @keyframes tdot   { 0%,60%,100% { transform: translateY(0); opacity: 0.4 } 30% { transform: translateY(-5px); opacity: 1 } }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 `;
 document.head.appendChild(styleTag);
 

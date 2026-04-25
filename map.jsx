@@ -1,6 +1,82 @@
 // Hybrid map — top-down navigation (default) + ground-level peek when a stage is selected.
 // Designed to feel like a real wayfinding app: glanceable, easy to meet friends, easy to route.
 
+// ── Messaging ─────────────────────────────────────────────────
+// Per-friend chat threads persisted in localStorage. Demo seed so the
+// drawer feels alive; real backend would replace _fakeReply with a fetch.
+const QUICK_REPLIES = [
+  { tag: "OMW",          text: "🚀 omw" },
+  { tag: "AT STAGE",     text: "📍 at the stage now" },
+  { tag: "MEET TOTEM",   text: "🪧 meet at the totem?" },
+  { tag: "WATER",        text: "💧 water break — back in 10" },
+  { tag: "FOUND U",      text: "👀 i see you" },
+  { tag: "NEED YOU",     text: "🆘 come find me" },
+];
+const _SEED_MSGS = {
+  f1: [
+    { from: "them", text: "yooo where you at??", ts: Date.now() - 1000*60*22 },
+    { from: "me",   text: "kineticFIELD, by the totems", ts: Date.now() - 1000*60*19 },
+    { from: "them", text: "🚀 omw", ts: Date.now() - 1000*60*4 },
+  ],
+  f2: [
+    { from: "them", text: "trance hit different tonight 😭", ts: Date.now() - 1000*60*38 },
+  ],
+  f3: [],
+  f4: [
+    { from: "them", text: "circuitGROUNDS in 5", ts: Date.now() - 1000*60*8 },
+  ],
+};
+function loadThread(friendId) {
+  try {
+    const raw = localStorage.getItem(`msg_${friendId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return _SEED_MSGS[friendId] || [];
+}
+function saveThread(friendId, msgs) {
+  try { localStorage.setItem(`msg_${friendId}`, JSON.stringify(msgs)); } catch {}
+}
+function clearAllThreads() {
+  Object.keys(localStorage).filter(k => k.startsWith("msg_")).forEach(k => localStorage.removeItem(k));
+}
+function unreadCount(friendId) {
+  const t = loadThread(friendId);
+  const lastRead = parseInt(localStorage.getItem(`msg_read_${friendId}`) || "0", 10);
+  return t.filter(m => m.from === "them" && m.ts > lastRead).length;
+}
+function markRead(friendId) {
+  try { localStorage.setItem(`msg_read_${friendId}`, String(Date.now())); } catch {}
+}
+// Returns a contextual reply based on the user's last message
+function _fakeReply(userText) {
+  const t = userText.toLowerCase();
+  if (/omw|on my way/.test(t))                return ["see you in a sec 🌟", 5000];
+  if (/water|hydrat/.test(t))                  return ["💧 same. by the cosmic water tent", 6500];
+  if (/totem|meet/.test(t))                    return ["📍 already there", 4500];
+  if (/kinetic|field/.test(t))                 return ["pulling up to kineticFIELD now", 7000];
+  if (/circuit|techno/.test(t))                return ["circuit's going off rn 🔥", 5500];
+  if (/where|location/.test(t))                return ["bionic — pin coming", 6000];
+  if (/help|need|sos|🆘/.test(t))              return ["coming. stay where u are 🚨", 3500];
+  if (/love|👀|❤️/.test(t))                    return ["🥺 ur the best", 5000];
+  return ["🫶", 4500 + Math.random()*2500];
+}
+
+// Friend status broadcasts — what stage they're at + freshness
+const _SEED_STATUSES = {
+  f1: { stage: "bionic",  ts: Date.now() - 1000*60*8  },
+  f2: { stage: "quantum", ts: Date.now() - 1000*60*22 },
+  f3: { stage: "stereo",  ts: Date.now() - 1000*60*4  },
+  f4: { stage: "circuit", ts: Date.now() - 1000*60*15 },
+};
+function friendStatus(friendId) {
+  try {
+    const raw = localStorage.getItem(`status_${friendId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return _SEED_STATUSES[friendId] || null;
+}
+
+
 // ── Wellness state ── persists across sessions in localStorage
 //
 // Hydration drifts down -1% every 90s while the page is open. We don't try
@@ -218,6 +294,7 @@ function MapScreen({ state, setState }) {
   const [meetWith, setMeetWith] = React.useState(null);
   const [search, setSearch] = React.useState("");
   const [heading, setHeading] = React.useState(0);
+  const [chatFriend, setChatFriend] = React.useState(null);
 
   // Real GPS → on-site map coords, off-site distance, or null
   const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
@@ -464,27 +541,57 @@ function MapScreen({ state, setState }) {
             {friends.map(f => {
               const d = Math.round(Math.sqrt((f.x-avatar.x)**2 + (f.y-avatar.y)**2) * 1.8);
               const active = meetWith === f.id;
+              const unread = unreadCount(f.id);
+              const handleClick = () => {
+                if (meetMode) { suggestMidpoint(f.id); return; }
+                setChatFriend(f);
+              };
               return (
-                <button key={f.id} onClick={() => meetMode && suggestMidpoint(f.id)}
-                  disabled={!meetMode}
+                <button key={f.id} onClick={handleClick}
                   style={{
+                    position: "relative",
                     flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-                    padding: "3px 7px 3px 3px", borderRadius: 999,
+                    padding: "3px 8px 3px 3px", borderRadius: 999,
                     background: active ? f.color : "rgba(247,237,224,0.08)",
                     border: `1px solid ${active ? f.color : "rgba(247,237,224,0.15)"}`,
                     color: active ? "#fff" : "rgba(247,237,224,0.85)",
-                    cursor: meetMode ? "pointer" : "default",
+                    cursor: "pointer",
                     fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 0.4, fontWeight: 600,
-                    opacity: !meetMode || active ? 1 : 0.85,
                   }}>
                   <span style={{ width: 14, height: 14, borderRadius: 14, background: f.avatarTone, border: "1.2px solid #fff", flexShrink: 0 }}/>
                   {f.name.toUpperCase()}·{d}M
+                  {unread > 0 && !meetMode && (
+                    <span style={{
+                      position: "absolute", top: -3, right: -3,
+                      minWidth: 14, height: 14, padding: "0 4px",
+                      background: "var(--ember)", color: "#fff",
+                      borderRadius: 14, fontSize: 8, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      border: "1.5px solid rgba(13,8,4,0.92)",
+                    }}>{unread}</span>
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
       </div>
+
+      {/* Chat drawer — opens on friend tap (when not in meet mode) */}
+      {chatFriend && (
+        <MessageDrawer
+          friend={chatFriend}
+          avatarStage={selectedStage}
+          onClose={() => setChatFriend(null)}
+          onSwitchToMeet={() => {
+            setMeetMode(true);
+            setMeetWith(chatFriend.id);
+            const f = friends.find(fr => fr.id === chatFriend.id);
+            if (f) setMeetTarget({ x: (avatar.x + f.x) / 2, y: (avatar.y + f.y) / 2, label: `Meet ${f.name}` });
+            setChatFriend(null);
+          }}
+        />
+      )}
 
       {/* BOTTOM SHEET */}
       {(stage || (meetMode && meetTarget)) && (
@@ -941,6 +1048,243 @@ function StageLineupSheet({ stage, minsWalk, dist, peek, setPeek, onClose, onOpe
           cursor: "pointer", fontWeight: 600,
         }}>SEE ALL {sets.length} SETS ↓</button>
       )}
+    </div>
+  );
+}
+
+// ── MESSAGE DRAWER ── per-friend chat with offline queue + canned replies
+function MessageDrawer({ friend, avatarStage, onClose, onSwitchToMeet }) {
+  const [thread, setThread] = React.useState(() => loadThread(friend.id));
+  const [draft, setDraft] = React.useState("");
+  const [typing, setTyping] = React.useState(false);
+  const scrollerRef = React.useRef(null);
+  const replyTimer = React.useRef(null);
+
+  React.useEffect(() => {
+    markRead(friend.id);
+    return () => { if (replyTimer.current) clearTimeout(replyTimer.current); };
+  }, [friend.id]);
+
+  React.useEffect(() => {
+    if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+  }, [thread, typing]);
+
+  const friendStage = STAGES.find(s => s.id === (friendStatus(friend.id)?.stage));
+  const status = friendStatus(friend.id);
+  const statusAge = status ? Math.round((Date.now() - status.ts) / 60000) : null;
+
+  const send = (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const stamped = trimmed +
+      (avatarStage && /(my (loc|spot)|where|here)/i.test(trimmed) && !/[a-z]field|stage/i.test(trimmed)
+        ? ` (${STAGES.find(s => s.id === avatarStage)?.short || ""})` : "");
+    const newThread = [...thread, { from: "me", text: stamped, ts: Date.now(), status: navigator.onLine ? "sent" : "queued" }];
+    setThread(newThread);
+    saveThread(friend.id, newThread);
+    setDraft("");
+    // Fake reply (stand-in for real backend)
+    const [reply, delay] = _fakeReply(stamped);
+    setTyping(true);
+    replyTimer.current = setTimeout(() => {
+      setTyping(false);
+      const next = [...newThread, { from: "them", text: reply, ts: Date.now() }];
+      setThread(next);
+      saveThread(friend.id, next);
+    }, delay);
+  };
+
+  const sendNativeSMS = async () => {
+    const text = `(via Plursky) at ${avatarStage ? STAGES.find(s => s.id === avatarStage)?.name : "EDC"} — meet up?`;
+    if (navigator.share) {
+      try { await navigator.share({ text, title: `to ${friend.name}` }); return; } catch {}
+    }
+    try { await navigator.clipboard.writeText(text); } catch {}
+  };
+
+  const fmtTime = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 50 }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", animation: "fadeIn .2s" }}/>
+      <div style={{
+        position: "absolute", left: 0, right: 0, bottom: 0,
+        background: "var(--paper)", color: "var(--ink)",
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        height: "82%", display: "flex", flexDirection: "column",
+        boxShadow: "0 -14px 36px rgba(0,0,0,0.45)",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 11,
+          padding: "14px 16px 12px", borderBottom: "1px solid var(--line)",
+        }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 42, background: friend.avatarTone,
+            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "Instrument Serif, serif", fontSize: 20, position: "relative", flexShrink: 0,
+          }}>
+            {friend.name[0]}
+            {!navigator.onLine ? null : (
+              <div style={{
+                position: "absolute", bottom: -1, right: -1,
+                width: 11, height: 11, borderRadius: 11,
+                background: "var(--success)", border: "2px solid var(--paper)",
+              }}/>
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1 }}>{friend.name}</div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3, textTransform: "uppercase" }}>
+              {friendStage
+                ? `${friendStage.name} · ${statusAge}m AGO`
+                : "STATUS UNKNOWN"}
+            </div>
+          </div>
+          <button onClick={onSwitchToMeet} title="Meet here" style={{
+            background: "transparent", border: "1px solid var(--line-2)", color: "var(--ink)",
+            borderRadius: 999, padding: "7px 10px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+          }}>📍 MEET</button>
+          <button onClick={sendNativeSMS} title="Open in Messages" style={{
+            background: "transparent", border: "1px solid var(--line-2)", color: "var(--ink)",
+            borderRadius: 999, padding: "7px 10px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+          }}>SMS</button>
+          <button onClick={onClose} aria-label="Close" style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            color: "var(--muted)", padding: 4, fontSize: 22, lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        {/* Offline banner */}
+        {!navigator.onLine && (
+          <div style={{
+            padding: "5px 16px", background: "rgba(232,93,46,0.08)",
+            borderBottom: "1px solid rgba(232,93,46,0.18)",
+          }}>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--ember)", fontWeight: 700 }}>
+              ⚠ OFFLINE · MESSAGES QUEUE & SEND WHEN YOU'RE BACK ONLINE
+            </span>
+          </div>
+        )}
+
+        {/* Thread */}
+        <div ref={scrollerRef} style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
+          {thread.length === 0 && (
+            <div style={{ textAlign: "center", padding: 32 }}>
+              <div className="serif" style={{ fontSize: 18, color: "var(--muted)", fontStyle: "italic" }}>
+                No messages yet
+              </div>
+              <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.2, color: "var(--muted)", marginTop: 6 }}>
+                TAP A QUICK REPLY ↓
+              </div>
+            </div>
+          )}
+          {thread.map((m, i) => {
+            const mine = m.from === "me";
+            const showTime = i === 0 || (m.ts - thread[i-1].ts) > 1000*60*5;
+            return (
+              <React.Fragment key={i}>
+                {showTime && (
+                  <div className="mono" style={{
+                    textAlign: "center", fontSize: 8.5, letterSpacing: 1.3,
+                    color: "var(--muted)", margin: "8px 0 6px", textTransform: "uppercase",
+                  }}>{fmtTime(m.ts)}</div>
+                )}
+                <div style={{
+                  display: "flex", justifyContent: mine ? "flex-end" : "flex-start",
+                  marginBottom: 4,
+                }}>
+                  <div style={{
+                    maxWidth: "76%",
+                    padding: "8px 12px", borderRadius: 18,
+                    background: mine ? "var(--ember)" : "var(--paper-2)",
+                    color: mine ? "#fff" : "var(--ink)",
+                    fontSize: 14, lineHeight: 1.35,
+                    borderBottomRightRadius: mine ? 6 : 18,
+                    borderBottomLeftRadius: mine ? 18 : 6,
+                  }}>
+                    {m.text}
+                  </div>
+                </div>
+                {mine && m.status === "queued" && i === thread.length - 1 && (
+                  <div className="mono" style={{ textAlign: "right", fontSize: 8, letterSpacing: 1.2, color: "var(--ember)", marginRight: 4, marginBottom: 4 }}>
+                    QUEUED
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+          {typing && (
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+              <div style={{
+                padding: "10px 14px", borderRadius: 18,
+                background: "var(--paper-2)", display: "flex", gap: 4,
+                borderBottomLeftRadius: 6,
+              }}>
+                {[0,1,2].map(i => (
+                  <span key={i} style={{
+                    width: 6, height: 6, borderRadius: 6, background: "var(--muted)",
+                    animation: `tdot 1.2s ${i * 0.15}s infinite`,
+                  }}/>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Quick replies */}
+        <div className="no-scrollbar" style={{
+          display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none",
+          padding: "8px 14px 6px", borderTop: "1px solid var(--line)",
+        }}>
+          {QUICK_REPLIES.map(qr => (
+            <button key={qr.tag} onClick={() => send(qr.text)} className="mono" style={{
+              flexShrink: 0, padding: "6px 11px", borderRadius: 999,
+              background: "var(--paper-2)", color: "var(--ink)",
+              border: "1px solid var(--line-2)",
+              fontSize: 9.5, letterSpacing: 1.1, fontWeight: 600,
+              cursor: "pointer", textTransform: "uppercase",
+            }}>{qr.tag}</button>
+          ))}
+        </div>
+
+        {/* Compose */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 14px 14px",
+        }}>
+          <input
+            type="text"
+            placeholder="Message…"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") send(draft); }}
+            style={{
+              flex: 1, padding: "10px 14px", borderRadius: 999,
+              background: "var(--paper-2)", border: "1px solid var(--line)",
+              fontFamily: "Geist, sans-serif", fontSize: 14,
+              color: "var(--ink)", outline: "none",
+            }}
+          />
+          <button onClick={() => send(draft)} disabled={!draft.trim()} style={{
+            width: 38, height: 38, borderRadius: 38,
+            background: draft.trim() ? "var(--ember)" : "var(--line-2)",
+            color: "#fff", border: "none",
+            cursor: draft.trim() ? "pointer" : "default",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "background .2s",
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19 V5"/><path d="M5 12 L12 5 L19 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

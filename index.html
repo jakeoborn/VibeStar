@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Plursky · Las Vegas 2026</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -53,14 +56,28 @@
   <script type="text/babel" src="app.jsx"></script>
 
   <script>
+    // Build version stamp — bumped on every deploy that changes app behaviour.
+    // If the running tab's stored version doesn't match, force a full reload
+    // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
+    const APP_VERSION = 'v8';
+    try {
+      const stored = localStorage.getItem('app_version');
+      if (stored && stored !== APP_VERSION) {
+        localStorage.setItem('app_version', APP_VERSION);
+        if ('caches' in window) {
+          caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))))
+            .then(() => location.reload());
+        } else { location.reload(); }
+      } else if (!stored) {
+        localStorage.setItem('app_version', APP_VERSION);
+      }
+    } catch {}
+
     if ('serviceWorker' in navigator) {
-      // Purge any stale caches the page itself can see, then register.
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v7').map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== 'vibestar-v8').map(k => caches.delete(k)))
       ).then(() => navigator.serviceWorker.register('./sw.js'));
 
-      // When a new SW takes over an open tab, reload once so the page picks
-      // up fresh HTML/JSX instead of stale code from before the SW upgrade.
       let _reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (_reloaded) return;
