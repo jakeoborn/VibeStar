@@ -725,6 +725,22 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.55)" strokeWidth="0.3"/>
         <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.95)"/>
 
+        {/* Entrance gates — perimeter access points. Three official EDC gates:
+            GATE S (NE), GATE C/D (west), GATE P (SW). Rendered as small green
+            chevron-style markers ON the LED ring, with the tiny label sitting
+            in the overlay slightly outside the track. */}
+        {[
+          { id: "S",  x: 76, y: 16 },
+          { id: "CD", x:  8, y: 50 },
+          { id: "P",  x: 18, y: 84 },
+        ].map(g => (
+          <g key={g.id}>
+            <circle cx={g.x} cy={g.y} r="2.2" fill="rgba(34,197,94,0.18)"/>
+            <circle cx={g.x} cy={g.y} r="1.4" fill="#22c55e" stroke="rgba(255,255,255,0.92)" strokeWidth="0.3"/>
+            <circle cx={g.x} cy={g.y} r="0.5" fill="#fff"/>
+          </g>
+        ))}
+
         {/* Amenity markers — water, medics, food, restrooms, info, art.
             Coloured dots so users can spot an amenity type at a glance
             (blue = water, red+ = medic, etc.). Drawn before stages so
@@ -836,6 +852,22 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 700,
           color: "rgba(255,210,150,0.95)", textShadow: "0 0 6px rgba(245,154,54,0.7)",
         }}>DAISY LANE</div>
+
+        {/* Entrance gate labels */}
+        {[
+          { label: "GATE S",   x: 76, y: 10 },
+          { label: "GATE C/D", x:  9, y: 44 },
+          { label: "GATE P",   x: 18, y: 91 },
+        ].map((g, i) => (
+          <div key={i} style={{
+            position: "absolute", left: `${g.x}%`, top: `${g.y}%`,
+            transform: "translate(-50%, -50%)",
+            fontFamily: "Geist Mono, monospace", fontSize: 5.8, letterSpacing: 1.4, fontWeight: 700,
+            color: "rgba(134,239,172,0.95)",
+            textShadow: "0 0 4px rgba(0,0,0,0.85)",
+            whiteSpace: "nowrap", pointerEvents: "none",
+          }}>{g.label}</div>
+        ))}
 
         {/* Named landmarks + walkways from the official EDC map */}
         {[
