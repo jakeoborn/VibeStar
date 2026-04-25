@@ -55,8 +55,8 @@ function WellnessPill() {
         position: "absolute", top: 14, left: 10, zIndex: 4,
         display: "flex", alignItems: "center", gap: 7,
         padding: "5px 10px 5px 7px", borderRadius: 999,
-        background: "rgba(8,18,6,0.86)",
-        border: `1px solid ${hyd < 40 || restMin > 120 ? "#f87171" : "rgba(180,240,130,0.18)"}`,
+        background: "rgba(13,8,4,0.86)",
+        border: `1px solid ${hyd < 40 || restMin > 120 ? "#f87171" : "rgba(247,237,224,0.16)"}`,
         backdropFilter: "blur(10px)",
         color: "rgba(247,237,224,0.95)",
         fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1, fontWeight: 600,
@@ -137,33 +137,123 @@ function WellnessPill() {
   );
 }
 
+// ── Real GPS plumbing ─────────────────────────────────────────
+// Las Vegas Motor Speedway. Three stage anchors give us an affine transform
+// from (lat, lng) → SVG (mapX, mapY) on the 0-100 grid.
+const STAGE_GPS = {
+  kinetic: { lat: 36.27512, lng: -115.0118 }, // mainstage, north end of infield
+  cosmic:  { lat: 36.27370, lng: -115.0148 }, // open-air, west / left
+  basspod: { lat: 36.27075, lng: -115.0123 }, // south / bottom
+};
+const FESTIVAL_LAT = 36.27370;
+const FESTIVAL_LNG = -115.0125;
+const ON_SITE_RADIUS_MI = 0.5; // ~800m — anything farther is treated as off-site
+
+// 3-point Cramer affine: [mapX, mapY] = M · [lat, lng, 1]
+function _solveMapAffine() {
+  const find = (id) => STAGES.find(s => s.id === id);
+  const A = { ...STAGE_GPS.kinetic, mx: find("kinetic").x, my: find("kinetic").y };
+  const B = { ...STAGE_GPS.cosmic,  mx: find("cosmic").x,  my: find("cosmic").y };
+  const C = { ...STAGE_GPS.basspod, mx: find("basspod").x, my: find("basspod").y };
+  const det = A.lat*(B.lng - C.lng) - A.lng*(B.lat - C.lat) + (B.lat*C.lng - C.lat*B.lng);
+  const solve = (v1, v2, v3) => {
+    const a = (v1*(B.lng - C.lng)        - A.lng*(v2 - v3)            + (B.lng*v3 - C.lng*v2)) / det;
+    const b = (A.lat*(v2 - v3)           - v1*(B.lat - C.lat)         + (B.lat*v3 - C.lat*v2)) / det;
+    const c = (A.lat*(B.lng*v3 - C.lng*v2) - A.lng*(B.lat*v3 - C.lat*v2) + v1*(B.lat*C.lng - C.lat*B.lng)) / det;
+    return [a, b, c];
+  };
+  return { x: solve(A.mx, B.mx, C.mx), y: solve(A.my, B.my, C.my) };
+}
+const MAP_AFFINE = _solveMapAffine();
+function gpsToMap(lat, lng) {
+  return {
+    x: MAP_AFFINE.x[0]*lat + MAP_AFFINE.x[1]*lng + MAP_AFFINE.x[2],
+    y: MAP_AFFINE.y[0]*lat + MAP_AFFINE.y[1]*lng + MAP_AFFINE.y[2],
+  };
+}
+// Haversine miles
+function distMiles(lat1, lng1, lat2, lng2) {
+  const R = 3959;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2
+          + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Watch the user's real position. Returns { pos, status, lastUpdate }.
+function useGeolocation(enabled) {
+  const [pos, setPos] = React.useState(null);
+  const [status, setStatus] = React.useState("idle"); // idle | locating | live | denied | unavailable
+  React.useEffect(() => {
+    if (!enabled) { setStatus("idle"); return; }
+    if (!navigator.geolocation) { setStatus("unavailable"); return; }
+    setStatus("locating");
+    let alive = true;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        if (!alive) return;
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, ts: Date.now() });
+        setStatus("live");
+      },
+      (e) => {
+        if (!alive) return;
+        setStatus(e.code === 1 ? "denied" : "unavailable");
+      },
+      { enableHighAccuracy: true, maximumAge: 4000, timeout: 15000 }
+    );
+    return () => { alive = false; navigator.geolocation.clearWatch(id); };
+  }, [enabled]);
+  return { pos, status };
+}
+
 function MapScreen({ state, setState }) {
   const [selectedStage, setSelectedStage] = React.useState(state.focusStage || null);
   const [gpsLive, setGpsLive] = React.useState(true);
-  const [avatar, setAvatar] = React.useState(AVATAR_START);
+  const [demoAvatar, setDemoAvatar] = React.useState(AVATAR_START);
   const [friends, setFriends] = React.useState(FRIENDS);
-  const [peek, setPeek] = React.useState(false);       // ground-level peek window
+  const [peek, setPeek] = React.useState(false);
   const [meetMode, setMeetMode] = React.useState(false);
   const [meetTarget, setMeetTarget] = React.useState(null);
   const [meetWith, setMeetWith] = React.useState(null);
   const [search, setSearch] = React.useState("");
   const [heading, setHeading] = React.useState(0);
 
-  // Real-time walking tick
+  // Real GPS → on-site map coords, off-site distance, or null
+  const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
+  const liveAvatar = React.useMemo(() => {
+    if (!gpsPos) return null;
+    const mi = distMiles(gpsPos.lat, gpsPos.lng, FESTIVAL_LAT, FESTIVAL_LNG);
+    if (mi > ON_SITE_RADIUS_MI) return { offSite: true, mi };
+    const { x, y } = gpsToMap(gpsPos.lat, gpsPos.lng);
+    return {
+      onSite: true,
+      x: Math.max(2, Math.min(98, x)),
+      y: Math.max(2, Math.min(98, y)),
+      accuracy: gpsPos.accuracy,
+    };
+  }, [gpsPos]);
+
+  const isLiveOnSite = !!liveAvatar?.onSite;
+  // When we don't have real on-site GPS, use the demo avatar (auto-walks
+  // toward selected stage / meet pin so the routing UI stays interactive).
+  const useDemo = !isLiveOnSite;
+  const avatar = isLiveOnSite ? { x: liveAvatar.x, y: liveAvatar.y } : demoAvatar;
+
+  // Demo wander tick — only runs when not pinned to real on-site GPS
   React.useEffect(() => {
-    if (!gpsLive) return;
+    if (!useDemo) return;
     const id = setInterval(() => {
       const goal = meetMode && meetTarget ? meetTarget
                  : selectedStage ? STAGES.find(s => s.id === selectedStage)
                  : null;
-      setAvatar(a => {
+      setDemoAvatar(a => {
         if (goal) {
           const dx = goal.x - a.x, dy = goal.y - a.y;
-          const d = Math.sqrt(dx*dx + dy*dy);
+          const d = Math.hypot(dx, dy);
           setHeading(Math.atan2(dy, dx));
           if (d < 1.2) return a;
-          const speed = 0.35;
-          return { x: a.x + (dx/d) * speed, y: a.y + (dy/d) * speed };
+          return { x: a.x + (dx/d) * 0.35, y: a.y + (dy/d) * 0.35 };
         }
         return {
           x: Math.max(12, Math.min(88, a.x + (Math.random() - 0.5) * 0.2)),
@@ -173,7 +263,7 @@ function MapScreen({ state, setState }) {
       setFriends(prev => prev.map(f => {
         if (meetMode && meetTarget && f.id === meetWith) {
           const dx = meetTarget.x - f.x, dy = meetTarget.y - f.y;
-          const d = Math.sqrt(dx*dx + dy*dy);
+          const d = Math.hypot(dx, dy);
           if (d < 1.2) return f;
           return { ...f, x: f.x + (dx/d) * 0.32, y: f.y + (dy/d) * 0.32 };
         }
@@ -185,7 +275,17 @@ function MapScreen({ state, setState }) {
       }));
     }, 600);
     return () => clearInterval(id);
-  }, [gpsLive, selectedStage, meetMode, meetTarget, meetWith]);
+  }, [useDemo, selectedStage, meetMode, meetTarget, meetWith]);
+
+  // Heading derivation when real GPS is on-site and walking toward a goal
+  React.useEffect(() => {
+    if (!isLiveOnSite) return;
+    const goal = meetMode && meetTarget ? meetTarget
+               : selectedStage ? STAGES.find(s => s.id === selectedStage)
+               : null;
+    if (!goal) return;
+    setHeading(Math.atan2(goal.y - avatar.y, goal.x - avatar.x));
+  }, [isLiveOnSite, avatar.x, avatar.y, selectedStage, meetMode, meetTarget]);
 
   const stage = selectedStage ? STAGES.find(s => s.id === selectedStage) : null;
   const nowAtStage = stage ? ARTISTS.find(a => a.stage === stage.id && a.day === NOW.day) : null;
@@ -217,45 +317,86 @@ function MapScreen({ state, setState }) {
     setMeetTarget({ x: (avatar.x + f.x) / 2, y: (avatar.y + f.y) / 2, label: `Meet ${f.name}` });
   };
 
+  // GPS pill label — reflects real status
+  const gpsLabel = !gpsLive ? "OFF"
+    : gpsStatus === "live"        ? (isLiveOnSite ? "LIVE" : "OFF-SITE")
+    : gpsStatus === "locating"    ? "FINDING…"
+    : gpsStatus === "denied"      ? "DENIED"
+    : gpsStatus === "unavailable" ? "N/A"
+    : "DEMO";
+  const gpsActive = gpsLive && (gpsStatus === "live" || gpsStatus === "locating");
+
   return (
-    <Screen bg="#0d1a12" ink="var(--paper)">
+    <Screen bg="var(--ink)" ink="var(--paper)">
       {/* SEARCH HEADER */}
-      <div style={{ padding: "8px 12px", background: "rgba(10,22,9,0.96)", borderBottom: "1px solid rgba(180,240,130,0.1)" }}>
+      <div style={{ padding: "8px 12px", background: "rgba(13,8,4,0.94)", borderBottom: "1px solid rgba(247,237,224,0.08)", backdropFilter: "blur(10px)" }}>
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
-          background: "rgba(180,240,130,0.07)",
+          background: "rgba(247,237,224,0.06)",
           borderRadius: 10, padding: "8px 10px",
-          border: "1px solid rgba(180,240,130,0.1)",
+          border: "1px solid rgba(247,237,224,0.1)",
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(180,240,130,0.5)" strokeWidth="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(247,237,224,0.5)" strokeWidth="2">
             <circle cx="11" cy="11" r="7"/><path d="M20 20 L16 16"/>
           </svg>
           <input
             type="text"
-            placeholder="Search stages..."
+            placeholder="Search stages…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
-              color: "rgba(210,250,180,0.9)", fontFamily: "Geist, sans-serif", fontSize: 13,
+              color: "rgba(247,237,224,0.92)", fontFamily: "Geist, sans-serif", fontSize: 13,
             }}
           />
           <button onClick={() => setGpsLive(g => !g)} style={{
-            background: gpsLive ? "#4caf50" : "rgba(180,240,130,0.15)",
-            color: gpsLive ? "#fff" : "rgba(180,240,130,0.6)",
+            display: "flex", alignItems: "center", gap: 5,
+            background: gpsActive ? "var(--ember)" : "rgba(247,237,224,0.1)",
+            color: gpsActive ? "#fff" : "rgba(247,237,224,0.6)",
             border: "none", borderRadius: 999, padding: "3px 9px",
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
-          }}>{gpsLive ? "LIVE" : "OFF"}</button>
+          }}>
+            {gpsActive && (
+              <span style={{
+                width: 5, height: 5, borderRadius: 5, background: "#fff",
+                animation: gpsStatus === "live" ? "pulse 1.4s infinite" : "none",
+              }}/>
+            )}
+            {gpsLabel}
+          </button>
         </div>
+        {liveAvatar?.offSite && (
+          <div style={{
+            marginTop: 6, padding: "5px 10px", borderRadius: 8,
+            background: "rgba(245,154,54,0.1)", border: "1px solid rgba(245,154,54,0.25)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "var(--flare)", fontWeight: 700 }}>
+              OFF-SITE · {liveAvatar.mi.toFixed(1)} MI FROM VENUE
+            </span>
+            <span style={{ fontSize: 10, color: "rgba(247,237,224,0.5)" }}>· showing demo position</span>
+          </div>
+        )}
+        {gpsLive && gpsStatus === "denied" && (
+          <div style={{
+            marginTop: 6, padding: "5px 10px", borderRadius: 8,
+            background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)",
+          }}>
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#f87171", fontWeight: 700 }}>
+              GPS DENIED · ENABLE LOCATION IN BROWSER SETTINGS
+            </span>
+          </div>
+        )}
         {search && (
-          <div style={{ marginTop: 6, maxHeight: 120, overflowY: "auto" }}>
+          <div style={{ marginTop: 6, maxHeight: 140, overflowY: "auto" }}>
             {filteredStages.map(s => (
               <button key={s.id} onClick={() => { setSelectedStage(s.id); setSearch(""); }} style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
-                background: "transparent", border: "none", color: "rgba(210,250,180,0.85)", textAlign: "left", cursor: "pointer",
+                width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+                background: "transparent", border: "none", color: "rgba(247,237,224,0.88)", textAlign: "left", cursor: "pointer",
+                borderRadius: 8,
               }}>
-                <span style={{ width: 8, height: 8, borderRadius: 8, background: s.color }}/>
+                <span style={{ width: 8, height: 8, borderRadius: 8, background: s.color, boxShadow: `0 0 6px ${s.color}` }}/>
                 <span style={{ fontFamily: "Geist, sans-serif", fontSize: 13 }}>{s.name}</span>
               </button>
             ))}
@@ -264,7 +405,7 @@ function MapScreen({ state, setState }) {
       </div>
 
       {/* MAP + PEEK WINDOW */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "#0d1a12" }}>
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "var(--ink)" }}>
         <WellnessPill />
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
@@ -282,7 +423,7 @@ function MapScreen({ state, setState }) {
         {meetMode && (
           <div style={{
             position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)",
-            background: meetTarget ? "var(--ember)" : "rgba(10,4,20,0.92)",
+            background: meetTarget ? "var(--ember)" : "rgba(13,8,4,0.92)",
             border: meetTarget ? "none" : "1px solid var(--ember)",
             color: meetTarget ? "#fff" : "var(--ember)",
             padding: "7px 13px", borderRadius: 999,
@@ -302,8 +443,8 @@ function MapScreen({ state, setState }) {
         {/* Friends bar (bottom overlay, always visible) */}
         <div style={{
           position: "absolute", left: 10, right: 10, bottom: stage || meetMode ? 140 : 10,
-          background: "rgba(8,18,6,0.92)",
-          border: "1px solid rgba(180,240,130,0.14)",
+          background: "rgba(13,8,4,0.92)",
+          border: "1px solid rgba(247,237,224,0.12)",
           borderRadius: 14, padding: 8,
           backdropFilter: "blur(12px)",
           display: "flex", alignItems: "center", gap: 8,
@@ -373,18 +514,18 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: "#0d1a12", overflow: "hidden" }}>
+    <div style={{ position: "absolute", inset: 0, background: "var(--ink)", overflow: "hidden" }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
           <radialGradient id="mapGround" cx="50%" cy="45%" r="70%">
-            <stop offset="0%"  stopColor="#1c2e1a"/>
-            <stop offset="60%" stopColor="#111e0f"/>
-            <stop offset="100%" stopColor="#080e07"/>
+            <stop offset="0%"  stopColor="#2a1a0e"/>
+            <stop offset="60%" stopColor="#1a120d"/>
+            <stop offset="100%" stopColor="#0d0805"/>
           </radialGradient>
           <pattern id="mapDots" width="5" height="5" patternUnits="userSpaceOnUse">
-            <circle cx="2.5" cy="2.5" r="0.25" fill="rgba(180,220,150,0.07)"/>
+            <circle cx="2.5" cy="2.5" r="0.22" fill="rgba(247,237,224,0.06)"/>
           </pattern>
           <filter id="stageglow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur"/>
@@ -396,26 +537,26 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         <rect x="0" y="0" width="100" height="100" fill="url(#mapGround)"/>
         <rect x="0" y="0" width="100" height="100" fill="url(#mapDots)"/>
 
-        {/* Speedway oval — the Las Vegas Motor Speedway track */}
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(180,220,150,0.06)" strokeWidth="5"/>
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(180,220,150,0.18)" strokeWidth="0.4"/>
-        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(180,220,150,0.08)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
+        {/* Speedway oval — Las Vegas Motor Speedway track */}
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(247,237,224,0.04)" strokeWidth="5"/>
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(247,237,224,0.16)" strokeWidth="0.4"/>
+        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(247,237,224,0.07)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
 
-        {/* Infield glow */}
-        <ellipse cx="50" cy="50" rx="36" ry="38" fill="rgba(120,200,80,0.022)"/>
+        {/* Infield warm glow */}
+        <ellipse cx="50" cy="50" rx="36" ry="38" fill="rgba(245,154,54,0.025)"/>
 
-        {/* Main pedestrian paths */}
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(220,255,180,0.10)" strokeWidth="2" fill="none" strokeLinecap="round"/>
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(220,255,180,0.05)" strokeWidth="3.5" fill="none" strokeLinecap="round"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(220,255,180,0.08)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
+        {/* Main pedestrian paths — dune/paper for warm desert feel */}
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(217,191,148,0.20)" strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(247,237,224,0.06)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
+        <path d="M14,50 Q50,52 86,50" stroke="rgba(217,191,148,0.16)" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
         {/* Diagonal connector paths */}
-        <path d="M22,22 Q36,36 50,51" stroke="rgba(220,255,180,0.05)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
-        <path d="M78,22 Q64,36 50,51" stroke="rgba(220,255,180,0.05)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+        <path d="M22,22 Q36,36 50,51" stroke="rgba(217,191,148,0.10)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+        <path d="M78,22 Q64,36 50,51" stroke="rgba(217,191,148,0.10)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
 
-        {/* Daisy Lane central plaza */}
-        <rect x="37" y="43" width="26" height="16" fill="rgba(220,255,180,0.04)" stroke="rgba(220,255,180,0.14)" strokeWidth="0.3" rx="2"/>
-        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(220,255,180,0.15)" strokeWidth="0.3"/>
-        <circle cx="50" cy="51" r="1.2" fill="rgba(220,255,180,0.18)"/>
+        {/* Daisy Lane central plaza — ember accent */}
+        <rect x="37" y="43" width="26" height="16" fill="rgba(245,154,54,0.05)" stroke="rgba(245,154,54,0.28)" strokeWidth="0.35" rx="2"/>
+        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.28)" strokeWidth="0.3"/>
+        <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.45)"/>
 
         {/* Route line to selected stage or meet point */}
         {(sel || meetTarget) && (() => {
@@ -495,7 +636,7 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           position: "absolute", left: "50%", top: "43%",
           transform: "translate(-50%, -130%)",
           fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 600,
-          color: "rgba(180,240,130,0.4)",
+          color: "rgba(245,154,54,0.65)",
         }}>DAISY LANE</div>
 
         {stages.map(s => {
@@ -514,9 +655,9 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
               style={{
                 position: "absolute", ...pos, ...tx,
                 pointerEvents: "auto", cursor: "pointer",
-                background: on ? s.color : "rgba(8,14,7,0.82)",
-                color: on ? "#fff" : "rgba(210,250,180,0.88)",
-                border: `1px solid ${on ? s.color : "rgba(180,240,130,0.16)"}`,
+                background: on ? s.color : "rgba(13,8,4,0.82)",
+                color: on ? "#fff" : "rgba(247,237,224,0.92)",
+                border: `1px solid ${on ? s.color : "rgba(247,237,224,0.18)"}`,
                 padding: on ? "4px 10px" : "3px 8px",
                 borderRadius: 999,
                 fontFamily: "Geist Mono, monospace",
@@ -524,7 +665,7 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
                 letterSpacing: 1.3, fontWeight: 700,
                 whiteSpace: "nowrap",
                 backdropFilter: "blur(8px)",
-                boxShadow: on ? `0 4px 14px ${s.color}60` : "0 1px 4px rgba(0,0,0,0.5)",
+                boxShadow: on ? `0 4px 14px ${s.color}66` : "0 1px 4px rgba(0,0,0,0.5)",
                 transition: "all 0.15s",
               }}>
               {s.name.toUpperCase()}
