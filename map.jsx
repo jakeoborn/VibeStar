@@ -296,6 +296,7 @@ function MapScreen({ state, setState }) {
   const [search, setSearch] = React.useState("");
   const [heading, setHeading] = React.useState(0);
   const [chatFriend, setChatFriend] = React.useState(null);
+  const [rideshareOpen, setRideshareOpen] = React.useState(false);
 
   // Real GPS → on-site map coords, off-site distance, or null
   const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
@@ -486,6 +487,19 @@ function MapScreen({ state, setState }) {
       {/* MAP + PEEK WINDOW */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "var(--paper-2)" }}>
         <WellnessPill />
+
+        {/* Rideshare FAB — Uber/Lyft deep links to the south pickup zone */}
+        <button onClick={() => setRideshareOpen(true)} aria-label="Rideshare pickup" style={{
+          position: "absolute", right: 12,
+          bottom: stage || meetMode ? 200 : 70,
+          width: 46, height: 46, borderRadius: 46,
+          background: "var(--paper)", color: "var(--ink)",
+          border: "1px solid var(--line-2)",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.28)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", zIndex: 4, transition: "bottom 0.3s",
+          fontSize: 22,
+        }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
@@ -606,6 +620,8 @@ function MapScreen({ state, setState }) {
           onOpenArtist={(id) => setState({ ...state, tab: "home", artist: id })}
         />
       )}
+
+      {rideshareOpen && <RideshareSheet onClose={() => setRideshareOpen(false)} />}
     </Screen>
   );
 }
@@ -680,22 +696,28 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           <circle key={i} cx={x} cy={y} r={r} fill={`rgba(255,255,255,${o})`}/>
         ))}
 
-        {/* Speedway oval — rainbow LED perimeter (the signature EDC visual) */}
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="url(#ledring)" strokeWidth="2.4" opacity="0.55" filter="url(#ringglow)"/>
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="url(#ledring)" strokeWidth="1.0"/>
-        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
+        {/* Speedway track — east-west elongated stadium matching the
+            LVMS aerial: long straightaways on top + bottom, full semicircle
+            turns capping the left + right ends. Rainbow LED perimeter is
+            the signature EDC visual (see the bird's-eye reference photo). */}
+        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+          fill="none" stroke="url(#ledring)" strokeWidth="2.4" opacity="0.55" filter="url(#ringglow)"/>
+        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+          fill="none" stroke="url(#ledring)" strokeWidth="1.0"/>
+        <rect x="11" y="19" width="78" height="62" rx="31" ry="31"
+          fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
 
         {/* Infield warm haze — the crowd's collective glow */}
-        <ellipse cx="50" cy="50" rx="36" ry="38" fill="url(#infieldGlow)"/>
+        <ellipse cx="50" cy="50" rx="38" ry="30" fill="url(#infieldGlow)"/>
 
         {/* Festoon string lights — main pedestrian arteries lit overhead */}
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(255,235,200,0.10)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(255,221,160,0.85)" strokeWidth="0.6" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.6"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(255,235,200,0.08)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(255,221,160,0.75)" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.4"/>
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,235,200,0.10)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,221,160,0.85)" strokeWidth="0.6" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.6"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,235,200,0.08)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,221,160,0.75)" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.4"/>
         {/* Diagonal feeders */}
-        <path d="M22,22 Q36,36 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
-        <path d="M78,22 Q64,36 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
+        <path d="M28,28 Q38,38 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
+        <path d="M72,28 Q62,38 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
 
         {/* Daisy Lane central plaza — neon ember outline */}
         <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.10)" stroke="rgba(245,154,54,0.85)" strokeWidth="0.35" rx="2" filter="url(#ringglow)"/>
@@ -846,6 +868,76 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700,
           pointerEvents: "none", boxShadow: "0 3px 10px rgba(245,154,54,0.45)",
         }}>YOU</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- RIDESHARE SHEET ----
+// Drivers can't enter the speedway grounds; the official pickup is the
+// south parking rideshare lot (~36.255, -115.012). We open the universal
+// Uber/Lyft web links — these auto-bridge to the native app if installed,
+// else fall through to the in-browser request flow.
+function RideshareSheet({ onClose }) {
+  // EDC's official South Lot rideshare pickup at Las Vegas Motor Speedway —
+  // the paved lot south of the venue where Uber/Lyft drivers stage. (LVMS
+  // address centroid: 36.272, -115.011; the pickup zone is ~1.4 km south.)
+  const lat = 36.258, lng = -115.011;
+  const open = (url) => { window.open(url, "_blank", "noopener"); onClose(); };
+  const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup[latitude]=${lat}&pickup[longitude]=${lng}&pickup[nickname]=EDC%20Rideshare%20Pickup`;
+  const lyftUrl = `https://lyft.com/ride?id=lyft&partner=&pickup[latitude]=${lat}&pickup[longitude]=${lng}`;
+
+  return (
+    <div onClick={onClose} style={{
+      position: "absolute", inset: 0, zIndex: 12,
+      background: "rgba(0,0,0,0.45)",
+      display: "flex", alignItems: "flex-end",
+      animation: "fadeIn .2s",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "var(--paper)", color: "var(--ink)",
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        width: "100%", padding: "14px 20px 24px",
+        boxShadow: "0 -10px 40px rgba(0,0,0,0.4)",
+      }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--line-2)" }}/>
+        </div>
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", marginBottom: 4 }}>
+          RIDESHARE · SOUTH LOT PICKUP
+        </div>
+        <div className="serif" style={{ fontSize: 26, lineHeight: 1.05, marginBottom: 10 }}>
+          Get a ride from the speedway
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
+          Drivers can't enter the venue. Walk south through the rideshare gate to the pickup lot — pin is pre-set so your driver finds you.
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <button onClick={() => open(uberUrl)} style={{
+            background: "#000", color: "#fff", border: "none",
+            borderRadius: 12, padding: "14px 16px",
+            fontFamily: "Geist Mono, monospace", fontSize: 12, letterSpacing: 1.4, fontWeight: 700,
+            cursor: "pointer",
+          }}>OPEN UBER</button>
+          <button onClick={() => open(lyftUrl)} style={{
+            background: "#FF00BF", color: "#fff", border: "none",
+            borderRadius: 12, padding: "14px 16px",
+            fontFamily: "Geist Mono, monospace", fontSize: 12, letterSpacing: 1.4, fontWeight: 700,
+            cursor: "pointer",
+          }}>OPEN LYFT</button>
+          <button onClick={onClose} style={{
+            background: "transparent", color: "var(--muted)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 12, padding: "12px 16px",
+            fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1.2, fontWeight: 600,
+            cursor: "pointer",
+          }}>CANCEL</button>
+        </div>
+
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 14, textAlign: "center" }}>
+          Universal links — opens app if installed, web otherwise.
+        </div>
       </div>
     </div>
   );

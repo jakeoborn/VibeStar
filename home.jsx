@@ -4,6 +4,225 @@
 const FESTIVAL_START_MS = Date.UTC(2026, 4, 16, 0, 0, 0); // May 15 17:00 PDT == May 16 00:00 UTC
 const FESTIVAL_END_MS   = Date.UTC(2026, 4, 18, 12, 0, 0); // May 18 05:00 PDT (Sunday sunrise close)
 
+// ── Sunrise / sunset table ──
+// Computed for Las Vegas Motor Speedway (36.27°N, -115.01°W). Across the
+// 3-day festival the sun barely moves, so a per-day lookup is more honest
+// than re-implementing astronomy in 30 lines of JS.
+const SUN_TIMES = {
+  1: { rise: "05:36", set: "19:34" }, // Friday  May 15 2026 PDT
+  2: { rise: "05:35", set: "19:35" }, // Saturday May 16 2026 PDT
+  3: { rise: "05:34", set: "19:36" }, // Sunday   May 17 2026 PDT
+};
+// EDC's official last-shuttle window: shuttles run until ~05:30 PDT on
+// each festival night (≈1h after final sets end). After that you walk or
+// rideshare from the south rideshare zone.
+const LAST_SHUTTLE_HHMM = "05:30";
+
+// Convert an HH:MM in "festival night" coords (>=18:00 today, <12:00 next
+// day) to absolute Date for the given festival day (1, 2, or 3).
+function festivalNightDate(day, hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  // Festival day 1 starts on Friday May 15 (UTC = May 16 if UTC-7 PDT)
+  // We anchor everything to PDT (UTC-7) since LVMS is in Pacific time.
+  const baseDayUtc = Date.UTC(2026, 4, 14 + day, 7, 0, 0); // 00:00 PDT of festival day d
+  const isOvernight = h < 12; // 00:00–11:59 belongs to the *next* calendar day
+  const dayMs = baseDayUtc + (isOvernight ? 86400000 : 0);
+  return new Date(dayMs + h * 3600000 + m * 60000);
+}
+
+function fmtCountdown(ms) {
+  if (ms <= 0) return null;
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h >= 1) return `${h}H ${m.toString().padStart(2, "0")}M`;
+  return `${m} MIN`;
+}
+
+// ── NWS weather (free, keyless, browser-CORS-friendly) ──
+// Caches forecast in localStorage for 1h so we don't hammer the API on
+// every render. Returns the *next* daily period (e.g., "Tonight" or
+// "Friday") with shortForecast + temperature + wind.
+async function fetchEdcForecast() {
+  try {
+    const cacheRaw = localStorage.getItem("nws_forecast_v1");
+    if (cacheRaw) {
+      const c = JSON.parse(cacheRaw);
+      if (Date.now() - c.fetchedAt < 3600000) return c.data;
+    }
+    const points = await fetch("https://api.weather.gov/points/36.27,-115.01", {
+      headers: { Accept: "application/geo+json" },
+    }).then(r => r.ok ? r.json() : null);
+    if (!points) return null;
+    const forecast = await fetch(points.properties.forecast, {
+      headers: { Accept: "application/geo+json" },
+    }).then(r => r.ok ? r.json() : null);
+    if (!forecast) return null;
+    const data = forecast.properties.periods.slice(0, 6);
+    localStorage.setItem("nws_forecast_v1", JSON.stringify({ fetchedAt: Date.now(), data }));
+    return data;
+  } catch { return null; }
+}
+
+function useNwsForecast() {
+  const [periods, setPeriods] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    fetchEdcForecast().then(p => { if (alive) setPeriods(p); });
+    return () => { alive = false; };
+  }, []);
+  return periods;
+}
+
+// Pre-festival: pick the period named "Friday" (opening day) or the next
+// "Tonight". During-festival: use the upcoming period.
+function pickRelevantPeriod(periods) {
+  if (!periods?.length) return null;
+  const now = Date.now();
+  const future = periods.filter(p => new Date(p.endTime).getTime() > now);
+  if (future.length) return future[0];
+  return periods[0];
+}
+
+// Tonight info card — sunset/sunrise, weather, last-shuttle warning.
+// Visible pre-festival (focused on opening day) and during-festival
+// (focused on tonight).
+function TonightCard({ state, setState }) {
+  const periods = useNwsForecast();
+  const period = pickRelevantPeriod(periods);
+  const day = NOW.day; // 1, 2, or 3 during festival
+  const sun = SUN_TIMES[day];
+  const now = Date.now();
+  const isPreEvent = now < FESTIVAL_START_MS;
+
+  // Next sunrise & sunset to display
+  const sunsetMs = festivalNightDate(day, sun.set).getTime();
+  const sunriseMs = festivalNightDate(day, sun.rise).getTime();
+  const nextSunsetMs = sunsetMs > now ? sunsetMs
+    : (day < 3 ? festivalNightDate(day + 1, SUN_TIMES[day + 1].set).getTime() : null);
+  const nextSunriseMs = sunriseMs > now ? sunriseMs
+    : (day < 3 ? festivalNightDate(day + 1, SUN_TIMES[day + 1].rise).getTime() : null);
+
+  // Last shuttle: only relevant in the wee hours after midnight on a
+  // festival night. We anchor it to the same calendar day's 05:30 PDT.
+  const lastShuttleMs = festivalNightDate(day, LAST_SHUTTLE_HHMM).getTime();
+  const inShuttleWindow = !isPreEvent && now < lastShuttleMs && (lastShuttleMs - now) < 4 * 3600000;
+  const shuttleMins = Math.floor((lastShuttleMs - now) / 60000);
+  const shuttleUrgent = inShuttleWindow && shuttleMins < 60;
+
+  const sunriseSet = nextSunriseMs ? fmtCountdown(nextSunriseMs - now) : null;
+  const sunsetSet = nextSunsetMs ? fmtCountdown(nextSunsetMs - now) : null;
+
+  // Find the artist playing at next sunrise (legendary "sunrise set")
+  const sunriseArtistId = (() => {
+    if (!nextSunriseMs) return null;
+    const d = new Date(nextSunriseMs);
+    const utcH = d.getUTCHours(), utcM = d.getUTCMinutes();
+    const pdtH = (utcH + 24 - 7) % 24;
+    const sunriseDay = (() => {
+      const days = [festivalNightDate(1, sun.rise), festivalNightDate(2, SUN_TIMES[2].rise), festivalNightDate(3, SUN_TIMES[3].rise)];
+      const idx = days.findIndex(x => Math.abs(x.getTime() - nextSunriseMs) < 60000);
+      return idx + 1;
+    })();
+    const target = `${pdtH.toString().padStart(2, "0")}:${utcM.toString().padStart(2, "0")}`;
+    return ARTISTS.find(a =>
+      a.day === sunriseDay && a.stage === "kinetic"
+      && toNightMin(a.start) <= toNightMin(target) && toNightMin(a.end) > toNightMin(target)
+    );
+  })();
+
+  const card = (label, value, sub, accent) => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.4, color: "rgba(247,237,224,0.55)", fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: "Geist Mono, monospace", fontSize: 18, fontWeight: 600, color: accent || "var(--paper)", marginTop: 3, lineHeight: 1 }}>{value}</div>
+      {sub && <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.1, color: "rgba(247,237,224,0.6)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{
+      marginTop: 18,
+      background: "var(--night)",
+      borderRadius: 16,
+      padding: "14px 16px 16px",
+      color: "var(--paper)",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      {/* Aurora glow */}
+      <div style={{
+        position: "absolute", inset: 0,
+        background: "radial-gradient(120% 60% at 80% 0%, rgba(245,154,54,0.18), transparent 55%), radial-gradient(80% 50% at 10% 110%, rgba(167,139,250,0.18), transparent 60%)",
+        pointerEvents: "none",
+      }}/>
+      <div style={{ position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+          <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "rgba(247,237,224,0.6)" }}>
+            {isPreEvent ? "OPENING NIGHT" : `TONIGHT · DAY ${day}`}
+          </div>
+          {period && (
+            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.5)" }}>
+              NWS · {period.name.toUpperCase()}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          {sunsetSet && card("SUNSET", sun.set, sunsetSet ? `IN ${sunsetSet}` : null, "var(--flare)")}
+          {sunriseSet && card(
+            "SUNRISE",
+            sun.rise,
+            sunriseArtistId ? `${sunriseArtistId.name.toUpperCase()} · KINETIC` : `IN ${sunriseSet}`,
+            "#fbbf24"
+          )}
+          {period && card(
+            "WEATHER",
+            `${period.temperature}°${period.temperatureUnit}`,
+            `${period.windSpeed} ${period.windDirection}`,
+            "#a8d4ff"
+          )}
+        </div>
+
+        {inShuttleWindow && (
+          <button
+            onClick={() => setState({ ...state, tab: "map" })}
+            style={{
+              marginTop: 14, width: "100%",
+              background: shuttleUrgent ? "var(--ember)" : "rgba(247,237,224,0.08)",
+              border: shuttleUrgent ? "none" : "1px solid rgba(247,237,224,0.2)",
+              color: "var(--paper)",
+              borderRadius: 10, padding: "10px 12px", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+              textAlign: "left",
+            }}>
+            <span>🚌  LAST SHUTTLE TO STRIP</span>
+            <span style={{ color: shuttleUrgent ? "#fff" : "var(--flare)" }}>
+              {shuttleMins > 0 ? `${shuttleMins} MIN` : "DEPARTED"}
+            </span>
+          </button>
+        )}
+
+        {!inShuttleWindow && sunriseArtistId && !isPreEvent && (
+          <button
+            onClick={() => setState({ ...state, tab: "home", artist: sunriseArtistId.id })}
+            style={{
+              marginTop: 14, width: "100%",
+              background: "rgba(247,237,224,0.06)", border: "1px solid rgba(247,237,224,0.18)",
+              color: "var(--paper)", borderRadius: 10, padding: "9px 12px", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+              textAlign: "left",
+            }}>
+            <span>🌅  SUNRISE SET · {sunriseArtistId.name.toUpperCase()}</span>
+            <span style={{ color: "#fbbf24" }}>{sunriseSet}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function preEventCountdown() {
   const now = Date.now();
   if (now >= FESTIVAL_START_MS) return null;
@@ -269,27 +488,8 @@ function HomeScreen({ state, setState }) {
         {/* TONIGHT'S PLAN — chronological saved sets with walking ETAs + leave-by */}
         <TonightsPlan plan={tonight} setState={setState} state={state} />
 
-        {/* Safety/info strip */}
-        <div style={{
-          marginTop: 18,
-          background: "var(--night)",
-          borderRadius: 16,
-          padding: 16,
-          color: "var(--paper)",
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="8" stroke="var(--flare)" strokeWidth="1.4" />
-            <path d="M12 7 V13" stroke="var(--flare)" strokeWidth="1.6" strokeLinecap="round" />
-            <circle cx="12" cy="16" r="0.8" fill="var(--flare)" />
-          </svg>
-          <div style={{ flex: 1 }}>
-            <div className="serif" style={{ fontSize: 16, lineHeight: 1.1 }}>Hydrate. Wind gust 18mph at 23:00.</div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "rgba(247,237,224,0.55)", marginTop: 3 }}>
-              MEDICS · MAP → LOOKOUT POINT
-            </div>
-          </div>
-        </div>
+        {/* Tonight: sunrise/sunset · weather · last-shuttle countdown */}
+        <TonightCard state={state} setState={setState} />
       </ScrollBody>
 
       {/* Offline banner */}

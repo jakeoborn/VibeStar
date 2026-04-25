@@ -8,18 +8,20 @@ const FESTIVAL = {
   year: 2026,
 };
 
-// Stage positions match the official speedway layout (top-down, from poster map).
-// The venue is a huge elongated oval; walking stage-to-stage can take 15-25 minutes.
+// Stage positions on the LVMS infield. The track is E-W elongated (long
+// straightaways top + bottom, semicircle turns on left/right ends), so
+// kineticFIELD sits along the north straight, basspod along the south
+// straight, and cosmic/neon anchor the east + west turns.
 const STAGES = [
-  { id: "kinetic", name: "Kinetic Field",   short: "KIN", color: "#e85d2e", x: 50, y: 16, size: 1.7, desc: "Mainstage · headliners, sunrise sets" },
-  { id: "quantum", name: "Quantum Valley",  short: "QNT", color: "#38bdf8", x: 70, y: 26, size: 1.1, desc: "Trance, psytrance" },
-  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#34d399", x: 22, y: 28, size: 1.0, desc: "House, tech house" },
-  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#f472b6", x: 32, y: 38, size: 0.95, desc: "Tech house, underground" },
-  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#a78bfa", x: 22, y: 52, size: 1.2, desc: "Open-air · big room, legends" },
-  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#c8452a", x: 78, y: 52, size: 1.05, desc: "House, deep techno" },
-  { id: "waste",   name: "Wasteland",       short: "WST", color: "#6f8fb8", x: 26, y: 78, size: 1.0, desc: "Dubstep, bass" },
-  { id: "basspod", name: "Basspod",         short: "BAS", color: "#7b3d9a", x: 50, y: 86, size: 1.05, desc: "Dubstep, hard bass" },
-  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#f59a36", x: 74, y: 80, size: 1.15, desc: "Techno, big room" },
+  { id: "kinetic", name: "Kinetic Field",   short: "KIN", color: "#e85d2e", x: 50, y: 20, size: 1.7, desc: "Mainstage · headliners, sunrise sets" },
+  { id: "quantum", name: "Quantum Valley",  short: "QNT", color: "#38bdf8", x: 68, y: 28, size: 1.1, desc: "Trance, psytrance" },
+  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#34d399", x: 28, y: 30, size: 1.0, desc: "House, tech house" },
+  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#f472b6", x: 34, y: 40, size: 0.95, desc: "Tech house, underground" },
+  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#a78bfa", x: 18, y: 50, size: 1.2, desc: "Open-air · big room, legends" },
+  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#c8452a", x: 82, y: 50, size: 1.05, desc: "House, deep techno" },
+  { id: "waste",   name: "Wasteland",       short: "WST", color: "#6f8fb8", x: 30, y: 72, size: 1.0, desc: "Dubstep, bass" },
+  { id: "basspod", name: "Basspod",         short: "BAS", color: "#7b3d9a", x: 50, y: 80, size: 1.05, desc: "Dubstep, hard bass" },
+  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#f59a36", x: 70, y: 72, size: 1.15, desc: "Techno, big room" },
 ];
 
 const AMENITIES = [

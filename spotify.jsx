@@ -668,6 +668,68 @@ function SafetyCards() {
   );
 }
 
+// Essentials checklist — persisted to localStorage so users can tick items
+// off as they pack at home and the state is still there at the venue.
+const PACK_ITEMS = [
+  { id: "hydra",  label: "Hydration pack / Camelbak", emoji: "💧" },
+  { id: "ear",    label: "Earplugs", emoji: "🎧" },
+  { id: "sun",    label: "Sunscreen + lip balm", emoji: "☀️" },
+  { id: "boots",  label: "Comfortable boots / sneakers", emoji: "👟" },
+  { id: "jacket", label: "Light jacket (60°F at sunrise)", emoji: "🧥" },
+  { id: "power",  label: "Phone charger / battery pack", emoji: "🔋" },
+  { id: "cash",   label: "Cash + ID + bank card", emoji: "💳" },
+  { id: "bandana",label: "Bandana / dust mask", emoji: "🌪️" },
+  { id: "kandi",  label: "Kandi + totem (foldable)", emoji: "🌈" },
+  { id: "snacks", label: "Snacks + gum", emoji: "🍭" },
+];
+
+function PackListCard() {
+  const [checked, setChecked] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem("pack_list_v1") || "{}"); }
+    catch { return {}; }
+  });
+  const toggle = (id) => {
+    const next = { ...checked, [id]: !checked[id] };
+    setChecked(next);
+    try { localStorage.setItem("pack_list_v1", JSON.stringify(next)); } catch {}
+  };
+  const done = PACK_ITEMS.filter(i => checked[i.id]).length;
+  return (
+    <div style={{ marginTop: 20, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 16, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+        <div className="serif" style={{ fontSize: 22 }}>Pack list</div>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: done === PACK_ITEMS.length ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+          {done}/{PACK_ITEMS.length} {done === PACK_ITEMS.length && "✓"}
+        </div>
+      </div>
+      {PACK_ITEMS.map((it, i) => (
+        <button key={it.id} onClick={() => toggle(it.id)} style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 12,
+          padding: "11px 4px", background: "transparent",
+          border: "none", borderBottom: i < PACK_ITEMS.length - 1 ? "1px solid var(--line)" : "none",
+          cursor: "pointer", textAlign: "left",
+        }}>
+          <span style={{
+            width: 20, height: 20, borderRadius: 6,
+            background: checked[it.id] ? "var(--ember)" : "transparent",
+            border: `1.5px solid ${checked[it.id] ? "var(--ember)" : "var(--line-2)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 12, fontWeight: 700,
+            flexShrink: 0, transition: "all .15s",
+          }}>{checked[it.id] ? "✓" : ""}</span>
+          <span style={{ fontSize: 15, opacity: 0.7, width: 22, textAlign: "center" }}>{it.emoji}</span>
+          <span style={{
+            flex: 1, fontFamily: "Geist, sans-serif", fontSize: 14,
+            color: checked[it.id] ? "var(--muted)" : "var(--ink)",
+            textDecoration: checked[it.id] ? "line-through" : "none",
+            transition: "color .15s",
+          }}>{it.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MeScreen({ state, setState }) {
   const friends = [
     { name: "Remi", color: "#e85d2e", at: "Bionic Jungle",   dist: "Here" },
@@ -782,6 +844,9 @@ function MeScreen({ state, setState }) {
         {/* Reminders / push notifications */}
         <NotificationsCard state={state} />
 
+        {/* Pack list — essentials checklist for the festival */}
+        <PackListCard />
+
         {/* Safety & Wellness — harm-reduction one tap away */}
         <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 3 }}>
           Safety & <span style={{ fontStyle: "italic" }}>care</span>
@@ -860,4 +925,5 @@ function BuildPlaylistButton({ state }) {
 Object.assign(window, {
   SpotifyScreen, MeScreen, fetchPreviewUrl,
   ensureSpotifyProfile, getSpotifyProfileSync, createEdcPlaylist,
+  startSpotifyAuth, PackListCard,
 });
