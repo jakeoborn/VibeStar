@@ -626,52 +626,82 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
   return (
     <div style={{
       position: "absolute", inset: 0, overflow: "hidden",
-      // Letterbox colour blends with the dune perimeter so `meet` mode looks intentional
-      background: "#d9bf94",
+      // Deep midnight letterbox — matches the night sky inside the SVG
+      background: "#06060f",
     }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
-          <radialGradient id="mapGround" cx="50%" cy="45%" r="70%">
-            <stop offset="0%"  stopColor="#f4ead8"/>
-            <stop offset="60%" stopColor="#ead8b8"/>
-            <stop offset="100%" stopColor="#d9bf94"/>
+          <radialGradient id="mapGround" cx="50%" cy="48%" r="65%">
+            <stop offset="0%"  stopColor="#1f1640"/>
+            <stop offset="55%" stopColor="#120a28"/>
+            <stop offset="100%" stopColor="#06060f"/>
           </radialGradient>
-          <pattern id="mapDots" width="5" height="5" patternUnits="userSpaceOnUse">
-            <circle cx="2.5" cy="2.5" r="0.22" fill="rgba(26,18,13,0.07)"/>
-          </pattern>
+          {/* Rainbow LED ring around the speedway — the iconic EDC perimeter */}
+          <linearGradient id="ledring" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stopColor="#e85d2e"/>
+            <stop offset="18%"  stopColor="#f59a36"/>
+            <stop offset="36%"  stopColor="#34d399"/>
+            <stop offset="55%"  stopColor="#38bdf8"/>
+            <stop offset="74%"  stopColor="#a78bfa"/>
+            <stop offset="92%"  stopColor="#f472b6"/>
+            <stop offset="100%" stopColor="#e85d2e"/>
+          </linearGradient>
+          {/* Warm infield haze — the festival glow seen from above */}
+          <radialGradient id="infieldGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stopColor="rgba(245,154,54,0.18)"/>
+            <stop offset="60%"  stopColor="rgba(232,93,46,0.06)"/>
+            <stop offset="100%" stopColor="rgba(232,93,46,0)"/>
+          </radialGradient>
           <filter id="stageglow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur"/>
             <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="ringglow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="0.9"/>
           </filter>
         </defs>
 
-        {/* Ground */}
+        {/* Night sky ground */}
         <rect x="0" y="0" width="100" height="100" fill="url(#mapGround)"/>
-        <rect x="0" y="0" width="100" height="100" fill="url(#mapDots)"/>
 
-        {/* Speedway oval — Las Vegas Motor Speedway track */}
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(26,18,13,0.06)" strokeWidth="5"/>
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(26,18,13,0.32)" strokeWidth="0.4"/>
-        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(26,18,13,0.18)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
+        {/* Starfield — deterministic, scattered across the sky outside the oval */}
+        {[
+          [4,8,0.18,0.7],[12,4,0.13,0.55],[22,3,0.22,0.85],[38,2,0.15,0.6],
+          [58,3,0.18,0.7],[72,5,0.14,0.55],[86,3,0.20,0.8],[94,9,0.16,0.6],
+          [3,22,0.14,0.5],[97,28,0.18,0.7],[2,42,0.16,0.6],[98,50,0.14,0.55],
+          [3,68,0.18,0.7],[96,72,0.14,0.55],[5,88,0.20,0.75],[18,95,0.15,0.6],
+          [42,97,0.16,0.6],[64,96,0.18,0.7],[85,94,0.14,0.55],[95,90,0.20,0.78],
+          [10,14,0.10,0.4],[28,8,0.12,0.45],[48,5,0.14,0.55],[78,11,0.11,0.45],
+          [92,18,0.12,0.5],[6,55,0.10,0.4],[94,62,0.12,0.5],[14,76,0.11,0.45],
+          [30,92,0.10,0.4],[88,82,0.12,0.5],
+        ].map(([x,y,r,o], i) => (
+          <circle key={i} cx={x} cy={y} r={r} fill={`rgba(255,255,255,${o})`}/>
+        ))}
 
-        {/* Infield warm wash */}
-        <ellipse cx="50" cy="50" rx="36" ry="38" fill="rgba(245,154,54,0.06)"/>
+        {/* Speedway oval — rainbow LED perimeter (the signature EDC visual) */}
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="url(#ledring)" strokeWidth="2.4" opacity="0.55" filter="url(#ringglow)"/>
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="url(#ledring)" strokeWidth="1.0"/>
+        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
 
-        {/* Main pedestrian paths — ink-toned for legibility on paper */}
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(247,237,224,0.55)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(26,18,13,0.18)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeDasharray="2 1.6"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(247,237,224,0.45)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(26,18,13,0.14)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeDasharray="2 1.6"/>
-        {/* Diagonal connector paths */}
-        <path d="M22,22 Q36,36 50,51" stroke="rgba(26,18,13,0.14)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
-        <path d="M78,22 Q64,36 50,51" stroke="rgba(26,18,13,0.14)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+        {/* Infield warm haze — the crowd's collective glow */}
+        <ellipse cx="50" cy="50" rx="36" ry="38" fill="url(#infieldGlow)"/>
 
-        {/* Daisy Lane central plaza — ember accent */}
-        <rect x="37" y="43" width="26" height="16" fill="rgba(245,154,54,0.10)" stroke="rgba(232,93,46,0.45)" strokeWidth="0.35" rx="2"/>
-        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(232,93,46,0.45)" strokeWidth="0.3"/>
-        <circle cx="50" cy="51" r="1.2" fill="rgba(232,93,46,0.7)"/>
+        {/* Festoon string lights — main pedestrian arteries lit overhead */}
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(255,235,200,0.10)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(255,221,160,0.85)" strokeWidth="0.6" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.6"/>
+        <path d="M14,50 Q50,52 86,50" stroke="rgba(255,235,200,0.08)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+        <path d="M14,50 Q50,52 86,50" stroke="rgba(255,221,160,0.75)" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.4"/>
+        {/* Diagonal feeders */}
+        <path d="M22,22 Q36,36 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
+        <path d="M78,22 Q64,36 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
+
+        {/* Daisy Lane central plaza — neon ember outline */}
+        <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.10)" stroke="rgba(245,154,54,0.85)" strokeWidth="0.35" rx="2" filter="url(#ringglow)"/>
+        <rect x="37" y="43" width="26" height="16" fill="none" stroke="rgba(245,154,54,0.95)" strokeWidth="0.18" rx="2"/>
+        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.55)" strokeWidth="0.3"/>
+        <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.95)"/>
 
         {/* Route line to selected stage or meet point */}
         {(sel || meetTarget) && (() => {
@@ -756,7 +786,7 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
           position: "absolute", left: "50%", top: "43%",
           transform: "translate(-50%, -130%)",
           fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 700,
-          color: "rgba(232,93,46,0.85)",
+          color: "rgba(255,210,150,0.95)", textShadow: "0 0 6px rgba(245,154,54,0.7)",
         }}>DAISY LANE</div>
 
         {stages.map(s => {
@@ -775,9 +805,9 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
               style={{
                 position: "absolute", ...pos, ...tx,
                 pointerEvents: "auto", cursor: "pointer",
-                background: on ? s.color : "rgba(247,237,224,0.96)",
-                color: on ? "#fff" : "var(--ink)",
-                border: `1px solid ${on ? s.color : "var(--line-2)"}`,
+                background: on ? s.color : "rgba(10,8,24,0.82)",
+                color: on ? "#fff" : "rgba(255,255,255,0.95)",
+                border: `1px solid ${on ? s.color : `${s.color}aa`}`,
                 padding: on ? "4px 10px" : "3px 8px",
                 borderRadius: 999,
                 fontFamily: "Geist Mono, monospace",
@@ -785,7 +815,9 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
                 letterSpacing: 1.3, fontWeight: 700,
                 whiteSpace: "nowrap",
                 backdropFilter: "blur(8px)",
-                boxShadow: on ? `0 4px 14px ${s.color}66` : "0 2px 6px rgba(26,18,13,0.10)",
+                boxShadow: on
+                  ? `0 4px 14px ${s.color}aa, 0 0 24px ${s.color}66`
+                  : `0 0 12px ${s.color}55, 0 2px 6px rgba(0,0,0,0.5)`,
                 transition: "all 0.15s",
               }}>
               {s.name.toUpperCase()}
