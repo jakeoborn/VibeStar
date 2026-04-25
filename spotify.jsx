@@ -779,6 +779,9 @@ function MeScreen({ state, setState }) {
           </div>
         ))}
 
+        {/* Reminders / push notifications */}
+        <NotificationsCard state={state} />
+
         {/* Safety & Wellness — harm-reduction one tap away */}
         <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 3 }}>
           Safety & <span style={{ fontStyle: "italic" }}>care</span>

@@ -279,33 +279,280 @@ function TierStars({ tier }) {
   );
 }
 
+// ── .ics calendar export ──
+// Festival is at LVMS in America/Los_Angeles (PDT in May).
+// Emit DTSTART/DTEND with TZID so any calendar app picks the right local time.
+function _setTimeToLocalDate(day, hhmm) {
+  // day=1 → May 15 (Fri), day=2 → May 16, day=3 → May 17
+  const d = new Date(2026, 4, 14 + day);
+  const [h, m] = hhmm.split(":").map(Number);
+  // Times before 08:00 are early-morning of the next calendar day
+  if (h < 8) d.setDate(d.getDate() + 1);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+function _icsLocal(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+}
+function _icsEscape(s) {
+  return String(s || "").replace(/[\\,;]/g, m => "\\" + m).replace(/\n/g, "\\n");
+}
+
+async function exportLineupICS(state) {
+  const saved = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(Boolean)
+    .sort((a, b) => a.day - b.day || toNightMin(a.start) - toNightMin(b.start));
+  if (saved.length === 0) return { ok: false, reason: "empty" };
+
+  const dtstamp = _icsLocal(new Date());
+  const events = saved.map(a => {
+    const stage = STAGES.find(s => s.id === a.stage);
+    const start = _icsLocal(_setTimeToLocalDate(a.day, a.start));
+    const end   = _icsLocal(_setTimeToLocalDate(a.day, a.end));
+    const summary = _icsEscape(`${a.name} · ${stage.short}`);
+    const desc = _icsEscape(`${a.genre} · ${stage.name}\\nbuilt with Plursky · plursky.com`);
+    const loc = _icsEscape(`${stage.name} · Las Vegas Motor Speedway`);
+    return [
+      "BEGIN:VEVENT",
+      `UID:plursky-${a.id}-2026@plursky.com`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART;TZID=America/Los_Angeles:${start}`,
+      `DTEND;TZID=America/Los_Angeles:${end}`,
+      `SUMMARY:${summary}`,
+      `LOCATION:${loc}`,
+      `DESCRIPTION:${desc}`,
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      "TRIGGER:-PT15M",
+      `DESCRIPTION:${summary} starts in 15 min`,
+      "END:VALARM",
+      "END:VEVENT",
+    ].join("\r\n");
+  }).join("\r\n");
+
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Plursky//EDC LV 2026//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:My EDC LV 2026",
+    "X-WR-TIMEZONE:America/Los_Angeles",
+    "BEGIN:VTIMEZONE",
+    "TZID:America/Los_Angeles",
+    "BEGIN:DAYLIGHT",
+    "TZOFFSETFROM:-0800",
+    "TZOFFSETTO:-0700",
+    "TZNAME:PDT",
+    "DTSTART:19700308T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
+    "END:DAYLIGHT",
+    "BEGIN:STANDARD",
+    "TZOFFSETFROM:-0700",
+    "TZOFFSETTO:-0800",
+    "TZNAME:PST",
+    "DTSTART:19701101T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
+    "END:STANDARD",
+    "END:VTIMEZONE",
+    events,
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const file = new File([blob], "my-edc-2026.ics", { type: "text/calendar" });
+  if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+    try { await navigator.share({ files: [file], title: "My EDC LV 2026" }); return { ok: true, mode: "share", count: saved.length }; }
+    catch (e) { if (e.name === "AbortError") return { ok: true, mode: "abort" }; }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = "my-edc-2026.ics";
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return { ok: true, mode: "download", count: saved.length };
+}
+
+// ── Printable lineup PDF (browser native) ──
+// Opens a print-friendly HTML view in a new window and triggers Print.
+// User saves as PDF from the OS print dialog — no PDF library required.
+function printLineupPDF(state) {
+  const saved = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(Boolean)
+    .sort((a, b) => a.day - b.day || toNightMin(a.start) - toNightMin(b.start));
+  if (saved.length === 0) return { ok: false, reason: "empty" };
+
+  const dayLabel = { 1: "FRI · MAY 15", 2: "SAT · MAY 16", 3: "SUN · MAY 17" };
+  const stages = [...new Set(saved.map(a => a.stage))].length;
+  const grouped = { 1: [], 2: [], 3: [] };
+  saved.forEach(a => grouped[a.day].push(a));
+
+  const dayBlock = (day, list) => list.length === 0 ? "" : `
+    <section class="day">
+      <h2>${dayLabel[day]}<span class="cnt">${list.length} sets</span></h2>
+      <table>
+        <colgroup><col class="ctime"><col><col class="cstage"></colgroup>
+        ${list.map(a => {
+          const st = STAGES.find(s => s.id === a.stage);
+          return `<tr>
+            <td class="time">${a.start}<span class="end">${a.end}</span></td>
+            <td>
+              <div class="name">${a.name.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>
+              <div class="genre">${a.genre}</div>
+            </td>
+            <td class="stage" style="border-left-color:${st.color}">${st.name}</td>
+          </tr>`;
+        }).join("")}
+      </table>
+    </section>`;
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>My EDC LV 2026 — Plursky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Geist',system-ui,sans-serif;color:#1a120d;background:#f7ede0;padding:48px 56px;font-size:13px;line-height:1.5}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1a120d;padding-bottom:14px;margin-bottom:30px}
+  .brand{font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:3px;font-weight:600;opacity:0.65}
+  h1{font-family:'Instrument Serif',serif;font-size:48px;line-height:0.95;letter-spacing:-1px;margin-top:6px}
+  h1 em{color:#e85d2e;font-style:italic}
+  .meta{font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:1.6px;text-align:right;color:rgba(26,18,13,0.55)}
+  .meta b{color:#1a120d;font-weight:600;font-size:14px}
+  .day{margin-bottom:34px;page-break-inside:avoid}
+  .day h2{font-family:'Geist Mono',monospace;font-size:13px;letter-spacing:2.5px;font-weight:700;color:#e85d2e;margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline}
+  .cnt{font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:1.4px;color:rgba(26,18,13,0.5);font-weight:500}
+  table{width:100%;border-collapse:collapse}
+  col.ctime{width:90px}
+  col.cstage{width:180px}
+  tr{border-bottom:1px solid rgba(26,18,13,0.12)}
+  td{padding:10px 6px;vertical-align:middle}
+  td.time{font-family:'Geist Mono',monospace;font-size:14px;font-weight:600}
+  td.time .end{display:block;font-weight:400;font-size:9.5px;letter-spacing:1px;color:rgba(26,18,13,0.5);margin-top:1px}
+  .name{font-family:'Instrument Serif',serif;font-size:24px;line-height:1.1;letter-spacing:-0.3px}
+  .genre{font-family:'Geist Mono',monospace;font-size:9.5px;letter-spacing:1.3px;color:rgba(26,18,13,0.5);margin-top:3px;text-transform:uppercase}
+  td.stage{font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:1.6px;font-weight:700;text-align:right;border-left:3px solid;padding-left:14px;text-transform:uppercase}
+  footer{margin-top:36px;padding-top:14px;border-top:1px solid rgba(26,18,13,0.18);display:flex;justify-content:space-between;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:1.4px;color:rgba(26,18,13,0.55)}
+  footer em{font-family:'Instrument Serif',serif;font-size:14px;color:#1a120d;font-style:italic;letter-spacing:0}
+  @media print{
+    body{padding:24px 32px;background:#fff}
+    .head{margin-bottom:22px}
+    .day{margin-bottom:26px}
+  }
+</style></head>
+<body>
+  <div class="head">
+    <div>
+      <div class="brand">PLURSKY</div>
+      <h1>My EDC <em>plan</em></h1>
+    </div>
+    <div class="meta">
+      <b>${saved.length}</b> SETS · <b>${stages}</b> STAGES<br>
+      LAS VEGAS MOTOR SPEEDWAY<br>
+      MAY 15–17 · 2026
+    </div>
+  </div>
+  ${dayBlock(1, grouped[1])}
+  ${dayBlock(2, grouped[2])}
+  ${dayBlock(3, grouped[3])}
+  <footer>
+    <span>plursky.com</span>
+    <em>Three nights under the electric sky</em>
+  </footer>
+</body></html>`;
+
+  const w = window.open("", "plursky-print", "width=900,height=1100");
+  if (!w) return { ok: false, reason: "popup_blocked" };
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  // Give fonts a moment to load before triggering Print
+  setTimeout(() => { try { w.print(); } catch {} }, 500);
+  return { ok: true };
+}
+
 function ShareLineupButton({ state }) {
+  const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [done, setDone] = React.useState(false);
-  const onClick = async () => {
+  const [done, setDone] = React.useState(null); // 'image' | 'cal' | 'pdf' | null
+
+  const wrap = (key, fn) => async () => {
     if (busy) return;
-    setBusy(true);
-    const r = await shareLineupImage(state);
+    setOpen(false); setBusy(true);
+    const r = await fn(state);
     setBusy(false);
-    if (r.ok) {
-      setDone(true);
-      setTimeout(() => setDone(false), 1800);
+    if (r?.ok) { setDone(key); setTimeout(() => setDone(null), 1800); }
+    else if (r?.reason === "popup_blocked") {
+      alert("Popup blocked — allow popups for plursky.com and try again.");
     }
   };
+
   return (
-    <button onClick={onClick} disabled={busy} style={{
-      display: "flex", alignItems: "center", gap: 5,
-      padding: "5px 10px", borderRadius: 999,
-      background: done ? "var(--success)" : "var(--ink)",
-      color: "var(--paper)", border: "none",
-      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
-      cursor: busy ? "wait" : "pointer", textTransform: "uppercase",
-      opacity: busy ? 0.65 : 1,
-    }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 4 V14"/><path d="M7 9 L12 4 L17 9"/><path d="M5 14 V20 H19 V14"/>
-      </svg>
-      {done ? "SAVED" : busy ? "…" : "SHARE"}
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} disabled={busy} style={{
+        display: "flex", alignItems: "center", gap: 5,
+        padding: "5px 10px", borderRadius: 999,
+        background: done ? "var(--success)" : "var(--ink)",
+        color: "var(--paper)", border: "none",
+        fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+        cursor: busy ? "wait" : "pointer", textTransform: "uppercase",
+        opacity: busy ? 0.65 : 1,
+      }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 4 V14"/><path d="M7 9 L12 4 L17 9"/><path d="M5 14 V20 H19 V14"/>
+        </svg>
+        {done === "image" ? "SAVED"
+          : done === "cal" ? "ADDED"
+          : done === "pdf" ? "PRINTED"
+          : busy ? "…" : "SHARE"}
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{
+            position: "fixed", inset: 0, zIndex: 60, background: "transparent",
+          }}/>
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 61,
+            background: "var(--paper)", border: "1px solid var(--line-2)",
+            borderRadius: 12, padding: 5, minWidth: 200,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+          }}>
+            <ShareMenuItem icon="img"  label="Image for stories" sub="1080×1920 PNG" onClick={wrap("image", shareLineupImage)} />
+            <ShareMenuItem icon="cal"  label="Add to calendar"   sub=".ics with 15-min reminders" onClick={wrap("cal", exportLineupICS)} />
+            <ShareMenuItem icon="prn"  label="Print schedule"    sub="Save as PDF from print dialog" onClick={wrap("pdf", async (s) => printLineupPDF(s))} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ShareMenuItem({ icon, label, sub, onClick }) {
+  const ico =
+    icon === "img" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 17 L9 12 L14 16 L17 13 L21 17"/></svg> :
+    icon === "cal" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9 H21"/><path d="M8 3 V7"/><path d="M16 3 V7"/></svg> :
+                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9 V3 H18 V9"/><rect x="3" y="9" width="18" height="9" rx="1"/><rect x="6" y="14" width="12" height="6"/></svg>;
+  return (
+    <button onClick={onClick} style={{
+      display: "flex", alignItems: "center", gap: 10, width: "100%",
+      padding: "9px 10px", borderRadius: 8,
+      background: "transparent", border: "none", cursor: "pointer",
+      textAlign: "left", color: "var(--ink)",
+      fontFamily: "inherit", transition: "background .15s",
+    }}
+    onMouseEnter={(e) => e.currentTarget.style.background = "var(--paper-2)"}
+    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+      <span style={{ color: "var(--ember)", display: "flex" }}>{ico}</span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontSize: 13, fontWeight: 500 }}>{label}</span>
+        <span className="mono" style={{ display: "block", fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 1, textTransform: "uppercase" }}>{sub}</span>
+      </span>
     </button>
   );
 }

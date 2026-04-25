@@ -1,4 +1,4 @@
-const CACHE = 'vibestar-v8';
+const CACHE = 'vibestar-v9';
 const PRECACHE = [
   './',
   './index.html',
@@ -51,9 +51,11 @@ self.addEventListener('fetch', e => {
   if (req.url.includes('accounts.spotify.com') || req.url.includes('api.spotify.com')) return;
 
   if (isLocalAsset(req.url)) {
-    // Network-first for app files — new deploys show up immediately
+    // Network-first with cache:'no-store' so the browser HTTP cache can't
+    // serve us a stale index.html or stale JSX after a deploy. Falls back
+    // to the SW cache if offline.
     e.respondWith(
-      fetch(req).then(resp => {
+      fetch(req, { cache: 'no-store' }).then(resp => {
         if (resp && resp.status === 200) {
           caches.open(CACHE).then(c => c.put(req, resp.clone()));
         }
@@ -81,6 +83,37 @@ self.addEventListener('fetch', e => {
         }
         return resp;
       }).catch(() => caches.match('./index.html'));
+    })
+  );
+});
+
+// ── Push (server-driven) ──
+// No backend wired yet, but the handler is ready: a Web Push send from any
+// future server (Supabase Edge Fn, Firebase, custom) will display via the
+// data envelope { title, body, tag, url, icon, badge }.
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch {
+    try { data = { title: 'Plursky', body: e.data ? e.data.text() : '' }; } catch {}
+  }
+  e.waitUntil(self.registration.showNotification(data.title || 'Plursky', {
+    body:  data.body  || '',
+    icon:  data.icon  || '/og.svg',
+    badge: data.badge || '/og.svg',
+    tag:   data.tag   || 'plursky',
+    data:  { url: data.url || '/' },
+    vibrate: [80, 40, 80],
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const target = e.notification.data?.url || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then(list => {
+      const existing = list.find(c => c.url.includes(self.location.origin));
+      if (existing) { existing.focus(); return existing.navigate?.(target); }
+      return self.clients.openWindow(target);
     })
   );
 });

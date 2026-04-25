@@ -303,7 +303,171 @@ function InstallBanner() {
   );
 }
 
+// ── Push notifications scaffolding ────────────────────────────
+// No backend yet — but the SW push handler is in place, so once a backend
+// (Supabase Edge Fn / Firebase / native app) wires up Web Push, this just
+// needs the subscribe endpoint and we're live.
+//
+// For now we use registration.showNotification directly to schedule
+// foreground reminders for saved sets (works while the tab/PWA is open).
+// Background reminders need either a server with VAPID + push subscription,
+// or the native app — both planned.
+function useNotifications() {
+  const supported = typeof Notification !== "undefined";
+  const [perm, setPerm] = React.useState(supported ? Notification.permission : "unsupported");
+
+  const enable = async () => {
+    if (!supported) return "unsupported";
+    if (perm === "granted") return "granted";
+    const result = await Notification.requestPermission();
+    setPerm(result);
+    return result;
+  };
+
+  const showLocal = async (title, opts = {}) => {
+    if (!supported || perm !== "granted") return false;
+    try {
+      const reg = await navigator.serviceWorker?.ready;
+      if (reg) {
+        await reg.showNotification(title, {
+          icon: "/og.svg", badge: "/og.svg",
+          vibrate: [80, 40, 80],
+          ...opts,
+        });
+      } else {
+        new Notification(title, opts);
+      }
+      return true;
+    } catch { return false; }
+  };
+
+  return { supported, perm, enable, showLocal };
+}
+
+// Schedules in-tab reminders for upcoming saved sets.
+// Uses NOW.time as the festival clock (demo mode); during the real festival
+// this would run off the wall clock with `new Date()`.
+const _SCHEDULED = new Map(); // setId → timeout handle
+function scheduleReminders(state, showLocal) {
+  // Clear stale handles
+  _SCHEDULED.forEach(h => clearTimeout(h));
+  _SCHEDULED.clear();
+
+  const nowMin = (typeof toNightMin !== "undefined" ? toNightMin(NOW.time) : 0);
+  const fests = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(a => a && a.day === NOW.day);
+
+  fests.forEach(a => {
+    const startMin = toNightMin(a.start);
+    const minsUntil15 = startMin - 15 - nowMin;
+    if (minsUntil15 <= 0 || minsUntil15 > 180) return; // only schedule if within 3hr
+    const stage = STAGES.find(s => s.id === a.stage);
+    const handle = setTimeout(() => {
+      showLocal(`${a.name} starts in 15 min`, {
+        body: `${stage.name} · ${a.start}`,
+        tag: `set-${a.id}`,
+        data: { url: "/" },
+      });
+    }, minsUntil15 * 60 * 1000);
+    _SCHEDULED.set(a.id, handle);
+  });
+  return _SCHEDULED.size;
+}
+
+function NotificationsCard({ state }) {
+  const { supported, perm, enable, showLocal } = useNotifications();
+  const [scheduled, setScheduled] = React.useState(0);
+  const [flash, setFlash] = React.useState(null); // 'enabled' | 'tested' | 'scheduled'
+
+  // When granted, auto-schedule on save list change
+  React.useEffect(() => {
+    if (perm === "granted") setScheduled(scheduleReminders(state, showLocal));
+  }, [perm, state.saved.join(",")]);
+
+  const onEnable = async () => {
+    const r = await enable();
+    if (r === "granted") {
+      const n = scheduleReminders(state, showLocal);
+      setScheduled(n);
+      setFlash("enabled"); setTimeout(() => setFlash(null), 2000);
+    }
+  };
+
+  const onTest = async () => {
+    const ok = await showLocal("Plursky reminder · TEST", {
+      body: "This is what set-start alerts will look like.",
+      tag: "plursky-test",
+    });
+    if (ok) { setFlash("tested"); setTimeout(() => setFlash(null), 1800); }
+  };
+
+  if (!supported) {
+    return (
+      <div style={{
+        padding: "12px 14px", borderRadius: 12,
+        background: "var(--paper)", border: "1px solid var(--line)",
+        marginBottom: 12,
+      }}>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", fontWeight: 700 }}>
+          NOTIFICATIONS · UNSUPPORTED
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.4 }}>
+          Your browser doesn't support web notifications. Install Plursky to your home screen for the full experience.
+        </div>
+      </div>
+    );
+  }
+
+  const label = perm === "granted" ? "ENABLED" : perm === "denied" ? "BLOCKED" : "OFF";
+  const labelColor = perm === "granted" ? "var(--success)" : perm === "denied" ? "#f87171" : "var(--muted)";
+
+  return (
+    <div style={{
+      padding: 14, borderRadius: 14,
+      background: "var(--paper)", border: "1px solid var(--line)",
+      marginBottom: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.5, color: "var(--muted)", fontWeight: 700 }}>
+          REMINDERS
+        </div>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: labelColor, fontWeight: 700 }}>
+          {flash === "enabled" ? "✓ ENABLED" : flash === "tested" ? "✓ TEST SENT" : label}
+        </span>
+      </div>
+      <div className="serif" style={{ fontSize: 19, lineHeight: 1.1, marginBottom: 4 }}>
+        15-min head-up before each set
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>
+        {perm === "granted"
+          ? `${scheduled} reminder${scheduled === 1 ? "" : "s"} scheduled for tonight. Background pushes ship with the native app.`
+          : perm === "denied"
+            ? "Notifications blocked in browser settings. Re-enable there to use reminders."
+            : "Get a notification 15 minutes before each saved set so you don't miss a thing."}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {perm !== "granted" && perm !== "denied" && (
+          <button onClick={onEnable} style={{
+            background: "var(--ember)", color: "#fff", border: "none",
+            borderRadius: 999, padding: "8px 14px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+          }}>ENABLE</button>
+        )}
+        {perm === "granted" && (
+          <button onClick={onTest} style={{
+            background: "transparent", color: "var(--ink)", border: "1px solid var(--line-2)",
+            borderRadius: 999, padding: "8px 14px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+          }}>SEND A TEST</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   Screen, ScrollBody, TopBar, TabBar, Pill, ArtistSwatch, Wordmark,
   useInstallPrompt, InstallBanner,
+  useNotifications, NotificationsCard, scheduleReminders,
 });
