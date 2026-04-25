@@ -1,12 +1,88 @@
 // Las Vegas 2026 — real lineup by stage (public lineup info, Plursky is an independent companion app)
 
-const FESTIVAL = {
-  name: "EDC Las Vegas 2026",
-  tagline: "Three nights under the electric sky",
-  location: "Las Vegas Motor Speedway · Nevada",
-  dates: "May 15–17, 2026",
-  year: 2026,
+// ─────────────────────────────────────────────────────────────
+// FESTIVAL_CONFIG
+// ─────────────────────────────────────────────────────────────
+// Single source of truth for everything festival-specific. Drop
+// in another festival's config (Coachella, Tomorrowland, Burning
+// Man, etc.) and the entire app re-skins for it. Phase 1 of the
+// multi-festival rollout — Phase 2 will introduce a FESTIVALS
+// registry + a switcher UI.
+const FESTIVAL_CONFIG = {
+  // ── Identity ──
+  id:           "edc-lv-2026",
+  name:         "EDC Las Vegas 2026",
+  shortName:    "EDC LV 2026",
+  brand:        "EDC",
+  tagline:      "Three nights under the electric sky",
+  location:     "Las Vegas Motor Speedway · Nevada",
+  locationShort:"Las Vegas Motor Speedway",
+  dates:        "May 15–17, 2026",
+  year:         2026,
+
+  // ── Timing (all instants in UTC ms) ──
+  startMs: Date.UTC(2026, 4, 16, 0, 0, 0),  // May 15 17:00 PDT (gates open day 1)
+  endMs:   Date.UTC(2026, 4, 18, 12, 0, 0), // May 18 05:00 PDT (sunday close)
+  tz:      "America/Los_Angeles",
+  tzAbbr:  "PDT",
+  utcOffsetHours: -7,
+
+  // Festival day n → calendar date + UTC midnight anchor (used to
+  // convert HH:MM clock-times to absolute Date instances)
+  dayDates: {
+    1: { y: 2026, m: 4, d: 15, name: "Friday",   short: "FRI",
+         midnightUtc: Date.UTC(2026, 4, 15, 7, 0, 0) },
+    2: { y: 2026, m: 4, d: 16, name: "Saturday", short: "SAT",
+         midnightUtc: Date.UTC(2026, 4, 16, 7, 0, 0) },
+    3: { y: 2026, m: 4, d: 17, name: "Sunday",   short: "SUN",
+         midnightUtc: Date.UTC(2026, 4, 17, 7, 0, 0) },
+  },
+
+  // Sunrise / sunset per festival day (clock time in tz)
+  sunTimes: {
+    1: { rise: "05:36", set: "19:34" },
+    2: { rise: "05:35", set: "19:35" },
+    3: { rise: "05:34", set: "19:36" },
+  },
+
+  // Last-shuttle cutoff per night (clock time in tz)
+  lastShuttleHHMM: "05:30",
+
+  // ── Geography ──
+  gps: { lat: 36.27370, lng: -115.0125, onSiteRadiusMi: 0.5 },
+
+  // Rideshare pickup zone (universal-link target for Uber/Lyft)
+  rideshareGps: {
+    lat: 36.258,
+    lng: -115.011,
+    label: "South Lot · Rideshare Pickup",
+    note:  "Drivers can't enter the venue. Walk south through the rideshare gate.",
+  },
+
+  // Three known stage GPS anchors used by the affine transform
+  // from real GPS → SVG-viewBox coords. Replace these for any new
+  // venue — pick three stages with known lat/lng and known SVG
+  // positions (the SVG x/y come from STAGES below).
+  gpsAnchors: [
+    { stageId: "kinetic", lat: 36.27512, lng: -115.0118 },
+    { stageId: "cosmic",  lat: 36.27370, lng: -115.0148 },
+    { stageId: "basspod", lat: 36.27075, lng: -115.0123 },
+  ],
+
+  // ── Weather ──
+  // NWS endpoint for US festivals (free, keyless). For non-US
+  // festivals, swap to OpenWeatherMap or another provider and the
+  // useNwsForecast hook can branch on this URL pattern.
+  weatherEndpoint: "https://api.weather.gov/points/36.27,-115.01",
+
+  // ── Defaults ──
+  mainStageId: "kinetic",
 };
+
+// Backwards-compat alias — older code reads `FESTIVAL.name` etc.
+// Eventually we can delete this and make every consumer read from
+// FESTIVAL_CONFIG directly.
+const FESTIVAL = FESTIVAL_CONFIG;
 
 // Stage positions on the LVMS infield. The track is E-W elongated (long
 // straightaways top + bottom, semicircle turns on left/right ends), so
@@ -303,4 +379,4 @@ const ESSENTIALS = [
   { id: "e6", icon: "consent", title: "Consent & Reporting",       sub: "Tap for anonymous report line",   tone: "ember" },
 ];
 
-Object.assign(window, { FESTIVAL, STAGES, AMENITIES, AVATAR_START, FRIENDS, ARTISTS, DAYS, NOW, ALERTS, ESSENTIALS });
+Object.assign(window, { FESTIVAL, FESTIVAL_CONFIG, STAGES, AMENITIES, AVATAR_START, FRIENDS, ARTISTS, DAYS, NOW, ALERTS, ESSENTIALS });

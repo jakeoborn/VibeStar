@@ -1,32 +1,19 @@
 // Home / "Today" screen — now playing + schedule preview
 
-// EDC LV 2026 gates open Friday May 15 at 17:00 PDT (UTC-7).
-const FESTIVAL_START_MS = Date.UTC(2026, 4, 16, 0, 0, 0); // May 15 17:00 PDT == May 16 00:00 UTC
-const FESTIVAL_END_MS   = Date.UTC(2026, 4, 18, 12, 0, 0); // May 18 05:00 PDT (Sunday sunrise close)
-
-// ── Sunrise / sunset table ──
-// Computed for Las Vegas Motor Speedway (36.27°N, -115.01°W). Across the
-// 3-day festival the sun barely moves, so a per-day lookup is more honest
-// than re-implementing astronomy in 30 lines of JS.
-const SUN_TIMES = {
-  1: { rise: "05:36", set: "19:34" }, // Friday  May 15 2026 PDT
-  2: { rise: "05:35", set: "19:35" }, // Saturday May 16 2026 PDT
-  3: { rise: "05:34", set: "19:36" }, // Sunday   May 17 2026 PDT
-};
-// EDC's official last-shuttle window: shuttles run until ~05:30 PDT on
-// each festival night (≈1h after final sets end). After that you walk or
-// rideshare from the south rideshare zone.
-const LAST_SHUTTLE_HHMM = "05:30";
+// All festival timing constants come from FESTIVAL_CONFIG (data.jsx) so
+// the same code works for any festival once a config is loaded.
+const FESTIVAL_START_MS = FESTIVAL_CONFIG.startMs;
+const FESTIVAL_END_MS   = FESTIVAL_CONFIG.endMs;
 
 // Convert an HH:MM in "festival night" coords (>=18:00 today, <12:00 next
-// day) to absolute Date for the given festival day (1, 2, or 3).
+// day) to absolute Date for the given festival day. Anchors to the day's
+// midnight in the festival's tz (stored in FESTIVAL_CONFIG.dayDates).
 function festivalNightDate(day, hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
-  // Festival day 1 starts on Friday May 15 (UTC = May 16 if UTC-7 PDT)
-  // We anchor everything to PDT (UTC-7) since LVMS is in Pacific time.
-  const baseDayUtc = Date.UTC(2026, 4, 14 + day, 7, 0, 0); // 00:00 PDT of festival day d
+  const dayMeta = FESTIVAL_CONFIG.dayDates[day];
+  if (!dayMeta) return new Date(NaN);
   const isOvernight = h < 12; // 00:00–11:59 belongs to the *next* calendar day
-  const dayMs = baseDayUtc + (isOvernight ? 86400000 : 0);
+  const dayMs = dayMeta.midnightUtc + (isOvernight ? 86400000 : 0);
   return new Date(dayMs + h * 3600000 + m * 60000);
 }
 
@@ -45,12 +32,13 @@ function fmtCountdown(ms) {
 // "Friday") with shortForecast + temperature + wind.
 async function fetchEdcForecast() {
   try {
-    const cacheRaw = localStorage.getItem("nws_forecast_v1");
+    const cacheKey = `forecast_${FESTIVAL_CONFIG.id}`;
+    const cacheRaw = localStorage.getItem(cacheKey);
     if (cacheRaw) {
       const c = JSON.parse(cacheRaw);
       if (Date.now() - c.fetchedAt < 3600000) return c.data;
     }
-    const points = await fetch("https://api.weather.gov/points/36.27,-115.01", {
+    const points = await fetch(FESTIVAL_CONFIG.weatherEndpoint, {
       headers: { Accept: "application/geo+json" },
     }).then(r => r.ok ? r.json() : null);
     if (!points) return null;
@@ -59,7 +47,7 @@ async function fetchEdcForecast() {
     }).then(r => r.ok ? r.json() : null);
     if (!forecast) return null;
     const data = forecast.properties.periods.slice(0, 6);
-    localStorage.setItem("nws_forecast_v1", JSON.stringify({ fetchedAt: Date.now(), data }));
+    localStorage.setItem(`forecast_${FESTIVAL_CONFIG.id}`, JSON.stringify({ fetchedAt: Date.now(), data }));
     return data;
   } catch { return null; }
 }
@@ -91,7 +79,8 @@ function TonightCard({ state, setState }) {
   const periods = useNwsForecast();
   const period = pickRelevantPeriod(periods);
   const day = NOW.day; // 1, 2, or 3 during festival
-  const sun = SUN_TIMES[day];
+  const sunTimes = FESTIVAL_CONFIG.sunTimes;
+  const sun = sunTimes[day];
   const now = Date.now();
   const isPreEvent = now < FESTIVAL_START_MS;
 
@@ -99,13 +88,13 @@ function TonightCard({ state, setState }) {
   const sunsetMs = festivalNightDate(day, sun.set).getTime();
   const sunriseMs = festivalNightDate(day, sun.rise).getTime();
   const nextSunsetMs = sunsetMs > now ? sunsetMs
-    : (day < 3 ? festivalNightDate(day + 1, SUN_TIMES[day + 1].set).getTime() : null);
+    : (day < 3 ? festivalNightDate(day + 1, sunTimes[day + 1].set).getTime() : null);
   const nextSunriseMs = sunriseMs > now ? sunriseMs
-    : (day < 3 ? festivalNightDate(day + 1, SUN_TIMES[day + 1].rise).getTime() : null);
+    : (day < 3 ? festivalNightDate(day + 1, sunTimes[day + 1].rise).getTime() : null);
 
   // Last shuttle: only relevant in the wee hours after midnight on a
-  // festival night. We anchor it to the same calendar day's 05:30 PDT.
-  const lastShuttleMs = festivalNightDate(day, LAST_SHUTTLE_HHMM).getTime();
+  // festival night.
+  const lastShuttleMs = festivalNightDate(day, FESTIVAL_CONFIG.lastShuttleHHMM).getTime();
   const inShuttleWindow = !isPreEvent && now < lastShuttleMs && (lastShuttleMs - now) < 4 * 3600000;
   const shuttleMins = Math.floor((lastShuttleMs - now) / 60000);
   const shuttleUrgent = inShuttleWindow && shuttleMins < 60;
@@ -120,7 +109,7 @@ function TonightCard({ state, setState }) {
     const utcH = d.getUTCHours(), utcM = d.getUTCMinutes();
     const pdtH = (utcH + 24 - 7) % 24;
     const sunriseDay = (() => {
-      const days = [festivalNightDate(1, sun.rise), festivalNightDate(2, SUN_TIMES[2].rise), festivalNightDate(3, SUN_TIMES[3].rise)];
+      const days = [festivalNightDate(1, sun.rise), festivalNightDate(2, sunTimes[2].rise), festivalNightDate(3, sunTimes[3].rise)];
       const idx = days.findIndex(x => Math.abs(x.getTime() - nextSunriseMs) < 60000);
       return idx + 1;
     })();
@@ -374,16 +363,16 @@ function HomeScreen({ state, setState }) {
               <CountdownPart n={countdown.mins}  label="MIN" />
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 8 }}>
-              LAS VEGAS MOTOR SPEEDWAY · MAY 15–17, 2026
+              {FESTIVAL_CONFIG.locationShort.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
             </div>
           </>
         ) : (
           <>
             <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
-              Friday at <span style={{ fontStyle: "italic", color: "var(--ember)" }}>EDC</span>
+              {FESTIVAL_CONFIG.dayDates[NOW.day]?.name || "Day " + NOW.day} at <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{FESTIVAL_CONFIG.brand}</span>
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6 }}>
-              LAS VEGAS MOTOR SPEEDWAY · MAY 15–17 · 97°F · SUNSET 19:52
+              {FESTIVAL_CONFIG.locationShort.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
             </div>
           </>
         )}

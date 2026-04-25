@@ -59,7 +59,7 @@
     // Build version stamp — bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v17';
+    const APP_VERSION = 'v18';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -75,7 +75,7 @@
 
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v17').map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== 'vibestar-v18').map(k => caches.delete(k)))
       ).then(() => navigator.serviceWorker.register('./sw.js'));
 
       let _reloaded = false;

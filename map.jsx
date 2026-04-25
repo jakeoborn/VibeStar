@@ -215,23 +215,21 @@ function WellnessPill() {
 }
 
 // ── Real GPS plumbing ─────────────────────────────────────────
-// Las Vegas Motor Speedway. Three stage anchors give us an affine transform
-// from (lat, lng) → SVG (mapX, mapY) on the 0-100 grid.
-const STAGE_GPS = {
-  kinetic: { lat: 36.27512, lng: -115.0118 }, // mainstage, north end of infield
-  cosmic:  { lat: 36.27370, lng: -115.0148 }, // open-air, west / left
-  basspod: { lat: 36.27075, lng: -115.0123 }, // south / bottom
-};
-const FESTIVAL_LAT = 36.27370;
-const FESTIVAL_LNG = -115.0125;
-const ON_SITE_RADIUS_MI = 0.5; // ~800m — anything farther is treated as off-site
+// Three stage GPS anchors (from FESTIVAL_CONFIG.gpsAnchors) give us an
+// affine transform from (lat, lng) → SVG (mapX, mapY) on the 0-100 grid.
+// Swap the festival config and the transform automatically retunes for
+// the new venue.
+const FESTIVAL_LAT       = FESTIVAL_CONFIG.gps.lat;
+const FESTIVAL_LNG       = FESTIVAL_CONFIG.gps.lng;
+const ON_SITE_RADIUS_MI  = FESTIVAL_CONFIG.gps.onSiteRadiusMi;
 
 // 3-point Cramer affine: [mapX, mapY] = M · [lat, lng, 1]
 function _solveMapAffine() {
   const find = (id) => STAGES.find(s => s.id === id);
-  const A = { ...STAGE_GPS.kinetic, mx: find("kinetic").x, my: find("kinetic").y };
-  const B = { ...STAGE_GPS.cosmic,  mx: find("cosmic").x,  my: find("cosmic").y };
-  const C = { ...STAGE_GPS.basspod, mx: find("basspod").x, my: find("basspod").y };
+  const [a0, a1, a2] = FESTIVAL_CONFIG.gpsAnchors;
+  const A = { lat: a0.lat, lng: a0.lng, mx: find(a0.stageId).x, my: find(a0.stageId).y };
+  const B = { lat: a1.lat, lng: a1.lng, mx: find(a1.stageId).x, my: find(a1.stageId).y };
+  const C = { lat: a2.lat, lng: a2.lng, mx: find(a2.stageId).x, my: find(a2.stageId).y };
   const det = A.lat*(B.lng - C.lng) - A.lng*(B.lat - C.lat) + (B.lat*C.lng - C.lat*B.lng);
   const solve = (v1, v2, v3) => {
     const a = (v1*(B.lng - C.lng)        - A.lng*(v2 - v3)            + (B.lng*v3 - C.lng*v2)) / det;
@@ -1033,12 +1031,13 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
 // Uber/Lyft web links — these auto-bridge to the native app if installed,
 // else fall through to the in-browser request flow.
 function RideshareSheet({ onClose }) {
-  // EDC's official South Lot rideshare pickup at Las Vegas Motor Speedway —
-  // the paved lot south of the venue where Uber/Lyft drivers stage. (LVMS
-  // address centroid: 36.272, -115.011; the pickup zone is ~1.4 km south.)
-  const lat = 36.258, lng = -115.011;
+  // Festival's published rideshare pickup zone (FESTIVAL_CONFIG.rideshareGps).
+  // Pre-set as the pickup pin in both Uber and Lyft universal links so the
+  // driver knows exactly where you are.
+  const { lat, lng, label, note } = FESTIVAL_CONFIG.rideshareGps;
   const open = (url) => { window.open(url, "_blank", "noopener"); onClose(); };
-  const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup[latitude]=${lat}&pickup[longitude]=${lng}&pickup[nickname]=EDC%20Rideshare%20Pickup`;
+  const nickname = encodeURIComponent(`${FESTIVAL_CONFIG.brand} Rideshare Pickup`);
+  const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup[latitude]=${lat}&pickup[longitude]=${lng}&pickup[nickname]=${nickname}`;
   const lyftUrl = `https://lyft.com/ride?id=lyft&partner=&pickup[latitude]=${lat}&pickup[longitude]=${lng}`;
 
   return (
@@ -1058,13 +1057,13 @@ function RideshareSheet({ onClose }) {
           <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--line-2)" }}/>
         </div>
         <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", marginBottom: 4 }}>
-          RIDESHARE · SOUTH LOT PICKUP
+          RIDESHARE · {label.toUpperCase()}
         </div>
         <div className="serif" style={{ fontSize: 26, lineHeight: 1.05, marginBottom: 10 }}>
-          Get a ride from the speedway
+          Get a ride from {FESTIVAL_CONFIG.locationShort}
         </div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
-          Drivers can't enter the venue. Walk south through the rideshare gate to the pickup lot — pin is pre-set so your driver finds you.
+          {note} Pin pre-set so your driver finds you.
         </div>
 
         <div style={{ display: "grid", gap: 10 }}>

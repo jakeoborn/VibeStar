@@ -27,7 +27,7 @@ function LineupScreen({ state, setState }) {
   return (
     <Screen bg="var(--paper)">
       <div style={{ padding: "8px 20px 8px" }}>
-        <TopBar title={<span>Lineup</span>} sub={"EDC LAS VEGAS · MAY 15–17"} tight />
+        <TopBar title={<span>Lineup</span>} sub={`${FESTIVAL_CONFIG.brand.toUpperCase()} · ${FESTIVAL_CONFIG.dates.toUpperCase()}`} tight />
       </div>
 
       {/* Day tabs */}
@@ -280,11 +280,12 @@ function TierStars({ tier }) {
 }
 
 // ── .ics calendar export ──
-// Festival is at LVMS in America/Los_Angeles (PDT in May).
-// Emit DTSTART/DTEND with TZID so any calendar app picks the right local time.
+// Festival timezone + day → date map come from FESTIVAL_CONFIG so this
+// works for any festival once the config is loaded. Emit DTSTART/DTEND
+// with TZID so any calendar app picks the right local time.
 function _setTimeToLocalDate(day, hhmm) {
-  // day=1 → May 15 (Fri), day=2 → May 16, day=3 → May 17
-  const d = new Date(2026, 4, 14 + day);
+  const meta = FESTIVAL_CONFIG.dayDates[day];
+  const d = new Date(meta.y, meta.m, meta.d);
   const [h, m] = hhmm.split(":").map(Number);
   // Times before 08:00 are early-morning of the next calendar day
   if (h < 8) d.setDate(d.getDate() + 1);
@@ -306,6 +307,10 @@ async function exportLineupICS(state) {
     .sort((a, b) => a.day - b.day || toNightMin(a.start) - toNightMin(b.start));
   if (saved.length === 0) return { ok: false, reason: "empty" };
 
+  const tz = FESTIVAL_CONFIG.tz;
+  const fid = FESTIVAL_CONFIG.id;
+  const fname = FESTIVAL_CONFIG.shortName;
+  const venue = FESTIVAL_CONFIG.locationShort;
   const dtstamp = _icsLocal(new Date());
   const events = saved.map(a => {
     const stage = STAGES.find(s => s.id === a.stage);
@@ -313,13 +318,13 @@ async function exportLineupICS(state) {
     const end   = _icsLocal(_setTimeToLocalDate(a.day, a.end));
     const summary = _icsEscape(`${a.name} · ${stage.short}`);
     const desc = _icsEscape(`${a.genre} · ${stage.name}\\nbuilt with Plursky · plursky.com`);
-    const loc = _icsEscape(`${stage.name} · Las Vegas Motor Speedway`);
+    const loc = _icsEscape(`${stage.name} · ${venue}`);
     return [
       "BEGIN:VEVENT",
-      `UID:plursky-${a.id}-2026@plursky.com`,
+      `UID:plursky-${a.id}-${fid}@plursky.com`,
       `DTSTAMP:${dtstamp}`,
-      `DTSTART;TZID=America/Los_Angeles:${start}`,
-      `DTEND;TZID=America/Los_Angeles:${end}`,
+      `DTSTART;TZID=${tz}:${start}`,
+      `DTEND;TZID=${tz}:${end}`,
       `SUMMARY:${summary}`,
       `LOCATION:${loc}`,
       `DESCRIPTION:${desc}`,
@@ -335,13 +340,13 @@ async function exportLineupICS(state) {
   const ics = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Plursky//EDC LV 2026//EN",
+    `PRODID:-//Plursky//${fname}//EN`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:My EDC LV 2026",
-    "X-WR-TIMEZONE:America/Los_Angeles",
+    `X-WR-CALNAME:My ${fname}`,
+    `X-WR-TIMEZONE:${tz}`,
     "BEGIN:VTIMEZONE",
-    "TZID:America/Los_Angeles",
+    `TZID:${tz}`,
     "BEGIN:DAYLIGHT",
     "TZOFFSETFROM:-0800",
     "TZOFFSETTO:-0700",
@@ -362,14 +367,15 @@ async function exportLineupICS(state) {
   ].join("\r\n");
 
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-  const file = new File([blob], "my-edc-2026.ics", { type: "text/calendar" });
+  const fileName = `my-${fid}.ics`;
+  const file = new File([blob], fileName, { type: "text/calendar" });
   if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-    try { await navigator.share({ files: [file], title: "My EDC LV 2026" }); return { ok: true, mode: "share", count: saved.length }; }
+    try { await navigator.share({ files: [file], title: `My ${fname}` }); return { ok: true, mode: "share", count: saved.length }; }
     catch (e) { if (e.name === "AbortError") return { ok: true, mode: "abort" }; }
   }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = url; link.download = "my-edc-2026.ics";
+  link.href = url; link.download = fileName;
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1500);
   return { ok: true, mode: "download", count: saved.length };

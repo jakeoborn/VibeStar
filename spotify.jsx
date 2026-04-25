@@ -135,7 +135,7 @@ async function createEdcPlaylist(state) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      name: "My EDC LV 2026 Lineup",
+      name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
       description: `${saved.length} sets · built with Plursky · ${dateStr}`,
       public: false,
     }),
@@ -755,7 +755,7 @@ function MeScreen({ state, setState }) {
   return (
     <Screen bg="var(--paper)">
       <div style={{ padding: "8px 20px" }}>
-        <TopBar title={<span>Me</span>} sub="EDC · LAS VEGAS 2026" tight />
+        <TopBar title={<span>Me</span>} sub={FESTIVAL_CONFIG.shortName.toUpperCase()} tight />
       </div>
       <ScrollBody style={{ padding: "10px 20px 24px" }}>
         {/* Profile */}
