@@ -125,24 +125,25 @@ function WellnessPill() {
   };
   const restLabel = restMin < 60 ? `${restMin}m` : `${Math.floor(restMin / 60)}h${(restMin % 60).toString().padStart(2, "0")}`;
 
+  const restColorLight = restMin < 75 ? "var(--ink)" : restMin < 120 ? "#b8651b" : "#c14a4a";
   return (
     <>
       <button onClick={() => setOpen(o => !o)} style={{
         position: "absolute", top: 14, left: 10, zIndex: 4,
         display: "flex", alignItems: "center", gap: 7,
         padding: "5px 10px 5px 7px", borderRadius: 999,
-        background: "rgba(13,8,4,0.86)",
-        border: `1px solid ${hyd < 40 || restMin > 120 ? "#f87171" : "rgba(247,237,224,0.16)"}`,
+        background: "rgba(247,237,224,0.96)",
+        border: `1px solid ${hyd < 40 || restMin > 120 ? "#c14a4a" : "var(--line-2)"}`,
         backdropFilter: "blur(10px)",
-        color: "rgba(247,237,224,0.95)",
+        color: "var(--ink)",
         fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1, fontWeight: 600,
         cursor: "pointer",
-        boxShadow: hyd < 40 ? "0 0 0 4px rgba(248,113,113,0.18)" : "none",
+        boxShadow: hyd < 40 ? "0 0 0 4px rgba(193,74,74,0.16)" : "0 2px 8px rgba(26,18,13,0.08)",
       }}>
-        <span style={{ color: hydColor, fontSize: 12 }}>💧</span>
-        <span style={{ color: hydColor }}>{hyd}%</span>
-        <span style={{ width: 1, height: 10, background: "rgba(247,237,224,0.18)" }}/>
-        <span style={{ color: restColor }}>{restLabel}</span>
+        <span style={{ fontSize: 12 }}>💧</span>
+        <span style={{ color: hyd > 70 ? "var(--ink)" : hyd > 40 ? "#b8651b" : "#c14a4a", fontWeight: 700 }}>{hyd}%</span>
+        <span style={{ width: 1, height: 10, background: "var(--line-2)" }}/>
+        <span style={{ color: restColorLight, fontWeight: 700 }}>{restLabel}</span>
       </button>
 
       {open && (
@@ -404,16 +405,16 @@ function MapScreen({ state, setState }) {
   const gpsActive = gpsLive && (gpsStatus === "live" || gpsStatus === "locating");
 
   return (
-    <Screen bg="var(--ink)" ink="var(--paper)">
+    <Screen bg="var(--paper)" ink="var(--ink)">
       {/* SEARCH HEADER */}
-      <div style={{ padding: "8px 12px", background: "rgba(13,8,4,0.94)", borderBottom: "1px solid rgba(247,237,224,0.08)", backdropFilter: "blur(10px)" }}>
+      <div style={{ padding: "8px 12px", background: "var(--paper)", borderBottom: "1px solid var(--line)" }}>
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
-          background: "rgba(247,237,224,0.06)",
+          background: "var(--paper-2)",
           borderRadius: 10, padding: "8px 10px",
-          border: "1px solid rgba(247,237,224,0.1)",
+          border: "1px solid var(--line)",
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(247,237,224,0.5)" strokeWidth="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
             <circle cx="11" cy="11" r="7"/><path d="M20 20 L16 16"/>
           </svg>
           <input
@@ -423,14 +424,15 @@ function MapScreen({ state, setState }) {
             onChange={(e) => setSearch(e.target.value)}
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
-              color: "rgba(247,237,224,0.92)", fontFamily: "Geist, sans-serif", fontSize: 13,
+              color: "var(--ink)", fontFamily: "Geist, sans-serif", fontSize: 13,
             }}
           />
           <button onClick={() => setGpsLive(g => !g)} style={{
             display: "flex", alignItems: "center", gap: 5,
-            background: gpsActive ? "var(--ember)" : "rgba(247,237,224,0.1)",
-            color: gpsActive ? "#fff" : "rgba(247,237,224,0.6)",
-            border: "none", borderRadius: 999, padding: "3px 9px",
+            background: gpsActive ? "var(--ember)" : "var(--paper)",
+            color: gpsActive ? "#fff" : "var(--muted)",
+            border: gpsActive ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, padding: "3px 9px",
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
           }}>
@@ -446,31 +448,31 @@ function MapScreen({ state, setState }) {
         {liveAvatar?.offSite && (
           <div style={{
             marginTop: 6, padding: "5px 10px", borderRadius: 8,
-            background: "rgba(245,154,54,0.1)", border: "1px solid rgba(245,154,54,0.25)",
+            background: "rgba(245,154,54,0.12)", border: "1px solid rgba(245,154,54,0.4)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
-            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "var(--flare)", fontWeight: 700 }}>
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#b8651b", fontWeight: 700 }}>
               OFF-SITE · {liveAvatar.mi.toFixed(1)} MI FROM VENUE
             </span>
-            <span style={{ fontSize: 10, color: "rgba(247,237,224,0.5)" }}>· showing demo position</span>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>· showing demo position</span>
           </div>
         )}
         {gpsLive && gpsStatus === "denied" && (
           <div style={{
             marginTop: 6, padding: "5px 10px", borderRadius: 8,
-            background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)",
+            background: "rgba(193,74,74,0.10)", border: "1px solid rgba(193,74,74,0.35)",
           }}>
-            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#f87171", fontWeight: 700 }}>
+            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#c14a4a", fontWeight: 700 }}>
               GPS DENIED · ENABLE LOCATION IN BROWSER SETTINGS
             </span>
           </div>
         )}
         {search && (
-          <div style={{ marginTop: 6, maxHeight: 140, overflowY: "auto" }}>
+          <div style={{ marginTop: 6, maxHeight: 140, overflowY: "auto", background: "var(--paper-2)", borderRadius: 8 }}>
             {filteredStages.map(s => (
               <button key={s.id} onClick={() => { setSelectedStage(s.id); setSearch(""); }} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
-                background: "transparent", border: "none", color: "rgba(247,237,224,0.88)", textAlign: "left", cursor: "pointer",
+                background: "transparent", border: "none", color: "var(--ink)", textAlign: "left", cursor: "pointer",
                 borderRadius: 8,
               }}>
                 <span style={{ width: 8, height: 8, borderRadius: 8, background: s.color, boxShadow: `0 0 6px ${s.color}` }}/>
@@ -482,7 +484,7 @@ function MapScreen({ state, setState }) {
       </div>
 
       {/* MAP + PEEK WINDOW */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "var(--ink)" }}>
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "var(--paper-2)" }}>
         <WellnessPill />
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
@@ -500,7 +502,7 @@ function MapScreen({ state, setState }) {
         {meetMode && (
           <div style={{
             position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)",
-            background: meetTarget ? "var(--ember)" : "rgba(13,8,4,0.92)",
+            background: meetTarget ? "var(--ember)" : "var(--paper)",
             border: meetTarget ? "none" : "1px solid var(--ember)",
             color: meetTarget ? "#fff" : "var(--ember)",
             padding: "7px 13px", borderRadius: 999,
@@ -520,10 +522,10 @@ function MapScreen({ state, setState }) {
         {/* Friends bar (bottom overlay, always visible) */}
         <div style={{
           position: "absolute", left: 10, right: 10, bottom: stage || meetMode ? 140 : 10,
-          background: "rgba(13,8,4,0.92)",
-          border: "1px solid rgba(247,237,224,0.12)",
+          background: "var(--paper)",
+          border: "1px solid var(--line-2)",
           borderRadius: 14, padding: 8,
-          backdropFilter: "blur(12px)",
+          boxShadow: "0 6px 20px rgba(26,18,13,0.12)",
           display: "flex", alignItems: "center", gap: 8,
           transition: "bottom 0.3s",
         }}>
@@ -531,8 +533,8 @@ function MapScreen({ state, setState }) {
             if (meetMode) { setMeetMode(false); setMeetTarget(null); setMeetWith(null); }
             else { setMeetMode(true); }
           }} style={{
-            background: meetMode ? "var(--ember)" : "#fff",
-            color: meetMode ? "#fff" : "#1a0a28",
+            background: meetMode ? "var(--ember)" : "var(--ink)",
+            color: "#fff",
             border: "none", borderRadius: 999, padding: "7px 11px",
             fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
             cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
@@ -552,9 +554,9 @@ function MapScreen({ state, setState }) {
                     position: "relative",
                     flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
                     padding: "3px 8px 3px 3px", borderRadius: 999,
-                    background: active ? f.color : "rgba(247,237,224,0.08)",
-                    border: `1px solid ${active ? f.color : "rgba(247,237,224,0.15)"}`,
-                    color: active ? "#fff" : "rgba(247,237,224,0.85)",
+                    background: active ? f.color : "var(--paper-2)",
+                    border: `1px solid ${active ? f.color : "var(--line-2)"}`,
+                    color: active ? "#fff" : "var(--ink)",
                     cursor: "pointer",
                     fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 0.4, fontWeight: 600,
                   }}>
@@ -567,7 +569,7 @@ function MapScreen({ state, setState }) {
                       background: "var(--ember)", color: "#fff",
                       borderRadius: 14, fontSize: 8, fontWeight: 700,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      border: "1.5px solid rgba(13,8,4,0.92)",
+                      border: "1.5px solid var(--paper)",
                     }}>{unread}</span>
                   )}
                 </button>
@@ -621,18 +623,18 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, background: "var(--ink)", overflow: "hidden" }}>
+    <div style={{ position: "absolute", inset: 0, background: "var(--paper-2)", overflow: "hidden" }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
           <radialGradient id="mapGround" cx="50%" cy="45%" r="70%">
-            <stop offset="0%"  stopColor="#2a1a0e"/>
-            <stop offset="60%" stopColor="#1a120d"/>
-            <stop offset="100%" stopColor="#0d0805"/>
+            <stop offset="0%"  stopColor="#f4ead8"/>
+            <stop offset="60%" stopColor="#ead8b8"/>
+            <stop offset="100%" stopColor="#d9bf94"/>
           </radialGradient>
           <pattern id="mapDots" width="5" height="5" patternUnits="userSpaceOnUse">
-            <circle cx="2.5" cy="2.5" r="0.22" fill="rgba(247,237,224,0.06)"/>
+            <circle cx="2.5" cy="2.5" r="0.22" fill="rgba(26,18,13,0.07)"/>
           </pattern>
           <filter id="stageglow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur"/>
@@ -645,25 +647,26 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         <rect x="0" y="0" width="100" height="100" fill="url(#mapDots)"/>
 
         {/* Speedway oval — Las Vegas Motor Speedway track */}
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(247,237,224,0.04)" strokeWidth="5"/>
-        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(247,237,224,0.16)" strokeWidth="0.4"/>
-        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(247,237,224,0.07)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(26,18,13,0.06)" strokeWidth="5"/>
+        <ellipse cx="50" cy="50" rx="44" ry="46" fill="none" stroke="rgba(26,18,13,0.32)" strokeWidth="0.4"/>
+        <ellipse cx="50" cy="50" rx="39" ry="41" fill="none" stroke="rgba(26,18,13,0.18)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
 
-        {/* Infield warm glow */}
-        <ellipse cx="50" cy="50" rx="36" ry="38" fill="rgba(245,154,54,0.025)"/>
+        {/* Infield warm wash */}
+        <ellipse cx="50" cy="50" rx="36" ry="38" fill="rgba(245,154,54,0.06)"/>
 
-        {/* Main pedestrian paths — dune/paper for warm desert feel */}
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(217,191,148,0.20)" strokeWidth="2.2" fill="none" strokeLinecap="round"/>
-        <path d="M50,12 Q50,51 50,91" stroke="rgba(247,237,224,0.06)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
-        <path d="M14,50 Q50,52 86,50" stroke="rgba(217,191,148,0.16)" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
+        {/* Main pedestrian paths — ink-toned for legibility on paper */}
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(247,237,224,0.55)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
+        <path d="M50,12 Q50,51 50,91" stroke="rgba(26,18,13,0.18)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeDasharray="2 1.6"/>
+        <path d="M14,50 Q50,52 86,50" stroke="rgba(247,237,224,0.45)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
+        <path d="M14,50 Q50,52 86,50" stroke="rgba(26,18,13,0.14)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeDasharray="2 1.6"/>
         {/* Diagonal connector paths */}
-        <path d="M22,22 Q36,36 50,51" stroke="rgba(217,191,148,0.10)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
-        <path d="M78,22 Q64,36 50,51" stroke="rgba(217,191,148,0.10)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+        <path d="M22,22 Q36,36 50,51" stroke="rgba(26,18,13,0.14)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+        <path d="M78,22 Q64,36 50,51" stroke="rgba(26,18,13,0.14)" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
 
         {/* Daisy Lane central plaza — ember accent */}
-        <rect x="37" y="43" width="26" height="16" fill="rgba(245,154,54,0.05)" stroke="rgba(245,154,54,0.28)" strokeWidth="0.35" rx="2"/>
-        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.28)" strokeWidth="0.3"/>
-        <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.45)"/>
+        <rect x="37" y="43" width="26" height="16" fill="rgba(245,154,54,0.10)" stroke="rgba(232,93,46,0.45)" strokeWidth="0.35" rx="2"/>
+        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(232,93,46,0.45)" strokeWidth="0.3"/>
+        <circle cx="50" cy="51" r="1.2" fill="rgba(232,93,46,0.7)"/>
 
         {/* Route line to selected stage or meet point */}
         {(sel || meetTarget) && (() => {
@@ -742,8 +745,8 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
         <div style={{
           position: "absolute", left: "50%", top: "43%",
           transform: "translate(-50%, -130%)",
-          fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 600,
-          color: "rgba(245,154,54,0.65)",
+          fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 700,
+          color: "rgba(232,93,46,0.85)",
         }}>DAISY LANE</div>
 
         {stages.map(s => {
@@ -762,9 +765,9 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
               style={{
                 position: "absolute", ...pos, ...tx,
                 pointerEvents: "auto", cursor: "pointer",
-                background: on ? s.color : "rgba(13,8,4,0.82)",
-                color: on ? "#fff" : "rgba(247,237,224,0.92)",
-                border: `1px solid ${on ? s.color : "rgba(247,237,224,0.18)"}`,
+                background: on ? s.color : "rgba(247,237,224,0.96)",
+                color: on ? "#fff" : "var(--ink)",
+                border: `1px solid ${on ? s.color : "var(--line-2)"}`,
                 padding: on ? "4px 10px" : "3px 8px",
                 borderRadius: 999,
                 fontFamily: "Geist Mono, monospace",
@@ -772,7 +775,7 @@ function TopDownMap({ avatar, heading, friends, stages, selected, meetMode, meet
                 letterSpacing: 1.3, fontWeight: 700,
                 whiteSpace: "nowrap",
                 backdropFilter: "blur(8px)",
-                boxShadow: on ? `0 4px 14px ${s.color}66` : "0 1px 4px rgba(0,0,0,0.5)",
+                boxShadow: on ? `0 4px 14px ${s.color}66` : "0 2px 6px rgba(26,18,13,0.10)",
                 transition: "all 0.15s",
               }}>
               {s.name.toUpperCase()}
