@@ -681,8 +681,9 @@ function MapScreen({ state, setState }) {
 // ---- TOP-DOWN NAVIGATION MAP ----
 function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, iso = false, accuracy, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
   // Tilt angle for the iso "Pokémon-Go" view. Standing labels counter-rotate
-  // by the same angle so they billboard back toward the camera.
-  const TILT = 58;
+  // by the same angle so they billboard back toward the camera. 56° gives a
+  // strong sense of depth while keeping the far edge of the map on-screen.
+  const TILT = 56;
   const stand = iso ? ` rotateX(-${TILT}deg)` : "";
   // GPS accuracy radius in map units (map ≈ 1.5km × 0.8km → ~13m per unit on
   // the long axis). Used to draw the translucent triangulation halo.
@@ -856,6 +857,12 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           const savedHere = savedByStage[s.id];
           return (
             <g key={s.id} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPickStage(s.id); }}>
+              {/* Iso ground shadow — flat ellipse on the tilted plane gives
+                  the stage marker a sense of being a physical disc. */}
+              {iso && (
+                <ellipse cx={s.x} cy={s.y + r * 0.55} rx={r * 1.25} ry={r * 0.32}
+                  fill="rgba(0,0,0,0.22)"/>
+              )}
               {on && (
                 <circle cx={s.x} cy={s.y} r={r + 1} fill="none" stroke={s.color} strokeWidth="0.5" opacity="0.9">
                   <animate attributeName="r" values={`${r};${r+6};${r}`} dur="2s" repeatCount="indefinite"/>
@@ -903,15 +910,23 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
 
         {/* Avatar — you */}
         <g>
+          {/* Iso ground shadow — slightly forward of the dot so the sprite
+              looks like it's casting a shadow toward the camera. */}
+          {iso && (
+            <ellipse cx={avatar.x} cy={avatar.y + 0.4} rx="2.6" ry="0.85"
+              fill="rgba(0,0,0,0.28)"/>
+          )}
           <path d={`M${avatar.x},${avatar.y}
                     L${avatar.x + Math.cos(heading - 0.38) * 6.5},${avatar.y + Math.sin(heading - 0.38) * 6.5}
                     L${avatar.x + Math.cos(heading + 0.38) * 6.5},${avatar.y + Math.sin(heading + 0.38) * 6.5} Z`}
             fill="#f59a36" opacity="0.3"/>
-          <circle cx={avatar.x} cy={avatar.y} r="3.2" fill="#f59a36" opacity="0.22">
-            <animate attributeName="r" values="2.5;4.5;2.5" dur="2.2s" repeatCount="indefinite"/>
-          </circle>
-          <circle cx={avatar.x} cy={avatar.y} r="1.8" fill="#f59a36" stroke="rgba(255,255,255,0.95)" strokeWidth="0.6"/>
-          <circle cx={avatar.x} cy={avatar.y} r="0.7" fill="#fff"/>
+          {!iso && (
+            <circle cx={avatar.x} cy={avatar.y} r="3.2" fill="#f59a36" opacity="0.22">
+              <animate attributeName="r" values="2.5;4.5;2.5" dur="2.2s" repeatCount="indefinite"/>
+            </circle>
+          )}
+          <circle cx={avatar.x} cy={avatar.y} r={iso ? 1.4 : 1.8} fill="#f59a36" stroke="rgba(255,255,255,0.95)" strokeWidth="0.6"/>
+          <circle cx={avatar.x} cy={avatar.y} r={iso ? 0.55 : 0.7} fill="#fff"/>
         </g>
       </svg>
 
@@ -1039,8 +1054,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         ))}
 
         {/* Iso-mode sprite character — stands above the avatar dot, billboards
-            toward the camera. Accuracy halo below visualises the live GPS
-            confidence radius from the 3-anchor affine triangulation. */}
+            toward the camera and bobs gently. Accuracy halo visualises the
+            live GPS confidence radius from the 3-anchor affine triangulation. */}
         {iso && accU > 0 && (
           <div style={{
             position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
@@ -1050,6 +1065,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             background: "radial-gradient(circle, rgba(245,154,54,0.28) 0%, rgba(245,154,54,0) 70%)",
             border: "1px dashed rgba(245,154,54,0.55)",
             pointerEvents: "none",
+            animation: "isoShadowPulse 2.4s ease-in-out infinite",
           }}/>
         )}
         {iso && (
@@ -1057,9 +1073,15 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             position: "absolute", left: `${avatar.x}%`, top: `${avatar.y}%`,
             transform: `translate(-50%, -100%)${stand}`,
             transformOrigin: "50% 100%",
-            fontSize: 30, lineHeight: 1, pointerEvents: "none",
-            filter: "drop-shadow(0 6px 8px rgba(0,0,0,0.4))",
-          }}>🕺</div>
+            pointerEvents: "none",
+            transformStyle: "preserve-3d",
+          }}>
+            <div style={{
+              fontSize: 34, lineHeight: 1,
+              filter: "drop-shadow(0 8px 6px rgba(0,0,0,0.5))",
+              animation: "isoBob 1.6s ease-in-out infinite",
+            }}>🕺</div>
+          </div>
         )}
 
         <div style={{

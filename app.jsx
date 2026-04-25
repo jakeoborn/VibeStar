@@ -188,6 +188,10 @@ styleTag.textContent = `
   @keyframes spin   { to { transform: rotate(360deg); } }
   @keyframes tdot   { 0%,60%,100% { transform: translateY(0); opacity: 0.4 } 30% { transform: translateY(-5px); opacity: 1 } }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  /* Iso-mode sprite bob — bounces along the post-rotation Y axis so the
+     character feels alive when standing on the tilted ground plane. */
+  @keyframes isoBob { 0%,100% { translate: 0 0; } 50% { translate: 0 -6px; } }
+  @keyframes isoShadowPulse { 0%,100% { transform: translate(-50%, -50%) scale(1); opacity: 0.55; } 50% { transform: translate(-50%, -50%) scale(0.82); opacity: 0.35; } }
 `;
 document.head.appendChild(styleTag);
 
