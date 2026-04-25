@@ -295,6 +295,7 @@ function MapScreen({ state, setState }) {
   const [heading, setHeading] = React.useState(0);
   const [chatFriend, setChatFriend] = React.useState(null);
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
+  const [showLabels, setShowLabels] = React.useState(false);
 
   // Real GPS → on-site map coords, off-site distance, or null
   const { pos: gpsPos, status: gpsStatus } = useGeolocation(gpsLive);
@@ -426,6 +427,14 @@ function MapScreen({ state, setState }) {
               color: "var(--ink)", fontFamily: "Geist, sans-serif", fontSize: 13,
             }}
           />
+          <button onClick={() => setShowLabels(s => !s)} title="Toggle landmark labels" style={{
+            background: showLabels ? "var(--ink)" : "var(--paper)",
+            color: showLabels ? "var(--paper)" : "var(--muted)",
+            border: showLabels ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, padding: "3px 8px",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+            cursor: "pointer",
+          }}>LABELS</button>
           <button onClick={() => setGpsLive(g => !g)} style={{
             display: "flex", alignItems: "center", gap: 5,
             background: gpsActive ? "var(--ember)" : "var(--paper)",
@@ -532,7 +541,7 @@ function MapScreen({ state, setState }) {
         }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
-          saved={state.saved}
+          saved={state.saved} showLabels={showLabels}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
@@ -660,7 +669,7 @@ function MapScreen({ state, setState }) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
   const sel = stages.find(s => s.id === selected);
 
   // Stages where the user has an upcoming saved set today — used to draw a
@@ -695,88 +704,69 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
   return (
     <div style={{
       position: "absolute", inset: 0, overflow: "hidden",
-      // Deep midnight letterbox — matches the night sky inside the SVG
-      background: "#06060f",
+      // Warm dune letterbox — matches the website palette
+      background: "var(--paper-2)",
     }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
-          <radialGradient id="mapGround" cx="50%" cy="48%" r="65%">
-            <stop offset="0%"  stopColor="#1f1640"/>
-            <stop offset="55%" stopColor="#120a28"/>
-            <stop offset="100%" stopColor="#06060f"/>
+          <radialGradient id="mapGround" cx="50%" cy="48%" r="70%">
+            <stop offset="0%"  stopColor="#f7ede0"/>
+            <stop offset="60%" stopColor="#ead8b8"/>
+            <stop offset="100%" stopColor="#d9bf94"/>
           </radialGradient>
-          {/* Rainbow LED ring around the speedway — the iconic EDC perimeter */}
+          {/* Subtle rainbow accent retained on the track edge as a nod to EDC */}
           <linearGradient id="ledring" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%"   stopColor="#e85d2e"/>
-            <stop offset="18%"  stopColor="#f59a36"/>
-            <stop offset="36%"  stopColor="#34d399"/>
-            <stop offset="55%"  stopColor="#38bdf8"/>
-            <stop offset="74%"  stopColor="#a78bfa"/>
-            <stop offset="92%"  stopColor="#f472b6"/>
-            <stop offset="100%" stopColor="#e85d2e"/>
+            <stop offset="20%"  stopColor="#f59a36"/>
+            <stop offset="40%"  stopColor="#22c55e"/>
+            <stop offset="60%"  stopColor="#38bdf8"/>
+            <stop offset="80%"  stopColor="#a78bfa"/>
+            <stop offset="100%" stopColor="#ec4899"/>
           </linearGradient>
-          {/* Warm infield haze — the festival glow seen from above */}
-          <radialGradient id="infieldGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stopColor="rgba(245,154,54,0.18)"/>
-            <stop offset="60%"  stopColor="rgba(232,93,46,0.06)"/>
+          <radialGradient id="infieldGlow" cx="50%" cy="50%" r="55%">
+            <stop offset="0%"   stopColor="rgba(245,154,54,0.10)"/>
             <stop offset="100%" stopColor="rgba(232,93,46,0)"/>
           </radialGradient>
           <filter id="stageglow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="blur"/>
             <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <filter id="ringglow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="0.9"/>
           </filter>
         </defs>
 
-        {/* Night sky ground */}
+        {/* Warm paper ground */}
         <rect x="0" y="0" width="100" height="100" fill="url(#mapGround)"/>
 
-        {/* Starfield — deterministic, scattered across the sky outside the oval */}
-        {[
-          [4,8,0.18,0.7],[12,4,0.13,0.55],[22,3,0.22,0.85],[38,2,0.15,0.6],
-          [58,3,0.18,0.7],[72,5,0.14,0.55],[86,3,0.20,0.8],[94,9,0.16,0.6],
-          [3,22,0.14,0.5],[97,28,0.18,0.7],[2,42,0.16,0.6],[98,50,0.14,0.55],
-          [3,68,0.18,0.7],[96,72,0.14,0.55],[5,88,0.20,0.75],[18,95,0.15,0.6],
-          [42,97,0.16,0.6],[64,96,0.18,0.7],[85,94,0.14,0.55],[95,90,0.20,0.78],
-          [10,14,0.10,0.4],[28,8,0.12,0.45],[48,5,0.14,0.55],[78,11,0.11,0.45],
-          [92,18,0.12,0.5],[6,55,0.10,0.4],[94,62,0.12,0.5],[14,76,0.11,0.45],
-          [30,92,0.10,0.4],[88,82,0.12,0.5],
-        ].map(([x,y,r,o], i) => (
-          <circle key={i} cx={x} cy={y} r={r} fill={`rgba(255,255,255,${o})`}/>
-        ))}
-
         {/* Speedway track — east-west elongated stadium matching the
-            LVMS aerial: long straightaways on top + bottom, full semicircle
-            turns capping the left + right ends. Rainbow LED perimeter is
-            the signature EDC visual (see the bird's-eye reference photo). */}
+            LVMS aerial. Solid ink outline reads cleanly on paper; a faint
+            rainbow accent on the inside echoes the EDC LED perimeter
+            without overpowering navigation. */}
         <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
-          fill="none" stroke="url(#ledring)" strokeWidth="2.4" opacity="0.55" filter="url(#ringglow)"/>
+          fill="none" stroke="rgba(26,18,13,0.08)" strokeWidth="3.2"/>
         <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
-          fill="none" stroke="url(#ledring)" strokeWidth="1.0"/>
+          fill="none" stroke="url(#ledring)" strokeWidth="0.9" opacity="0.7"/>
+        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+          fill="none" stroke="rgba(26,18,13,0.55)" strokeWidth="0.35"/>
         <rect x="11" y="19" width="78" height="62" rx="31" ry="31"
-          fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.25" strokeDasharray="1 1.5"/>
+          fill="none" stroke="rgba(26,18,13,0.18)" strokeWidth="0.22" strokeDasharray="1 1.5"/>
 
-        {/* Infield warm haze — the crowd's collective glow */}
+        {/* Infield warm wash */}
         <ellipse cx="50" cy="50" rx="38" ry="30" fill="url(#infieldGlow)"/>
 
-        {/* Festoon string lights — main pedestrian arteries lit overhead */}
-        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,235,200,0.10)" strokeWidth="3.8" fill="none" strokeLinecap="round"/>
-        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,221,160,0.85)" strokeWidth="0.6" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.6"/>
-        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,235,200,0.08)" strokeWidth="2.6" fill="none" strokeLinecap="round"/>
-        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,221,160,0.75)" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeDasharray="0.6 1.4"/>
-        {/* Diagonal feeders */}
-        <path d="M28,28 Q38,38 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
-        <path d="M72,28 Q62,38 50,51" stroke="rgba(255,221,160,0.55)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.5 1.2"/>
+        {/* Pedestrian arteries — paper-friendly dashed ink with a subtle
+            cream sidewalk halo so they read as walkways, not power lines. */}
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(247,237,224,0.7)" strokeWidth="3.4" fill="none" strokeLinecap="round"/>
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(26,18,13,0.22)" strokeWidth="0.55" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(247,237,224,0.6)" strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(26,18,13,0.18)" strokeWidth="0.45" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
+        <path d="M28,28 Q38,38 50,51" stroke="rgba(26,18,13,0.16)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
+        <path d="M72,28 Q62,38 50,51" stroke="rgba(26,18,13,0.16)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
 
-        {/* Daisy Lane central plaza — neon ember outline */}
-        <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.10)" stroke="rgba(245,154,54,0.85)" strokeWidth="0.35" rx="2" filter="url(#ringglow)"/>
-        <rect x="37" y="43" width="26" height="16" fill="none" stroke="rgba(245,154,54,0.95)" strokeWidth="0.18" rx="2"/>
-        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(245,154,54,0.55)" strokeWidth="0.3"/>
-        <circle cx="50" cy="51" r="1.2" fill="rgba(245,154,54,0.95)"/>
+        {/* Daisy Lane central plaza — ember accent on paper */}
+        <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.08)" stroke="rgba(232,93,46,0.45)" strokeWidth="0.32" rx="2"/>
+        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(232,93,46,0.35)" strokeWidth="0.3"/>
+        <circle cx="50" cy="51" r="1.2" fill="rgba(232,93,46,0.85)"/>
 
         {/* Entrance gates — perimeter access points. Three official EDC gates:
             GATE S (NE), GATE C/D (west), GATE P (SW). Rendered as small green
@@ -794,24 +784,23 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
           </g>
         ))}
 
-        {/* Amenity markers — water, medics, food, restrooms, info, art.
-            Coloured dots so users can spot an amenity type at a glance
-            (blue = water, red+ = medic, etc.). Drawn before stages so
-            stage markers always sit on top. */}
-        {(typeof AMENITIES !== "undefined" ? AMENITIES : []).map(a => {
+        {/* Amenity markers — coloured dots tuned for paper bg. Render before
+            stages so stage markers always sit on top. Hidden when the user
+            is in meet mode so the route line stays the focal point. */}
+        {!meetMode && (typeof AMENITIES !== "undefined" ? AMENITIES : []).map(a => {
           const cfg = ({
             water:  { color: "#38bdf8", letter: ""  },
             food:   { color: "#fb923c", letter: ""  },
-            med:    { color: "#f87171", letter: "+" },
-            toilet: { color: "#94a3b8", letter: ""  },
-            art:    { color: "#fbbf24", letter: ""  },
-            info:   { color: "#22c55e", letter: "i" },
-          })[a.type] || { color: "#fff", letter: "" };
+            med:    { color: "#ef4444", letter: "+" },
+            toilet: { color: "#64748b", letter: ""  },
+            art:    { color: "#f59a36", letter: ""  },
+            info:   { color: "#16a34a", letter: "i" },
+          })[a.type] || { color: "#000", letter: "" };
           return (
             <g key={a.id}>
-              <circle cx={a.x} cy={a.y} r="1.5" fill={cfg.color} opacity="0.78" stroke="rgba(0,0,0,0.45)" strokeWidth="0.18"/>
+              <circle cx={a.x} cy={a.y} r="1.4" fill={cfg.color} opacity="0.92" stroke="#fff" strokeWidth="0.22"/>
               {cfg.letter && (
-                <text x={a.x} y={a.y + 0.7} textAnchor="middle" fontSize="2"
+                <text x={a.x} y={a.y + 0.65} textAnchor="middle" fontSize="1.8"
                   fill="#fff" fontFamily="Geist Mono, monospace" fontWeight="900">
                   {cfg.letter}
                 </text>
@@ -823,14 +812,13 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
         {/* Route line to selected stage or meet point */}
         {(sel || meetTarget) && (() => {
           const target = meetTarget || sel;
+          const c = meetTarget ? "#e85d2e" : "#e85d2e";
           return (
             <g>
               <path d={`M ${avatar.x},${avatar.y} L ${target.x},${target.y}`}
-                stroke={meetTarget ? "#e85d2e" : "#f59a36"}
-                strokeWidth="1.6" fill="none" strokeLinecap="round" opacity="0.22"/>
+                stroke={c} strokeWidth="2.6" fill="none" strokeLinecap="round" opacity="0.18"/>
               <path d={`M ${avatar.x},${avatar.y} L ${target.x},${target.y}`}
-                stroke={meetTarget ? "#e85d2e" : "#f59a36"}
-                strokeWidth="0.7" fill="none" strokeLinecap="round" strokeDasharray="2 1.5"/>
+                stroke={c} strokeWidth="0.85" fill="none" strokeLinecap="round" strokeDasharray="2.2 1.6"/>
             </g>
           );
         })()}
@@ -911,8 +899,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
         <div style={{
           position: "absolute", left: "50%", top: "43%",
           transform: "translate(-50%, -130%)",
-          fontFamily: "Geist Mono, monospace", fontSize: 7.5, letterSpacing: 2.2, fontWeight: 700,
-          color: "rgba(255,210,150,0.95)", textShadow: "0 0 6px rgba(245,154,54,0.7)",
+          fontFamily: "Geist Mono, monospace", fontSize: 7, letterSpacing: 2.2, fontWeight: 700,
+          color: "rgba(232,93,46,0.85)",
         }}>DAISY LANE</div>
 
         {/* Entrance gate labels */}
@@ -924,15 +912,15 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
           <div key={i} style={{
             position: "absolute", left: `${g.x}%`, top: `${g.y}%`,
             transform: "translate(-50%, -50%)",
-            fontFamily: "Geist Mono, monospace", fontSize: 5.8, letterSpacing: 1.4, fontWeight: 700,
-            color: "rgba(134,239,172,0.95)",
-            textShadow: "0 0 4px rgba(0,0,0,0.85)",
+            fontFamily: "Geist Mono, monospace", fontSize: 5.6, letterSpacing: 1.4, fontWeight: 700,
+            color: "var(--success)",
             whiteSpace: "nowrap", pointerEvents: "none",
           }}>{g.label}</div>
         ))}
 
-        {/* Named landmarks + walkways from the official EDC map */}
-        {[
+        {/* Named landmarks + walkways from the official EDC map.
+            Hidden by default; toggle "LABELS" in the search header to show. */}
+        {showLabels && [
           // Walkways
           { label: "KINETIC TRAIL",   x: 41, y: 28, rot: -55, color: "rgba(251,191,36,0.85)",  size: 6.8, ls: 1.6 },
           { label: "MEMORY LANE",     x: 33, y: 55, rot: -90, color: "rgba(247,237,224,0.7)",  size: 6.8, ls: 1.6 },
@@ -957,17 +945,24 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
             transform: `translate(-50%, -50%) rotate(${lm.rot}deg)`,
             fontFamily: "Geist Mono, monospace",
             fontSize: lm.size, letterSpacing: lm.ls, fontWeight: 700,
-            color: lm.color,
-            textShadow: "0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.4)",
+            color: "rgba(26,18,13,0.55)",
             whiteSpace: "nowrap", pointerEvents: "none",
           }}>{lm.label}</div>
         ))}
 
         {stages.map(s => {
           const on = s.id === selected;
-          const anchor = anchorFor(s);
+          // Edge-aware anchor: stages on the perimeter push their labels
+          // INWARD instead of outward so they don't clip on small phones.
+          const anchor = (() => {
+            if (s.x < 22) return "E";   // far west → label east of dot
+            if (s.x > 78) return "W";   // far east → label west of dot
+            if (s.y < 22) return "S";   // far north → label south of dot
+            if (s.y > 78) return "N";   // far south → label north of dot
+            return anchorFor(s);
+          })();
           const pos = { left: `${s.x}%`, top: `${s.y}%` };
-          const off = 20;
+          const off = 18;
           const tx = {
             N: { transform: `translate(-50%, calc(-100% - ${off}px))` },
             S: { transform: `translate(-50%, ${off}px)` },
@@ -979,21 +974,25 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], selected, me
               style={{
                 position: "absolute", ...pos, ...tx,
                 pointerEvents: "auto", cursor: "pointer",
-                background: on ? s.color : "rgba(10,8,24,0.82)",
-                color: on ? "#fff" : "rgba(255,255,255,0.95)",
-                border: `1px solid ${on ? s.color : `${s.color}aa`}`,
-                padding: on ? "4px 10px" : "3px 8px",
+                background: on ? s.color : "var(--paper)",
+                color: on ? "#fff" : "var(--ink)",
+                border: `1px solid ${on ? s.color : "var(--line-2)"}`,
+                padding: on ? "4px 10px" : "3px 9px",
                 borderRadius: 999,
                 fontFamily: "Geist Mono, monospace",
                 fontSize: on ? 9.5 : 8.5,
-                letterSpacing: 1.3, fontWeight: 700,
+                letterSpacing: 1.2, fontWeight: 700,
                 whiteSpace: "nowrap",
-                backdropFilter: "blur(8px)",
                 boxShadow: on
-                  ? `0 4px 14px ${s.color}aa, 0 0 24px ${s.color}66`
-                  : `0 0 12px ${s.color}55, 0 2px 6px rgba(0,0,0,0.5)`,
+                  ? `0 4px 14px ${s.color}55, 0 1px 0 rgba(0,0,0,0.06)`
+                  : "0 1px 0 rgba(0,0,0,0.04), 0 2px 8px rgba(26,18,13,0.10)",
                 transition: "all 0.15s",
               }}>
+              <span style={{
+                display: "inline-block", width: 6, height: 6, borderRadius: 6,
+                background: on ? "#fff" : s.color, marginRight: 6,
+                verticalAlign: "1px",
+              }}/>
               {s.name.toUpperCase()}
             </div>
           );
