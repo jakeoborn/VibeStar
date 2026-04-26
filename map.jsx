@@ -399,6 +399,320 @@ function findNextSavedSet(savedIds) {
   };
 }
 
+// ── Friend ping codes ─────────────────────────────────────────
+// Each user gets a friendly 4-letter code (LIME, FROG, etc.) generated
+// once + persisted. Share your code with a friend; they enter it in
+// their app to drop a "find me" pin on your live position. Without a
+// backend, lookup is demo-only: codes that match one of the seeded
+// friends drop the pin on that friend; unknown codes drop near the
+// avatar with a "code not found, demo pin" notice.
+const PING_WORDS = [
+  "LIME","KIWI","PLUM","SAGE","ROSE","DUSK","DAWN","NEON",
+  "LOFT","FROG","STAR","MOTH","MINT","JADE","RUBY","PINE",
+  "FERN","SOLO","HOWL","WAVE","MOON","ECHO","HAZE","SAGA",
+];
+function getMyPingCode() {
+  try {
+    let c = localStorage.getItem("ping_code");
+    if (c && /^[A-Z]{4}$/.test(c)) return c;
+    c = PING_WORDS[Math.floor(Math.random() * PING_WORDS.length)];
+    localStorage.setItem("ping_code", c);
+    return c;
+  } catch {
+    return "PLUR";
+  }
+}
+// Demo-only: 4-letter "address book" mapping codes to seeded friends.
+// In production this would be a server lookup against the user's actual
+// friend list / contacts.
+const DEMO_FRIEND_CODES = { LIME: "f1", FROG: "f2", NEON: "f3", PLUM: "f4" };
+
+function PingSheet({ onClose, onDropPin, friends }) {
+  const myCode = getMyPingCode();
+  const [input, setInput] = React.useState("");
+  const [feedback, setFeedback] = React.useState(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const submit = () => {
+    const c = input.trim().toUpperCase();
+    if (!/^[A-Z]{4}$/.test(c)) {
+      setFeedback({ kind: "err", text: "Enter a 4-letter code." });
+      return;
+    }
+    const friendId = DEMO_FRIEND_CODES[c];
+    if (friendId) {
+      const f = friends.find(fr => fr.id === friendId);
+      if (f) {
+        onDropPin({ x: f.x, y: f.y, label: `${f.name} (${c})` });
+        setFeedback({ kind: "ok", text: `Pin dropped on ${f.name}.` });
+        setTimeout(onClose, 700);
+        return;
+      }
+    }
+    setFeedback({ kind: "warn", text: `Code "${c}" not in your address book yet (demo).` });
+  };
+
+  const copyCode = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(`Find me on Plursky — code ${myCode}`);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    } catch {}
+  };
+  const shareCode = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Plursky",
+          text: `Find me on Plursky — code ${myCode}`,
+        });
+      } else {
+        copyCode();
+      }
+    } catch {}
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(13,10,8,0.55)",
+      zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460,
+        background: "var(--paper)", color: "var(--ink)",
+        borderRadius: "16px 16px 0 0",
+        padding: "16px 18px 22px",
+        boxShadow: "0 -8px 32px rgba(0,0,0,0.35)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: 1.5, fontWeight: 800 }}>PING CODES</span>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "none", color: "var(--muted)",
+            fontSize: 18, cursor: "pointer", lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <div className="serif" style={{ fontSize: 14, color: "var(--muted)", marginBottom: 10 }}>
+          Share your code so a friend can drop a pin on you.
+        </div>
+
+        <div style={{
+          background: "var(--ink)", color: "var(--paper)",
+          borderRadius: 14, padding: "16px 18px", marginBottom: 14,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        }}>
+          <div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.5, opacity: 0.6, marginBottom: 2 }}>YOUR CODE</div>
+            <div className="serif" style={{ fontSize: 38, letterSpacing: 4, fontWeight: 400 }}>{myCode}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <button onClick={shareCode} style={{
+              background: "var(--ember)", color: "#fff", border: "none",
+              borderRadius: 8, padding: "7px 14px",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+              cursor: "pointer",
+            }}>SHARE</button>
+            <button onClick={copyCode} style={{
+              background: "transparent", color: "var(--paper)",
+              border: "1px solid rgba(247,237,224,0.35)",
+              borderRadius: 8, padding: "7px 14px",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+              cursor: "pointer",
+            }}>{copied ? "COPIED" : "COPY"}</button>
+          </div>
+        </div>
+
+        <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.4, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>
+          DROP A PIN FROM A FRIEND'S CODE
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            placeholder="LIME"
+            maxLength={4}
+            value={input}
+            onChange={e => setInput(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key === "Enter" && submit()}
+            style={{
+              flex: 1, background: "var(--paper-2)", color: "var(--ink)",
+              border: "1px solid var(--line-2)",
+              borderRadius: 10, padding: "10px 14px",
+              fontFamily: "Geist Mono, monospace", fontSize: 18,
+              letterSpacing: 4, fontWeight: 700, textTransform: "uppercase",
+              outline: "none",
+            }}
+          />
+          <button onClick={submit} style={{
+            background: "var(--ink)", color: "var(--paper)", border: "none",
+            borderRadius: 10, padding: "10px 18px",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.4, fontWeight: 700,
+            cursor: "pointer",
+          }}>DROP PIN</button>
+        </div>
+        {feedback && (
+          <div className="mono" style={{
+            marginTop: 10, fontSize: 9.5, letterSpacing: 1.1, fontWeight: 700,
+            color: feedback.kind === "ok" ? "var(--success)"
+                 : feedback.kind === "err" ? "var(--ember)"
+                 : "var(--horizon)",
+          }}>{feedback.text}</div>
+        )}
+        <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 14, lineHeight: 1.5 }}>
+          DEMO CODES: LIME · FROG · NEON · PLUM
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Saved-set reminders ──────────────────────────────────────
+// 15-min-before reminder hook. Fires a Web Notification when a saved set
+// is about to start. Two layers:
+//   1) Permission + opt-in persisted in localStorage ("notify_enabled")
+//   2) setInterval(60s) checks real wall-clock against each saved set's
+//      absolute start time; fires once per set, deduped via fired Set.
+// Limitation: only works while the app is open in a tab. Reliable
+// background delivery requires a Web Push subscription + backend; the
+// SW push handler in sw.js is already wired for that future swap.
+function readNotifyEnabled() {
+  try { return localStorage.getItem("notify_enabled") === "1"; } catch { return false; }
+}
+function writeNotifyEnabled(v) {
+  try { localStorage.setItem("notify_enabled", v ? "1" : "0"); } catch {}
+}
+function _setStartRealMs(artist) {
+  // Use FESTIVAL_CONFIG.dayDates to map (day, "HH:MM") → real local Date.
+  const meta = FESTIVAL_CONFIG.dayDates?.[artist.day];
+  if (!meta) return null;
+  const [h, m] = artist.start.split(":").map(Number);
+  const d = new Date(meta.y, meta.m, meta.d, h, m, 0, 0);
+  // Sets before 08:00 are early-morning of the *next* calendar day
+  if (h < 8) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+function useSavedSetReminders(savedIds, enabled) {
+  const firedRef = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!enabled) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const tick = () => {
+      const now = Date.now();
+      savedIds.forEach(id => {
+        if (firedRef.current.has(id)) return;
+        const a = ARTISTS.find(x => x.id === id);
+        if (!a) return;
+        const startMs = _setStartRealMs(a);
+        if (!startMs) return;
+        const minsUntil = (startMs - now) / 60000;
+        // Fire once when 0–15 min out
+        if (minsUntil > 0 && minsUntil <= 15) {
+          firedRef.current.add(id);
+          try {
+            const stage = STAGES.find(s => s.id === a.stage);
+            new Notification(`${a.name} in ${Math.round(minsUntil)} min`, {
+              body: `${stage?.name || a.stage} · ${a.start}`,
+              tag: `set-${id}`,
+              icon: "/og.svg",
+            });
+          } catch {}
+        }
+      });
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [savedIds, enabled]);
+}
+
+function NotifyPill({ enabled, onChange }) {
+  const supported = typeof Notification !== "undefined";
+  const denied = supported && Notification.permission === "denied";
+  const onClick = async () => {
+    if (!supported) return;
+    if (enabled) { writeNotifyEnabled(false); onChange(false); return; }
+    let perm = Notification.permission;
+    if (perm === "default") {
+      try { perm = await Notification.requestPermission(); } catch { perm = "denied"; }
+    }
+    if (perm !== "granted") { onChange(false); return; }
+    writeNotifyEnabled(true);
+    onChange(true);
+    try {
+      new Notification("Plursky notifications on", {
+        body: "You'll get a heads-up 15 min before saved sets.",
+        tag: "notify-on",
+        icon: "/og.svg",
+      });
+    } catch {}
+  };
+  const label = !supported ? "N/A" : denied ? "BLOCKED" : enabled ? "🔔 ON" : "🔔 OFF";
+  return (
+    <button onClick={onClick} disabled={!supported || denied} title="Set reminders 15 min before saved sets" style={{
+      display: "flex", alignItems: "center", gap: 4,
+      background: enabled ? "var(--ember)" : "var(--paper)",
+      color: enabled ? "#fff" : "var(--muted)",
+      border: enabled ? "none" : "1px solid var(--line-2)",
+      borderRadius: 999, padding: "3px 8px",
+      fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+      cursor: supported && !denied ? "pointer" : "not-allowed",
+      opacity: !supported || denied ? 0.55 : 1,
+    }}>{label}</button>
+  );
+}
+
+// Sunrise countdown to Kinetic Field — only renders 90 min before
+// sunrise to 30 min after. EDC's sunrise sets at KIN are the festival's
+// signature moment; this strip flags it so a vet doesn't sleep through.
+function SunriseStrip({ avatar, onSelect }) {
+  const sun = FESTIVAL_CONFIG.sunTimes?.[NOW.day];
+  if (!sun) return null;
+  const nowMin = toNightMin(NOW.time);
+  const riseMin = toNightMin(sun.rise);
+  const minsUntil = riseMin - nowMin;
+  // Render window: 90 min before → 30 min after sunrise
+  if (minsUntil > 90 || minsUntil < -30) return null;
+  const kin = STAGES.find(s => s.id === "kinetic");
+  if (!kin) return null;
+  const dist = Math.hypot(kin.x - avatar.x, kin.y - avatar.y);
+  const walk = computeWalkRange(avatar.x, avatar.y, kin, dist, NOW.time);
+  const walkLabel = walk.lo === walk.hi ? `${walk.lo}` : `${walk.lo}–${walk.hi}`;
+  const isUp = minsUntil <= 0;
+
+  return (
+    <button onClick={() => onSelect(kin.id)} style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 10,
+      padding: "8px 11px", marginTop: 8,
+      background: "linear-gradient(90deg, #f59a36 0%, #e85d2e 60%, #a78bfa 100%)",
+      color: "#fff", border: "none", borderRadius: 12,
+      cursor: "pointer", textAlign: "left",
+      boxShadow: "0 4px 14px rgba(245,154,54,0.35)",
+    }}>
+      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>🌅</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 800,
+          opacity: 0.85, marginBottom: 1,
+        }}>SUNRISE · KINETIC FIELD</div>
+        <div className="serif" style={{
+          fontSize: 16, lineHeight: 1.05, letterSpacing: -0.2,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>{isUp ? "Sun is up — head to the lotus" : "Hold the line for sunrise"}</div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div className="mono" style={{
+          fontSize: 11, letterSpacing: 1.2, fontWeight: 800,
+        }}>{isUp ? "NOW" : `${minsUntil}M`}</div>
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1, fontWeight: 600,
+          opacity: 0.85, marginTop: 2,
+        }}>{walkLabel}M WALK</div>
+      </div>
+    </button>
+  );
+}
+
 function NextSetStrip({ savedIds, avatar, onSelect }) {
   const next = findNextSavedSet(savedIds);
   if (!next) return null;
@@ -486,6 +800,10 @@ function MapScreen({ state, setState }) {
   const [chatFriend, setChatFriend] = React.useState(null);
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
+  const [pingOpen, setPingOpen] = React.useState(false);
+  // Push-style reminders for saved sets — see useSavedSetReminders below.
+  const [notifyEnabled, setNotifyEnabled] = React.useState(readNotifyEnabled);
+  useSavedSetReminders(state.saved, notifyEnabled);
   // Compass mode — rotate the entire map so the user's facing direction is
   // always "up". Uses DeviceOrientationEvent (with iOS permission gate).
   const [compass, setCompass] = React.useState(false);
@@ -659,6 +977,7 @@ function MapScreen({ state, setState }) {
               color: "var(--ink)", fontFamily: "Geist, sans-serif", fontSize: 13,
             }}
           />
+          <NotifyPill enabled={notifyEnabled} onChange={setNotifyEnabled} />
           <button onClick={() => setShowLabels(s => !s)} title="Toggle landmark labels" style={{
             background: showLabels ? "var(--ink)" : "var(--paper)",
             color: showLabels ? "var(--paper)" : "var(--muted)",
@@ -783,6 +1102,14 @@ function MapScreen({ state, setState }) {
             onSelect={(id) => { setSelectedStage(id); setPeek(false); }}
           />
         )}
+        {/* Sunrise countdown to Kinetic Field — auto-renders 90 min
+            before → 30 min after sunrise. The signature EDC moment. */}
+        {!search && (
+          <SunriseStrip
+            avatar={avatar}
+            onSelect={(id) => { setSelectedStage(id); setPeek(false); }}
+          />
+        )}
       </div>
 
       {/* MAP + PEEK WINDOW */}
@@ -859,6 +1186,13 @@ function MapScreen({ state, setState }) {
             fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
             cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
           }}>{meetMode ? "× CANCEL" : "MEET UP"}</button>
+          <button onClick={() => setPingOpen(true)} title="Share your ping code or drop a pin from one" style={{
+            background: "var(--paper-2)", color: "var(--ink)",
+            border: "1px solid var(--line-2)", borderRadius: 999, padding: "7px 10px",
+            fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+            cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 4,
+          }}><span style={{ fontSize: 11 }}>◉</span>PING</button>
           <div className="no-scrollbar" style={{ display: "flex", gap: 5, overflowX: "auto", flex: 1, scrollbarWidth: "none" }}>
             {friends.map(f => {
               const d = Math.round(Math.sqrt((f.x-avatar.x)**2 + (f.y-avatar.y)**2) * 1.8);
@@ -928,6 +1262,17 @@ function MapScreen({ state, setState }) {
       )}
 
       {rideshareOpen && <RideshareSheet onClose={() => setRideshareOpen(false)} />}
+
+      {pingOpen && (
+        <PingSheet
+          friends={friends}
+          onClose={() => setPingOpen(false)}
+          onDropPin={(target) => {
+            setMeetMode(true);
+            setMeetTarget(target);
+          }}
+        />
+      )}
     </Screen>
   );
 }
