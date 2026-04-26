@@ -910,6 +910,9 @@ function MeScreen({ state, setState }) {
         {/* Reminders / push notifications */}
         <NotificationsCard state={state} />
 
+        {/* Battery saver — dim screen + freeze animations + slow GPS */}
+        <BatterySaverCard />
+
         {/* Pack list — essentials checklist for the festival */}
         <PackListCard />
 

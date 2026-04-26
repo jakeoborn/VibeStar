@@ -105,10 +105,11 @@ function WellnessPill() {
   const [w, setW] = React.useState(readWellness);
   const [open, setOpen] = React.useState(false);
   const [tick, setTick] = React.useState(0);
+  const { active: bsActive } = useBatterySaver();
   React.useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 30000);
+    const id = setInterval(() => setTick(t => t + 1), bsActive ? 120000 : 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [bsActive]);
 
   const hyd = computeHydration(w.lastDrink);
   const restMin = Math.floor((Date.now() - w.lastRest) / 60000);
@@ -257,14 +258,20 @@ function distMiles(lat1, lng1, lat2, lng2) {
 }
 
 // Watch the user's real position. Returns { pos, status, lastUpdate }.
+// In battery-saver mode, drops high-accuracy GPS and lets the browser cache
+// fixes for 30s — saves a meaningful chunk of battery on long late-night sessions.
 function useGeolocation(enabled) {
   const [pos, setPos] = React.useState(null);
   const [status, setStatus] = React.useState("idle"); // idle | locating | live | denied | unavailable
+  const { active: bsActive } = useBatterySaver();
   React.useEffect(() => {
     if (!enabled) { setStatus("idle"); return; }
     if (!navigator.geolocation) { setStatus("unavailable"); return; }
     setStatus("locating");
     let alive = true;
+    const opts = bsActive
+      ? { enableHighAccuracy: false, maximumAge: 30000, timeout: 30000 }
+      : { enableHighAccuracy: true,  maximumAge: 4000,  timeout: 15000 };
     const id = navigator.geolocation.watchPosition(
       (p) => {
         if (!alive) return;
@@ -275,10 +282,10 @@ function useGeolocation(enabled) {
         if (!alive) return;
         setStatus(e.code === 1 ? "denied" : "unavailable");
       },
-      { enableHighAccuracy: true, maximumAge: 4000, timeout: 15000 }
+      opts
     );
     return () => { alive = false; navigator.geolocation.clearWatch(id); };
-  }, [enabled]);
+  }, [enabled, bsActive]);
   return { pos, status };
 }
 
@@ -359,7 +366,10 @@ function MapScreen({ state, setState }) {
   const useDemo = !isLiveOnSite;
   const avatar = isLiveOnSite ? { x: liveAvatar.x, y: liveAvatar.y } : demoAvatar;
 
-  // Demo wander tick — only runs when not pinned to real on-site GPS
+  // Demo wander tick — only runs when not pinned to real on-site GPS.
+  // Slows from 600ms → 2400ms in battery-saver mode (still feels alive,
+  // 4× fewer renders).
+  const { active: bsActive } = useBatterySaver();
   React.useEffect(() => {
     if (!useDemo) return;
     const id = setInterval(() => {
@@ -392,9 +402,9 @@ function MapScreen({ state, setState }) {
           y: Math.max(12, Math.min(88, f.y + (Math.random() - 0.5) * 0.25)),
         };
       }));
-    }, 600);
+    }, bsActive ? 2400 : 600);
     return () => clearInterval(id);
-  }, [useDemo, selectedStage, meetMode, meetTarget, meetWith]);
+  }, [useDemo, selectedStage, meetMode, meetTarget, meetWith, bsActive]);
 
   // Heading derivation when real GPS is on-site and walking toward a goal
   React.useEffect(() => {

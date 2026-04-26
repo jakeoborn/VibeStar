@@ -591,9 +591,240 @@ function FestivalSwitcher({ onClose }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// Battery-saver mode
+// ─────────────────────────────────────────────────────────────
+// Three modes: "off" | "on" | "auto" (default).
+//   auto = battery <25% on a non-charging device  OR  02:00–06:00 wall-clock.
+// When active, body.bs-on disables all keyframe animations, transitions,
+// and backdrop-filter blurs, then dims via brightness/saturate. Geolocation
+// (map.jsx) and the demo-wander tick read window._BS.active to throttle.
+const BATTERY_SAVER_KEY = "battery_saver_mode";
+const _BS = (window._BS = window._BS || {
+  mode: (() => {
+    try { return localStorage.getItem(BATTERY_SAVER_KEY) || "auto"; }
+    catch { return "auto"; }
+  })(),
+  battery: null,         // { level: 0..1, charging: bool } when supported
+  active: false,
+  listeners: new Set(),  // (active) => void
+});
+
+function _bsCompute() {
+  if (_BS.mode === "on")  return true;
+  if (_BS.mode === "off") return false;
+  // auto
+  let lateNight = false;
+  try {
+    const h = new Date().getHours();
+    lateNight = h >= 2 && h < 6;
+  } catch {}
+  const lowBatt = _BS.battery && !_BS.battery.charging && _BS.battery.level < 0.25;
+  return lateNight || !!lowBatt;
+}
+function _bsApply() {
+  const next = _bsCompute();
+  if (next === _BS.active && document.body.classList.contains("bs-on") === next) {
+    return; // idempotent fast-path
+  }
+  _BS.active = next;
+  if (typeof document !== "undefined") {
+    document.body.classList.toggle("bs-on", next);
+  }
+  _BS.listeners.forEach(fn => { try { fn(next); } catch {} });
+}
+function setBatterySaverMode(mode) {
+  if (!["off", "on", "auto"].includes(mode)) return;
+  _BS.mode = mode;
+  try { localStorage.setItem(BATTERY_SAVER_KEY, mode); } catch {}
+  _bsApply();
+}
+
+// One-time init: hook the Battery Status API when available, recompute on
+// the hour for the auto night-window, and inject the CSS overrides.
+if (!window._bsInited) {
+  window._bsInited = true;
+
+  (async () => {
+    try {
+      if (navigator.getBattery) {
+        const b = await navigator.getBattery();
+        const sync = () => {
+          _BS.battery = { level: b.level, charging: b.charging };
+          _bsApply();
+        };
+        b.addEventListener("levelchange", sync);
+        b.addEventListener("chargingchange", sync);
+        sync();
+      } else {
+        _bsApply();
+      }
+    } catch { _bsApply(); }
+  })();
+
+  // Re-evaluate the night-window every 5 min (cheap, lets auto-mode flip on
+  // at 02:00 without waiting for an unrelated battery event).
+  setInterval(_bsApply, 5 * 60 * 1000);
+
+  const tag = document.createElement("style");
+  tag.id = "bs-css";
+  tag.textContent = `
+    body.bs-on, body.bs-on * {
+      animation: none !important;
+      transition: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    body.bs-on .ios-frame, body.bs-on .stage {
+      filter: brightness(0.72) saturate(0.85);
+    }
+    body.bs-on .bs-hide { display: none !important; }
+  `;
+  document.head.appendChild(tag);
+}
+
+function useBatterySaver() {
+  const [, force] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    _BS.listeners.add(force);
+    return () => _BS.listeners.delete(force);
+  }, []);
+  return {
+    active:  _BS.active,
+    mode:    _BS.mode,
+    battery: _BS.battery,    // { level, charging } | null
+    setMode: setBatterySaverMode,
+  };
+}
+
+// One-shot toast that appears when auto-mode flips ON. Once the user has
+// seen it for this session, we suppress until a fresh page load.
+function BatterySaverToast() {
+  const { active, mode, battery } = useBatterySaver();
+  const [shown, setShown] = React.useState(false);
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (active && mode === "auto" && !shown && !dismissed) {
+      setShown(true);
+      const t = setTimeout(() => setDismissed(true), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [active, mode, shown, dismissed]);
+
+  if (!shown || dismissed) return null;
+  const reason = (battery && !battery.charging && battery.level < 0.25)
+    ? `${Math.round(battery.level * 100)}% battery — dimmed for the long stretch.`
+    : "Late-night mode — dimmed and animations paused.";
+  return (
+    <div className="bs-hide" style={{
+      position: "absolute", left: 16, right: 16, top: 60, zIndex: 80,
+      padding: "10px 14px", borderRadius: 14,
+      background: "var(--ink)", color: "var(--paper)",
+      display: "flex", alignItems: "center", gap: 10,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+    }}>
+      <span style={{ fontSize: 16 }}>🔋</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--flare)", fontWeight: 700 }}>
+          BATTERY SAVER ON
+        </div>
+        <div style={{ fontSize: 11.5, lineHeight: 1.35, marginTop: 2, color: "rgba(247,237,224,0.85)" }}>
+          {reason}
+        </div>
+      </div>
+      <button onClick={() => setDismissed(true)} aria-label="Dismiss" style={{
+        background: "transparent", border: "none", cursor: "pointer",
+        color: "rgba(247,237,224,0.6)", fontSize: 18, lineHeight: 1, padding: 4,
+      }}>×</button>
+    </div>
+  );
+}
+
+// Settings card for MeScreen — segmented control + live battery readout.
+function BatterySaverCard() {
+  const { active, mode, battery, setMode } = useBatterySaver();
+  const segs = [
+    { id: "off",  label: "OFF" },
+    { id: "auto", label: "AUTO" },
+    { id: "on",   label: "ON" },
+  ];
+  const battPct = battery ? Math.round(battery.level * 100) : null;
+  const battColor = battPct == null ? "var(--muted)"
+    : battPct > 50 ? "var(--success)"
+    : battPct > 20 ? "var(--flare)"
+    : "#f87171";
+
+  return (
+    <div style={{
+      padding: 14, borderRadius: 14,
+      background: "var(--paper)", border: "1px solid var(--line)",
+      marginBottom: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.5, color: "var(--muted)", fontWeight: 700 }}>
+          BATTERY SAVER
+        </div>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: active ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+          {active ? "✓ ACTIVE" : "STANDBY"}
+        </span>
+      </div>
+      <div className="serif" style={{ fontSize: 19, lineHeight: 1.1, marginBottom: 4 }}>
+        Stretch the phone past sunrise
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>
+        Dims the screen, freezes animations, and slows GPS polling.
+        Auto kicks in at 2 AM or when battery drops under 25%.
+      </div>
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4,
+        background: "var(--paper-2)", borderRadius: 999, padding: 3,
+        border: "1px solid var(--line)",
+      }}>
+        {segs.map(s => {
+          const on = mode === s.id;
+          return (
+            <button key={s.id} onClick={() => setMode(s.id)} style={{
+              background: on ? "var(--ink)" : "transparent",
+              color: on ? "var(--paper)" : "var(--ink)",
+              border: "none", borderRadius: 999, padding: "7px 10px",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+              cursor: "pointer",
+            }}>{s.label}</button>
+          );
+        })}
+      </div>
+
+      {battPct != null && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+          <div style={{
+            position: "relative", width: 28, height: 13,
+            border: "1.4px solid var(--ink)", borderRadius: 3,
+          }}>
+            <div style={{
+              position: "absolute", top: 1, left: 1, bottom: 1,
+              width: `${Math.max(0, Math.min(100, battPct)) * 0.24}px`,
+              background: battColor, borderRadius: 1,
+            }}/>
+            <div style={{
+              position: "absolute", right: -3, top: 3, bottom: 3, width: 2,
+              background: "var(--ink)", borderRadius: 1,
+            }}/>
+          </div>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--ink)", fontWeight: 600 }}>
+            {battPct}% {battery.charging ? "· CHARGING" : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 Object.assign(window, {
   Screen, ScrollBody, TopBar, TabBar, Pill, ArtistSwatch, Wordmark,
   useInstallPrompt, InstallBanner,
   useNotifications, NotificationsCard, scheduleReminders,
   FestivalChip, FestivalSwitcher,
+  useBatterySaver, BatterySaverCard, BatterySaverToast, setBatterySaverMode,
 });

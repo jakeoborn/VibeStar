@@ -177,6 +177,7 @@ function App() {
           onDone={() => setShowOnboarding(false)}
         />
       )}
+      <BatterySaverToast />
     </IOSDevice>
   );
 }
