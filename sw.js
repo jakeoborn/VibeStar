@@ -1,4 +1,4 @@
-const CACHE = 'vibestar-v35';
+const CACHE = 'vibestar-v36';
 const PRECACHE = [
   './',
   './index.html',

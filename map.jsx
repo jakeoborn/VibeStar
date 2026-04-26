@@ -1253,11 +1253,18 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
 
         {stages.map(s => {
           const on = s.id === selected;
-          // Edge-aware anchor: stages on the perimeter push their labels
-          // INWARD instead of outward so they don't clip on small phones.
+          // Edge-aware anchor: edge stages prefer vertical anchors (N/S) so
+          // their labels don't collide with the central Rainbow Road / plaza
+          // landmarks. Pure top/bottom edges fall back to inward push.
           const anchor = (() => {
-            if (s.x < 22) return "E";   // far west → label east of dot
-            if (s.x > 78) return "W";   // far east → label west of dot
+            const edgeX = s.x < 22 || s.x > 78;
+            if (edgeX) {
+              // Mid-height edge (cosmic / neon): push UP, away from the busy
+              // y≈50 corridor and the central Daisy Lane plaza.
+              if (s.y >= 40 && s.y <= 60) return "N";
+              if (s.y > 60) return "S";
+              return "N";
+            }
             if (s.y < 22) return "S";   // far north → label south of dot
             if (s.y > 78) return "N";   // far south → label north of dot
             return anchorFor(s);
