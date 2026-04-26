@@ -918,12 +918,6 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           const savedHere = savedByStage[s.id];
           return (
             <g key={s.id} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPickStage(s.id); }}>
-              {/* Iso ground shadow — flat ellipse on the tilted plane gives
-                  the stage marker a sense of being a physical disc. */}
-              {iso && (
-                <ellipse cx={s.x} cy={s.y + r * 0.55} rx={r * 1.25} ry={r * 0.32}
-                  fill="rgba(0,0,0,0.22)"/>
-              )}
               {on && (
                 <circle cx={s.x} cy={s.y} r={r + 1} fill="none" stroke={s.color} strokeWidth="0.5" opacity="0.9">
                   <animate attributeName="r" values={`${r};${r+6};${r}`} dur="2s" repeatCount="indefinite"/>
@@ -971,23 +965,15 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
 
         {/* Avatar — you */}
         <g>
-          {/* Iso ground shadow — slightly forward of the dot so the sprite
-              looks like it's casting a shadow toward the camera. */}
-          {iso && (
-            <ellipse cx={avatar.x} cy={avatar.y + 0.4} rx="2.6" ry="0.85"
-              fill="rgba(0,0,0,0.28)"/>
-          )}
           <path d={`M${avatar.x},${avatar.y}
                     L${avatar.x + Math.cos(heading - 0.38) * 6.5},${avatar.y + Math.sin(heading - 0.38) * 6.5}
                     L${avatar.x + Math.cos(heading + 0.38) * 6.5},${avatar.y + Math.sin(heading + 0.38) * 6.5} Z`}
             fill="#f59a36" opacity="0.3"/>
-          {!iso && (
-            <circle cx={avatar.x} cy={avatar.y} r="3.2" fill="#f59a36" opacity="0.22">
-              <animate attributeName="r" values="2.5;4.5;2.5" dur="2.2s" repeatCount="indefinite"/>
-            </circle>
-          )}
-          <circle cx={avatar.x} cy={avatar.y} r={iso ? 1.4 : 1.8} fill="#f59a36" stroke="rgba(255,255,255,0.95)" strokeWidth="0.6"/>
-          <circle cx={avatar.x} cy={avatar.y} r={iso ? 0.55 : 0.7} fill="#fff"/>
+          <circle cx={avatar.x} cy={avatar.y} r="3.2" fill="#f59a36" opacity="0.22">
+            <animate attributeName="r" values="2.5;4.5;2.5" dur="2.2s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx={avatar.x} cy={avatar.y} r="1.8" fill="#f59a36" stroke="rgba(255,255,255,0.95)" strokeWidth="0.6"/>
+          <circle cx={avatar.x} cy={avatar.y} r="0.7" fill="#fff"/>
         </g>
       </svg>
 
