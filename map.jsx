@@ -289,6 +289,94 @@ function useGeolocation(enabled) {
   return { pos, status };
 }
 
+// ── Walking time model ─────────────────────────────────────
+// Reddit/raver-sourced estimates beat naïve dist*c. KIN→CIR is the longest
+// walk on the map (15-25 min); adjacent stages are 5-15 min depending on
+// pinch-points. The 1-3 AM crowd window adds ~50-60% as people leak between
+// mainstage drops. Avatar→stage falls back to a piecewise distance curve
+// when the avatar isn't anchored to a known stage.
+const WALK_PAIRS = {
+  "circuit,kinetic":   [15, 25],   // longest walk on the map
+  "kinetic,neon":      [10, 14],   // ~12 min target
+  "kinetic,waste":     [ 6, 10],
+  "basspod,kinetic":   [ 6, 10],
+  "cosmic,kinetic":    [10, 15],
+  "bionic,kinetic":    [ 7, 11],
+  "kinetic,quantum":   [ 5,  9],
+  "kinetic,stereo":    [ 8, 12],
+  "circuit,neon":      [ 5,  9],
+  "basspod,circuit":   [ 6, 10],
+  "basspod,waste":     [ 6, 10],
+  "circuit,waste":     [10, 14],
+  "cosmic,waste":      [ 7, 11],
+  "bionic,cosmic":     [ 6, 10],
+  "bionic,stereo":     [ 4,  7],
+  "quantum,stereo":    [ 7, 11],
+  "neon,quantum":      [ 7, 11],
+  "basspod,cosmic":    [ 9, 13],
+  "basspod,neon":      [10, 14],
+  "basspod,stereo":    [ 8, 12],
+  "circuit,cosmic":    [12, 18],
+  "circuit,quantum":   [ 9, 13],
+  "circuit,stereo":    [11, 16],
+  "neon,stereo":       [10, 14],
+  "neon,waste":        [12, 17],
+  "neon,bionic":       [12, 17],
+  "neon,cosmic":       [13, 18],
+  "neon,basspod":      [10, 14],
+  "cosmic,quantum":    [13, 18],
+  "cosmic,stereo":     [ 6, 10],
+  "stereo,waste":      [ 7, 11],
+  "bionic,waste":      [ 7, 11],
+  "bionic,quantum":    [10, 14],
+  "quantum,waste":     [13, 18],
+  "quantum,basspod":   [10, 14],
+};
+
+function _pairKey(a, b) { return a < b ? `${a},${b}` : `${b},${a}`; }
+
+function _nearestStageId(x, y, radius = 9) {
+  let best = null, bestD = radius;
+  for (const s of STAGES) {
+    const d = Math.hypot(s.x - x, s.y - y);
+    if (d < bestD) { bestD = d; best = s.id; }
+  }
+  return best;
+}
+
+function _distToBand(d) {
+  if (d < 12) return [ 2,  4];
+  if (d < 22) return [ 4,  7];
+  if (d < 35) return [ 6, 10];
+  if (d < 50) return [10, 14];
+  if (d < 65) return [13, 20];
+  return        [18, 28];
+}
+
+// { lo, hi, peak, plan } — `plan` flips on for the "plan 20+ min" advisory
+// during the 01:00-03:00 crowd peak when the upper bound is already > 15.
+function computeWalkRange(avatarX, avatarY, targetStage, dist, nowTime) {
+  let lo, hi;
+  const fromStage = _nearestStageId(avatarX, avatarY);
+  if (fromStage && targetStage && fromStage !== targetStage.id) {
+    const k = _pairKey(fromStage, targetStage.id);
+    if (WALK_PAIRS[k]) [lo, hi] = WALK_PAIRS[k];
+  }
+  if (lo == null) [lo, hi] = _distToBand(dist);
+
+  const hour = nowTime ? parseInt(String(nowTime).split(":")[0], 10) : -1;
+  const isPeak = hour >= 1 && hour < 3;
+  if (isPeak) { lo = Math.round(lo * 1.5); hi = Math.round(hi * 1.6); }
+
+  return { lo, hi, peak: isPeak, plan: isPeak && hi >= 15 };
+}
+
+// Single-number flavour for meet-pin ETAs (avatar→pin / friend→pin).
+function distToMins(d) {
+  const [lo, hi] = _distToBand(d);
+  return Math.max(1, Math.round((lo + hi) / 2));
+}
+
 function MapScreen({ state, setState }) {
   const [selectedStage, setSelectedStage] = React.useState(state.focusStage || null);
   const [gpsLive, setGpsLive] = React.useState(true);
@@ -421,9 +509,7 @@ function MapScreen({ state, setState }) {
   const dx = stage ? stage.x - avatar.x : 0;
   const dy = stage ? stage.y - avatar.y : 0;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  // Speedway is ~1.5km × 0.8km — full diagonal ≈ 25 min walk.
-  // Normalized coords 0-100; ~1.8 min per unit gives realistic walking times.
-  const minsWalk = Math.max(2, Math.round(dist * 1.8));
+  const walk = computeWalkRange(avatar.x, avatar.y, stage, dist, NOW.time);
   const meters = Math.round(dist * 22);
 
   const filteredStages = search
@@ -727,7 +813,7 @@ function MapScreen({ state, setState }) {
       {/* BOTTOM SHEET */}
       {(stage || (meetMode && meetTarget)) && (
         <BottomSheet
-          stage={stage} nowAtStage={nowAtStage} dist={dist} minsWalk={minsWalk}
+          stage={stage} nowAtStage={nowAtStage} dist={dist} walk={walk}
           peek={peek} setPeek={setPeek}
           meetMode={meetMode} meetTarget={meetTarget} friends={friends} meetWith={meetWith} avatar={avatar}
           onClose={() => setSelectedStage(null)}
@@ -824,18 +910,24 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         {/* Warm paper ground */}
         <rect x="0" y="0" width="100" height="100" fill="url(#mapGround)"/>
 
-        {/* Speedway track — east-west elongated stadium matching the
-            LVMS aerial. Solid ink outline reads cleanly on paper; a faint
-            rainbow accent on the inside echoes the EDC LED perimeter
-            without overpowering navigation. */}
-        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+        {/* Speedway track — 1.5-mile LVMS tri-oval. Back straight (north)
+            is flat; front straight (south) has the signature tri-oval
+            dogleg bulging out toward the start/finish line. Solid ink
+            outline reads cleanly on paper; a faint rainbow accent on the
+            inside echoes the EDC LED perimeter without overpowering
+            navigation. */}
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
           fill="none" stroke="rgba(26,18,13,0.08)" strokeWidth="3.2"/>
-        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
           fill="none" stroke="url(#ledring)" strokeWidth="0.9" opacity="0.7"/>
-        <rect x="6" y="14" width="88" height="72" rx="36" ry="36"
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
           fill="none" stroke="rgba(26,18,13,0.55)" strokeWidth="0.35"/>
-        <rect x="11" y="19" width="78" height="62" rx="31" ry="31"
+        <path d="M 47 19 L 53 19 A 31 31 0 0 1 53 81 Q 51.5 82.5 50 84 Q 48.5 82.5 47 81 A 31 31 0 0 1 47 19 Z"
           fill="none" stroke="rgba(26,18,13,0.18)" strokeWidth="0.22" strokeDasharray="1 1.5"/>
+        {/* Start/finish stripe at the tri-oval apex — small black-and-white
+            checker-style tick so the track reads as a real speedway. */}
+        <line x1="50" y1="89.4" x2="50" y2="91.6" stroke="rgba(26,18,13,0.7)" strokeWidth="0.55" strokeLinecap="round"/>
+        <line x1="49" y1="90.5" x2="51" y2="90.5" stroke="rgba(247,237,224,0.95)" strokeWidth="0.45" strokeLinecap="round"/>
 
         {/* Infield warm wash */}
         <ellipse cx="50" cy="50" rx="38" ry="30" fill="url(#infieldGlow)"/>
@@ -1278,12 +1370,12 @@ function GroundPeek({ stage, onClose }) {
 }
 
 // ---- BOTTOM SHEET ----
-function BottomSheet({ stage, nowAtStage, dist, minsWalk, peek, setPeek, meetMode, meetTarget, friends, meetWith, avatar, onClose, onCancelMeet, onOpenArtist }) {
+function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, meetTarget, friends, meetWith, avatar, onClose, onCancelMeet, onOpenArtist }) {
   if (meetMode && meetTarget) {
     const f = friends.find(fr => fr.id === meetWith);
     const youDist = Math.sqrt((meetTarget.x-avatar.x)**2 + (meetTarget.y-avatar.y)**2);
-    const youMins = Math.max(1, Math.round(youDist * 1.8));
-    const fMins = f ? Math.max(1, Math.round(Math.sqrt((meetTarget.x-f.x)**2 + (meetTarget.y-f.y)**2) * 1.8)) : 0;
+    const youMins = distToMins(youDist);
+    const fMins = f ? distToMins(Math.sqrt((meetTarget.x-f.x)**2 + (meetTarget.y-f.y)**2)) : 0;
     const eta = Math.max(youMins, fMins);
     return (
       <div style={{ background: "var(--paper)", color: "var(--ink)", padding: "14px 16px 12px", borderTopLeftRadius: 22, borderTopRightRadius: 22, boxShadow: "0 -10px 30px rgba(0,0,0,0.4)" }}>
@@ -1314,10 +1406,10 @@ function BottomSheet({ stage, nowAtStage, dist, minsWalk, peek, setPeek, meetMod
     );
   }
   if (!stage) return null;
-  return <StageLineupSheet stage={stage} minsWalk={minsWalk} dist={dist} peek={peek} setPeek={setPeek} onClose={onClose} onOpenArtist={onOpenArtist} nowAtStage={nowAtStage}/>;
+  return <StageLineupSheet stage={stage} walk={walk} dist={dist} peek={peek} setPeek={setPeek} onClose={onClose} onOpenArtist={onOpenArtist} nowAtStage={nowAtStage}/>;
 }
 
-function StageLineupSheet({ stage, minsWalk, dist, peek, setPeek, onClose, onOpenArtist, nowAtStage }) {
+function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArtist, nowAtStage }) {
   const [day, setDay] = React.useState(NOW.day);
   const [expanded, setExpanded] = React.useState(false);
   const toSlot = t => { const h = parseInt(t.split(":")[0]); return h < 8 ? h + 24 : h; };
@@ -1351,7 +1443,8 @@ function StageLineupSheet({ stage, minsWalk, dist, peek, setPeek, onClose, onOpe
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="serif" style={{ fontSize: 22, lineHeight: 1 }}>{stage.name}</div>
           <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
-            {minsWalk} MIN WALK · ~{Math.round(dist*22)}M · {totalAcrossDays} SETS OVER 3 NIGHTS
+            {walk.lo === walk.hi ? `${walk.lo}` : `${walk.lo}–${walk.hi}`} MIN WALK{walk.peak ? " · PEAK" : ""} · ~{Math.round(dist*22)}M · {totalAcrossDays} SETS OVER 3 NIGHTS
+            {walk.plan && <span style={{ color: "var(--ember)", fontWeight: 700 }}> · PLAN 20+</span>}
           </div>
         </div>
         <button onClick={() => setPeek(p => !p)} style={{
