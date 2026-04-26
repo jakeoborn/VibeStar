@@ -232,6 +232,26 @@ const AMENITIES = [
   { id: "a8", type: "toilet", label: "Restrooms",   x: 65, y: 68 },
   { id: "a9", type: "art",    label: "Daisy Lane",  x: 50, y: 50 },
   { id: "a10",type: "info",   label: "Info / Lost", x: 55, y: 45 },
+
+  // Phone-charging banks. EDC publishes "battery charging stations" on the
+  // Amenities page without exact coords, so these track the obvious crowd
+  // arteries (Rainbow Road + each major stage plaza).
+  { id: "ch1", type: "charge", label: "Charging — Rainbow Road",  x: 50, y: 55 },
+  { id: "ch2", type: "charge", label: "Charging — Kinetic Plaza", x: 48, y: 26 },
+  { id: "ch3", type: "charge", label: "Charging — Quantum Walk",  x: 64, y: 34 },
+  { id: "ch4", type: "charge", label: "Charging — Cosmic Walk",   x: 22, y: 52 },
+  { id: "ch5", type: "charge", label: "Charging — Basspod Plaza", x: 52, y: 76 },
+  { id: "ch6", type: "charge", label: "Charging — Circuit Plaza", x: 68, y: 70 },
+
+  // Mobile Charging Lockers (Insomniac's official locker partner). 5 banks:
+  // GA on Rainbow Road, three VIP-only at stage VIPs, one inside Passport
+  // Lounge. Each contains a universal iPhone+Android charger.
+  // Source: secure.mobilecharginglockers.com — EDC LV 2026 listings.
+  { id: "lk1", type: "locker", label: "Lockers — Main Merch (GA)",      x: 50, y: 52, tier: "GA",       price: "$30 day · $90 / 3-day" },
+  { id: "lk2", type: "locker", label: "Lockers — VIP Kinetic",          x: 48, y: 18, tier: "VIP",      price: "$90 · sold out" },
+  { id: "lk3", type: "locker", label: "Lockers — VIP Circuit Grounds",  x: 72, y: 70, tier: "VIP",      price: "$90 / 3-day" },
+  { id: "lk4", type: "locker", label: "Lockers — VIP Basspod",          x: 52, y: 78, tier: "VIP",      price: "$90 / 3-day" },
+  { id: "lk5", type: "locker", label: "Lockers — Passport Lounge",      x: 78, y: 42, tier: "Passport", price: "$25 day · $75 / 3-day" },
 ];
 
 const AVATAR_START = { x: 50, y: 52 };

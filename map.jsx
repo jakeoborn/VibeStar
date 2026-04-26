@@ -549,11 +549,13 @@ function MapScreen({ state, setState }) {
             closest amenity of that type. Works at any festival as long as
             AMENITIES are populated. */}
         {!search && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             {[
-              { type: "water",  label: "WATER",    emoji: "💧", color: "#38bdf8" },
-              { type: "med",    label: "MEDIC",    emoji: "✚",  color: "#f87171" },
-              { type: "toilet", label: "RESTROOM", emoji: "🚻", color: "#94a3b8" },
+              { type: "water",  label: "WATER",   emoji: "💧", color: "#38bdf8" },
+              { type: "med",    label: "MEDIC",   emoji: "✚",  color: "#f87171" },
+              { type: "toilet", label: "TOILET",  emoji: "🚻", color: "#94a3b8" },
+              { type: "charge", label: "CHARGE",  emoji: "⚡", color: "#facc15" },
+              { type: "locker", label: "LOCKER",  emoji: "🔒", color: "#a78bfa" },
             ].map(c => (
               <button key={c.type} onClick={() => {
                 const matches = (typeof AMENITIES !== "undefined" ? AMENITIES : []).filter(a => a.type === c.type);
@@ -571,7 +573,7 @@ function MapScreen({ state, setState }) {
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
               }}>
                 <span style={{ fontSize: 11 }}>{c.emoji}</span>
-                <span>NEAREST {c.label}</span>
+                <span>{c.label}</span>
               </button>
             ))}
           </div>
@@ -879,6 +881,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             toilet: { color: "#64748b", letter: ""  },
             art:    { color: "#f59a36", letter: ""  },
             info:   { color: "#16a34a", letter: "i" },
+            charge: { color: "#facc15", letter: "⚡" },
+            locker: { color: "#a78bfa", letter: "L" },
           })[a.type] || { color: "#000", letter: "" };
           return (
             <g key={a.id}>
