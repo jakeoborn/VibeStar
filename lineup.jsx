@@ -1,19 +1,53 @@
 // Lineup / schedule screen — day tabs, stage-striped timeline list
 
+// "Legendary" moments — auto-detected from the data so vets can surface
+// the rare stuff (sunrise sets, B2Bs) without manual curation. Sunrise =
+// any Kinetic Field set ending between 05:00 and 05:30 PT. B2B = any
+// artist name with a "b2b" segment.
+function isLegendary(a) {
+  const name = (a.name || "").toLowerCase();
+  if (name.includes("b2b") || name.includes("vs.") || name.includes(" x ")) return true;
+  if (a.stage === "kinetic") {
+    const [h, m] = a.end.split(":").map(Number);
+    if (h >= 5 && h < 6) return true; // sunrise window
+  }
+  return false;
+}
+
 function LineupScreen({ state, setState }) {
   const [day, setDay] = React.useState(state.lineupDay || NOW.day);
   const [filter, setFilter] = React.useState("all"); // all | saved
   const [stageFilter, setStageFilter] = React.useState("all"); // all | stage id
+  const [tierFilter, setTierFilter] = React.useState("all"); // all | head | prime | open | legend
 
   const dayArtists = ARTISTS
     .filter(a => a.day === day)
     .filter(a => filter === "all" || state.saved.includes(a.id))
     .filter(a => stageFilter === "all" || a.stage === stageFilter)
+    .filter(a => {
+      if (tierFilter === "all") return true;
+      if (tierFilter === "head") return a.tier === 3;
+      if (tierFilter === "prime") return a.tier === 2;
+      if (tierFilter === "open") return a.tier === 1;
+      if (tierFilter === "legend") return isLegendary(a);
+      return true;
+    })
     .sort((a, b) => {
       // EDC runs 19:00→05:00 — treat early AM as "next day" (hour + 24)
       const toSlot = t => { const h = parseInt(t.split(":")[0]); return h < 8 ? h + 24 : h; };
       return toSlot(a.start) - toSlot(b.start);
     });
+
+  // Per-day saved counts + conflict counts for the 3-day overview ribbon.
+  const dayStats = DAYS.map(d => {
+    const savedThisDay = ARTISTS.filter(x => x.day === d.n && state.saved.includes(x.id));
+    let clashes = 0;
+    for (let i = 0; i < savedThisDay.length; i++)
+      for (let j = i + 1; j < savedThisDay.length; j++)
+        if (overlaps(savedThisDay[i], savedThisDay[j])) clashes++;
+    return { ...d, count: savedThisDay.length, clashes };
+  });
+  const totalSaved = dayStats.reduce((s, d) => s + d.count, 0);
 
   // conflicts: 2+ saved sets overlap in time
   const savedToday = ARTISTS.filter(a => a.day === day && state.saved.includes(a.id));
@@ -30,9 +64,10 @@ function LineupScreen({ state, setState }) {
         <TopBar title={<span>Lineup</span>} sub={`${FESTIVAL_CONFIG.brand.toUpperCase()} · ${FESTIVAL_CONFIG.dates.toUpperCase()}`} tight />
       </div>
 
-      {/* Day tabs */}
+      {/* Day tabs — now with per-day saved + conflict badges baked in so a
+          vet can see at a glance which night needs schedule attention. */}
       <div style={{ display: "flex", gap: 6, padding: "4px 16px 10px", borderBottom: "1px solid var(--line)" }}>
-        {DAYS.map(d => {
+        {dayStats.map(d => {
           const on = d.n === day;
           return (
             <button key={d.n} onClick={() => setDay(d.n)} style={{
@@ -44,17 +79,58 @@ function LineupScreen({ state, setState }) {
               border: on ? "none" : "1px solid var(--line-2)",
               cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+              position: "relative",
             }}>
               <span className="mono" style={{ fontSize: 10, letterSpacing: 1.6, opacity: on ? 0.7 : 0.5 }}>{d.label}</span>
               <span className="serif" style={{ fontSize: 18 }}>{d.date.split(" ")[1]}</span>
+              {d.count > 0 && (
+                <span className="mono" style={{
+                  fontSize: 8, letterSpacing: 1, fontWeight: 700,
+                  color: on ? "rgba(247,237,224,0.7)" : "var(--muted)",
+                  marginTop: 1,
+                }}>
+                  {d.count} SAVED{d.clashes > 0 ? ` · ${d.clashes}⚠` : ""}
+                </span>
+              )}
             </button>
+          );
+        })}
+      </div>
+
+      {/* Tier / vibe filter — the vet's killer filter. ALL is the default,
+          LEGEND surfaces sunrise sets and B2Bs (auto-detected, no manual
+          curation), HEAD/PRIME/OPEN map to the existing tier field. */}
+      <div className="no-scrollbar" style={{
+        display: "flex", gap: 6, padding: "10px 16px 4px",
+        overflowX: "auto", scrollbarWidth: "none",
+      }}>
+        {[
+          { id: "all",    label: "ALL TIERS" },
+          { id: "legend", label: "★ LEGENDARY",   accent: "#fbbf24" },
+          { id: "head",   label: "HEADLINERS",    accent: "var(--ember)" },
+          { id: "prime",  label: "PRIME TIME",    accent: "var(--horizon)" },
+          { id: "open",   label: "OPENERS",       accent: "var(--success)" },
+        ].map(t => {
+          const on = tierFilter === t.id;
+          return (
+            <button key={t.id} onClick={() => setTierFilter(t.id)} className="mono" style={{
+              flexShrink: 0,
+              padding: "5px 11px",
+              borderRadius: 999,
+              background: on ? (t.accent || "var(--ink)") : "transparent",
+              color: on ? "#fff" : "var(--ink)",
+              border: on ? "none" : "1px solid var(--line-2)",
+              fontSize: 9.5, letterSpacing: 1.1,
+              cursor: "pointer", fontWeight: on ? 700 : 500,
+              whiteSpace: "nowrap",
+            }}>{t.label}</button>
           );
         })}
       </div>
 
       {/* Stage filter chips */}
       <div className="no-scrollbar" style={{
-        display: "flex", gap: 6, padding: "10px 16px 4px",
+        display: "flex", gap: 6, padding: "8px 16px 4px",
         overflowX: "auto", scrollbarWidth: "none",
         borderBottom: "1px solid var(--line)",
       }}>
@@ -140,9 +216,17 @@ function LineupScreen({ state, setState }) {
               <div style={{ width: 4, alignSelf: "stretch", background: stage.color, borderRadius: 3 }} />
               <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                    onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
                   <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, letterSpacing: -0.3 }}>{a.name}</div>
                   <TierStars tier={a.tier} />
+                  {isLegendary(a) && (
+                    <span className="mono" style={{
+                      fontSize: 8, letterSpacing: 1.2, fontWeight: 800,
+                      color: "#fbbf24", background: "rgba(251,191,36,0.14)",
+                      padding: "1px 6px", borderRadius: 999,
+                      border: "0.5px solid rgba(251,191,36,0.6)",
+                    }}>★ DON'T MISS</span>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                   <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: stage.color, fontWeight: 600, textTransform: "uppercase" }}>
