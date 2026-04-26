@@ -827,6 +827,128 @@ function MapScreen({ state, setState }) {
   );
 }
 
+// ---- Stage silhouette icons ────────────────────────────────
+// Per-stage SVG silhouette evoking each stage's real-world shape:
+// Kinetic = lotus, Bass Pod = speaker stack, Circuit = hangar, etc.
+// Drawn at (cx, cy) with base radius r in SVG units. Small enough to
+// stay readable at full-map zoom but distinctive enough to skim.
+function StageIcon({ id, cx, cy, r, on, color }) {
+  const op = on ? 1 : 0.92;
+  const W = "rgba(255,255,255,0.94)";
+
+  if (id === "kinetic") {
+    // Lotus: 4-petal flower with diamond core (matches Image #3 lotus arch)
+    const pts = [0, 1, 2, 3].map(i => {
+      const a = i * Math.PI/2 - Math.PI/2;
+      const tx = cx + r*1.2*Math.cos(a), ty = cy + r*1.2*Math.sin(a);
+      return <ellipse key={i} cx={tx} cy={ty} rx={r*0.55} ry={r*0.32}
+        fill={color} opacity={op}
+        transform={`rotate(${i*90 + 90} ${tx} ${ty})`}/>;
+    });
+    return (<g>
+      {pts}
+      <path d={`M ${cx},${cy-r*0.7} L ${cx+r*0.7},${cy} L ${cx},${cy+r*0.7} L ${cx-r*0.7},${cy} Z`} fill={W}/>
+      <circle cx={cx} cy={cy} r={r*0.3} fill={color}/>
+    </g>);
+  }
+
+  if (id === "circuit") {
+    // Hangar: rounded rect with LED tunnel stripe
+    return (<g>
+      <rect x={cx-r*1.05} y={cy-r*0.7} width={r*2.1} height={r*1.4} rx={r*0.3} fill={color} opacity={op}/>
+      <rect x={cx-r*0.75} y={cy-r*0.18} width={r*1.5} height={r*0.36} fill={W}/>
+    </g>);
+  }
+
+  if (id === "basspod") {
+    // Triangular speaker stack pointing up
+    return (<g>
+      <path d={`M ${cx},${cy-r*1.05} L ${cx+r},${cy+r*0.7} L ${cx-r},${cy+r*0.7} Z`} fill={color} opacity={op}/>
+      <circle cx={cx} cy={cy+r*0.1} r={r*0.32} fill={W}/>
+      <line x1={cx-r*0.55} y1={cy+r*0.55} x2={cx+r*0.55} y2={cy+r*0.55} stroke={W} strokeWidth={r*0.15} strokeLinecap="round"/>
+    </g>);
+  }
+
+  if (id === "neon") {
+    // Hexagon (greenhouse / honeycomb)
+    const pts = [0, 1, 2, 3, 4, 5].map(i => {
+      const a = i * Math.PI/3 - Math.PI/2;
+      return `${cx + r*Math.cos(a)},${cy + r*Math.sin(a)}`;
+    }).join(" ");
+    return (<g>
+      <polygon points={pts} fill={color} opacity={op}/>
+      <circle cx={cx} cy={cy} r={r*0.32} fill={W}/>
+    </g>);
+  }
+
+  if (id === "cosmic") {
+    // Sun/dome with rays
+    return (<g>
+      {[0, 60, 120, 180, 240, 300].map(deg => {
+        const a = deg * Math.PI/180;
+        return <line key={deg}
+          x1={cx + r*0.9*Math.cos(a)} y1={cy + r*0.9*Math.sin(a)}
+          x2={cx + r*1.4*Math.cos(a)} y2={cy + r*1.4*Math.sin(a)}
+          stroke={color} strokeWidth={r*0.22} strokeLinecap="round" opacity={op}/>;
+      })}
+      <circle cx={cx} cy={cy} r={r*0.85} fill={color} opacity={op}/>
+      <circle cx={cx} cy={cy} r={r*0.35} fill={W}/>
+    </g>);
+  }
+
+  if (id === "stereo") {
+    // 6-petal bloom
+    return (<g>
+      {[0, 60, 120, 180, 240, 300].map(deg => {
+        const a = deg * Math.PI/180;
+        const px = cx + r*0.6*Math.cos(a), py = cy + r*0.6*Math.sin(a);
+        return <ellipse key={deg} cx={px} cy={py} rx={r*0.55} ry={r*0.32}
+          fill={color} opacity={on ? 0.95 : 0.85}
+          transform={`rotate(${deg} ${px} ${py})`}/>;
+      })}
+      <circle cx={cx} cy={cy} r={r*0.32} fill={W}/>
+    </g>);
+  }
+
+  if (id === "bionic") {
+    // Tree: trunk + canopy
+    return (<g>
+      <rect x={cx-r*0.18} y={cy+r*0.05} width={r*0.36} height={r*0.85} fill={color} opacity={op}/>
+      <circle cx={cx} cy={cy-r*0.18} r={r*0.95} fill={color} opacity={op}/>
+      <circle cx={cx-r*0.3} cy={cy-r*0.35} r={r*0.32} fill={W} opacity="0.6"/>
+      <circle cx={cx} cy={cy-r*0.18} r={r*0.32} fill={W}/>
+    </g>);
+  }
+
+  if (id === "quantum") {
+    // Pyramid (trance peak) with prism inset
+    return (<g>
+      <path d={`M ${cx},${cy-r*1.05} L ${cx+r},${cy+r*0.65} L ${cx-r},${cy+r*0.65} Z`} fill={color} opacity={op}/>
+      <path d={`M ${cx-r*0.55},${cy-r*0.1} L ${cx+r*0.55},${cy-r*0.1} L ${cx},${cy+r*0.5} Z`} fill={W} opacity="0.92"/>
+    </g>);
+  }
+
+  if (id === "waste") {
+    // Industrial 8-point gear/star
+    const pts = [];
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI/8 - Math.PI/2;
+      const rad = i % 2 === 0 ? r : r * 0.62;
+      pts.push(`${cx + rad*Math.cos(a)},${cy + rad*Math.sin(a)}`);
+    }
+    return (<g>
+      <polygon points={pts.join(" ")} fill={color} opacity={op}/>
+      <circle cx={cx} cy={cy} r={r*0.32} fill={W}/>
+    </g>);
+  }
+
+  // Fallback: original 2-circle dot
+  return (<g>
+    <circle cx={cx} cy={cy} r={r} fill={color} opacity={op}/>
+    <circle cx={cx} cy={cy} r={r*0.38} fill={W}/>
+  </g>);
+}
+
 // ---- TOP-DOWN NAVIGATION MAP ----
 function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
   // Compass mode: rotate the entire map by -heading so the user's facing
@@ -1017,8 +1139,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
                 </circle>
               )}
               <circle cx={s.x} cy={s.y} r={r + 1.8} fill={s.color} opacity={on ? 0.18 : 0.09} filter="url(#stageglow)"/>
-              <circle cx={s.x} cy={s.y} r={r} fill={s.color} opacity={on ? 1 : 0.88}/>
-              <circle cx={s.x} cy={s.y} r={r * 0.38} fill="rgba(255,255,255,0.9)"/>
+              <StageIcon id={s.id} cx={s.x} cy={s.y} r={r} on={on} color={s.color}/>
               {/* Gold ★ pin if the user has an upcoming saved set on this stage */}
               {savedHere && (
                 <g transform={`translate(${s.x + r * 0.85}, ${s.y - r * 0.85})`}>

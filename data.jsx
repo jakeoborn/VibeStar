@@ -216,31 +216,36 @@ function setActiveFestivalAndReload(id) {
 //   wasteLAND       — orange (desert)
 //   bassPOD         — royal blue
 //   circuitGROUNDS  — navy blue (paired blue zone with bassPOD)
+// Stage x/y coords are calibrated to Insomniac's official EDC LV 2025
+// site map (north-up orientation, 0-100 SVG grid). Constrained to fit
+// inside the tri-oval infield (inner radius ~31 around 50,50). When the
+// 2026 map drops, just update these 9 x/y pairs and the GPS affine in
+// FESTIVAL_CONFIG.gpsAnchors and the whole projection re-tunes.
 const STAGES = [
-  { id: "kinetic", name: "Kinetic Field",   short: "KIN", color: "#e85d2e", x: 50, y: 20, size: 1.7,  desc: "Mainstage · headliners, sunrise sets",
+  { id: "kinetic", name: "Kinetic Field",   short: "KIN", color: "#e85d2e", x: 50, y: 22, size: 1.7,  desc: "Mainstage · headliners, sunrise sets",
     vibe: "Sunrise Cathedral",  vibeNote: "Park here for the sunrise set. Mainstage scale, screen on screen, and the only place worth standing still.",  peak: "03:00–05:30" },
-  { id: "quantum", name: "Quantum Valley",  short: "QNT", color: "#38bdf8", x: 68, y: 28, size: 1.1,
+  { id: "quantum", name: "Quantum Valley",  short: "QNT", color: "#38bdf8", x: 70, y: 26, size: 1.1,
     vibe: "Trance Family",      vibeNote: "Hands up for ten hours straight. ASOT crowd, melodic, weeping at 4 AM.",                                       peak: "01:00–05:00",
     desc: "Trance, psytrance" },
-  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#14b8a6", x: 28, y: 30, size: 1.0,
+  { id: "bionic",  name: "Bionic Jungle",   short: "BIO", color: "#14b8a6", x: 26, y: 30, size: 1.0,
     vibe: "Underground Forest", vibeNote: "Tucked, leafy, intimate. Where tastemakers go between mainstage acts.",                                        peak: "00:00–04:00",
     desc: "House, tech house" },
-  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#22c55e", x: 34, y: 40, size: 0.95,
+  { id: "stereo",  name: "Stereo Bloom",    short: "STR", color: "#22c55e", x: 34, y: 36, size: 0.95,
     vibe: "Deepest Crowd",      vibeNote: "Smaller stage, heavier heads. Tech house with a real ear in the crowd.",                                       peak: "23:30–03:30",
     desc: "Tech house, underground" },
-  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#fbbf24", x: 18, y: 50, size: 1.2,
+  { id: "cosmic",  name: "Cosmic Meadow",   short: "CSM", color: "#fbbf24", x: 20, y: 50, size: 1.2,
     vibe: "Wide-Open Vibe",     vibeNote: "Open-air, art cars, room to breathe. Best stage to wander in and out of.",                                     peak: "22:00–02:00",
     desc: "Open-air · big room, legends" },
-  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#ec4899", x: 82, y: 50, size: 1.05,
+  { id: "neon",    name: "Neon Garden",     short: "NEN", color: "#ec4899", x: 80, y: 50, size: 1.05,
     vibe: "House Heads HQ",     vibeNote: "If you came for house, this is the room. Long blends, deep selectors, tightest crowd of the night.",            peak: "00:00–04:30",
     desc: "House, deep techno" },
   { id: "waste",   name: "Wasteland",       short: "WST", color: "#f97316", x: 30, y: 72, size: 1.0,
     vibe: "Hard Dance Pit",     vibeNote: "Hardstyle, hardcore, raw. Bring earplugs you actually trust. The only stage where the BPM never drops.",        peak: "23:00–04:00",
     desc: "Dubstep, bass" },
-  { id: "basspod", name: "Basspod",         short: "BAS", color: "#2563eb", x: 50, y: 80, size: 1.05,
+  { id: "basspod", name: "Basspod",         short: "BAS", color: "#2563eb", x: 48, y: 80, size: 1.05,
     vibe: "Loudest Drops",      vibeNote: "Dubstep, riddim, headbang central. Kicks you can feel in your sternum from a quarter-mile out.",                peak: "23:00–03:30",
     desc: "Dubstep, hard bass" },
-  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#1e40af", x: 70, y: 72, size: 1.15,
+  { id: "circuit", name: "Circuit Grounds", short: "CIR", color: "#1e40af", x: 68, y: 72, size: 1.15,
     vibe: "Techno Vault",       vibeNote: "Industrial techno temple. Drifters from Berghain feel at home. Lasers cut through fog like blades.",            peak: "01:00–05:00",
     desc: "Techno, big room" },
 ];
