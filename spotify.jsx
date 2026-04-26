@@ -45,23 +45,15 @@ function isMobile() {
   return /iphone|ipad|ipod|android/i.test(navigator.userAgent);
 }
 
-async function startSpotifyAuth() {
-  // Mobile-PWA OAuth gotcha: warn once, and let user opt out of the redirect
-  if (isStandalonePWA() && isMobile()) {
-    const ack = confirm(
-      "Heads up: Spotify login is more reliable in your phone's browser " +
-      "than in this installed app.\n\n" +
-      "Tap OK to continue here (may fail), or Cancel and open plursky.com " +
-      "in Safari/Chrome to connect there first."
-    );
-    if (!ack) return;
-  }
-
+// Build the Spotify authorize URL + persist the PKCE verifier. We pre-warm
+// this on module load so the eventual click handler can navigate
+// synchronously — iOS Safari silently blocks redirects that happen *after*
+// `await` chains in click handlers (the user-gesture token expires).
+async function _buildSpotifyAuthUrl() {
   const verifier  = _randString(128);
   const challenge = _b64url(await _sha256(verifier));
-  // Persist verifier in BOTH localStorage and sessionStorage. iOS Safari
-  // sometimes loses one across the auth-domain redirect; the other usually
-  // survives.
+  // Persist in BOTH stores. iOS Safari occasionally drops one across the
+  // auth-domain redirect; the other usually survives.
   try { localStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
   try { sessionStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
   const params = new URLSearchParams({
@@ -72,7 +64,81 @@ async function startSpotifyAuth() {
     code_challenge:        challenge,
     scope:                 SPOTIFY_SCOPES,
   });
-  window.location.href = "https://accounts.spotify.com/authorize?" + params;
+  return "https://accounts.spotify.com/authorize?" + params;
+}
+
+// Cached URL ready by the time the user actually taps CONNECT.
+let _SPOTIFY_AUTH_URL = null;
+let _SPOTIFY_AUTH_ERR = null;
+function _prewarmSpotifyAuth() {
+  _SPOTIFY_AUTH_URL = null;
+  _SPOTIFY_AUTH_ERR = null;
+  return _buildSpotifyAuthUrl()
+    .then(u => { _SPOTIFY_AUTH_URL = u; })
+    .catch(e => { _SPOTIFY_AUTH_ERR = e; });
+}
+// Kick off immediately at module load.
+if (typeof window !== "undefined") _prewarmSpotifyAuth();
+
+// Tiny visible toast — used when something silently goes wrong on iOS.
+// We DOM-inject so it works even if React state is in a bad place.
+function _spotifyDebugToast(text, color) {
+  try {
+    const el = document.createElement("div");
+    el.textContent = text;
+    el.style.cssText = `
+      position:fixed;left:50%;bottom:80px;transform:translateX(-50%);
+      background:${color || "#1a120d"};color:#f7ede0;
+      padding:10px 14px;border-radius:10px;
+      font:12px/1.4 'Geist Mono',monospace;letter-spacing:.4px;
+      z-index:99999;max-width:88%;text-align:center;
+      box-shadow:0 8px 24px rgba(0,0,0,0.4);
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  } catch {}
+}
+
+function startSpotifyAuth() {
+  // Mobile-PWA OAuth gotcha: warn once, and let user opt out of the redirect.
+  if (isStandalonePWA() && isMobile()) {
+    const ack = confirm(
+      "Heads up: Spotify login is more reliable in your phone's browser " +
+      "than in this installed app.\n\n" +
+      "Tap OK to continue here (may fail), or Cancel and open plursky.com " +
+      "in Safari/Chrome to connect there first."
+    );
+    if (!ack) return;
+  }
+
+  // Fast path: URL is already pre-computed → navigate synchronously inside
+  // the user-gesture handler. This is what iOS Safari needs.
+  if (_SPOTIFY_AUTH_URL) {
+    window.location.assign(_SPOTIFY_AUTH_URL);
+    return;
+  }
+
+  // The pre-warm failed earlier — surface it so we don't fail silently.
+  if (_SPOTIFY_AUTH_ERR) {
+    _spotifyDebugToast(
+      "Spotify init failed: " + (_SPOTIFY_AUTH_ERR.message || _SPOTIFY_AUTH_ERR),
+      "#9b1c1c"
+    );
+    _prewarmSpotifyAuth(); // try again in the background
+    return;
+  }
+
+  // Pre-warm hasn't resolved yet (unusual — sha256 is sub-millisecond).
+  // Compute now and navigate when ready; if it never finishes we toast.
+  _spotifyDebugToast("Preparing Spotify…", "#1a120d");
+  _buildSpotifyAuthUrl()
+    .then(url => { window.location.assign(url); })
+    .catch(err => {
+      _spotifyDebugToast(
+        "Spotify connect failed: " + (err && err.message ? err.message : "unknown"),
+        "#9b1c1c"
+      );
+    });
 }
 
 function disconnectSpotify(setState, state) {
