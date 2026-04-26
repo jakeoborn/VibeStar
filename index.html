@@ -45,21 +45,21 @@
 <body>
   <div id="root" class="stage"></div>
 
-  <script type="text/babel" src="ios-frame.jsx"></script>
-  <script type="text/babel" src="data.jsx"></script>
-  <script type="text/babel" src="chrome.jsx"></script>
-  <script type="text/babel" src="home.jsx"></script>
-  <script type="text/babel" src="map.jsx"></script>
-  <script type="text/babel" src="lineup.jsx"></script>
-  <script type="text/babel" src="artist.jsx"></script>
-  <script type="text/babel" src="spotify.jsx"></script>
-  <script type="text/babel" src="app.jsx"></script>
+  <script type="text/babel" src="ios-frame.jsx?v=v28"></script>
+  <script type="text/babel" src="data.jsx?v=v28"></script>
+  <script type="text/babel" src="chrome.jsx?v=v28"></script>
+  <script type="text/babel" src="home.jsx?v=v28"></script>
+  <script type="text/babel" src="map.jsx?v=v28"></script>
+  <script type="text/babel" src="lineup.jsx?v=v28"></script>
+  <script type="text/babel" src="artist.jsx?v=v28"></script>
+  <script type="text/babel" src="spotify.jsx?v=v28"></script>
+  <script type="text/babel" src="app.jsx?v=v28"></script>
 
   <script>
     // Build version stamp — bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v27';
+    const APP_VERSION = 'v28';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -75,8 +75,11 @@
 
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v27').map(k => caches.delete(k)))
-      ).then(() => navigator.serviceWorker.register('./sw.js'));
+        Promise.all(keys.filter(k => k !== 'vibestar-v28').map(k => caches.delete(k)))
+      ).then(() =>
+        navigator.serviceWorker.register('./sw.js?v=v28', { updateViaCache: 'none' })
+          .then(reg => { try { reg.update(); } catch {} })
+      );
 
       let _reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
