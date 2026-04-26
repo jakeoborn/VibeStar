@@ -283,8 +283,17 @@ function buildTonightsPlan(state) {
 
 function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
+  const [firstTimerOpen, setFirstTimerOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
   const unread = (state.alerts || ALERTS).filter(a => a.unread).length;
+  // Pre-event newcomers haven't seen the first-timer guide yet — show a
+  // prominent CTA card until they open it once. After that the small badge
+  // in the alerts row keeps it discoverable without nagging.
+  const ftSeen = (() => {
+    try { return localStorage.getItem("ft_guide_seen") === "1"; }
+    catch { return false; }
+  })();
+  const [ftDismissed, setFtDismissed] = React.useState(ftSeen);
 
   // Re-render every minute so the pre-event countdown stays accurate
   useTick(60000);
@@ -382,6 +391,36 @@ function HomeScreen({ state, setState }) {
       </div>
 
       <InstallBanner />
+
+      {/* First-timer CTA — shows pre-event until dismissed. Bundles the basics
+          (gates, bag policy, lingo, day-1 plan, survival) so newcomers don't
+          have to wade through the lineup tab to figure out what's going on. */}
+      {countdown && !ftDismissed && (
+        <button onClick={() => setFirstTimerOpen(true)} style={{
+          width: "calc(100% - 32px)", margin: "12px 16px 0",
+          background: "linear-gradient(135deg, var(--ember) 0%, var(--horizon) 100%)",
+          color: "#fff", border: "none", borderRadius: 14,
+          padding: "12px 14px", textAlign: "left", cursor: "pointer",
+          boxShadow: "0 6px 20px rgba(232,93,46,0.28)",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 36, flexShrink: 0,
+            background: "rgba(255,255,255,0.22)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20,
+          }}>✨</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, fontWeight: 700, opacity: 0.85 }}>
+              FIRST TIME AT EDC?
+            </div>
+            <div className="serif" style={{ fontSize: 17, lineHeight: 1.1, marginTop: 2 }}>
+              Read this before you go
+            </div>
+          </div>
+          <div className="mono" style={{ fontSize: 16, fontWeight: 700, opacity: 0.75 }}>›</div>
+        </button>
+      )}
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
         {/* NOW PLAYING hero card */}
@@ -482,6 +521,15 @@ function HomeScreen({ state, setState }) {
 
         {/* Tonight: sunrise/sunset · weather · last-shuttle countdown */}
         <TonightCard state={state} setState={setState} />
+
+        {/* Pre-event only: surface the pack list on home so newcomers don't
+            have to dig three tabs deep to find it. The Me-screen copy of the
+            list is still authoritative — same localStorage key. */}
+        {countdown && (
+          <div style={{ marginTop: 4 }}>
+            <PackListCard />
+          </div>
+        )}
       </ScrollBody>
 
       {/* Offline banner */}
@@ -510,6 +558,19 @@ function HomeScreen({ state, setState }) {
           setState({ ...state, alerts: (state.alerts || ALERTS).map(a => ({ ...a, unread: false })) });
         }} onOpenMap={() => { setAlertsOpen(false); setState({ ...state, tab: "map" }); }}
           onOpenLineup={() => { setAlertsOpen(false); setState({ ...state, tab: "lineup" }); }}
+        />
+      )}
+
+      {/* First-timer guide drawer — bundles gate hours, bag policy, lingo,
+          survival tips, and a recommended day-1 plan in one scrollable sheet. */}
+      {firstTimerOpen && (
+        <FirstTimerGuide onClose={() => {
+          setFirstTimerOpen(false);
+          setFtDismissed(true);
+          try { localStorage.setItem("ft_guide_seen", "1"); } catch {}
+        }}
+        onOpenMap={() => { setFirstTimerOpen(false); setState({ ...state, tab: "map" }); }}
+        onOpenLineup={() => { setFirstTimerOpen(false); setState({ ...state, tab: "lineup" }); }}
         />
       )}
     </Screen>
@@ -773,6 +834,171 @@ function AlertsDrawer({ alerts, onClose, onOpenMap, onOpenLineup }) {
               </div>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── First-timer guide ──────────────────────────────────────────────
+// Concise sections covering the things a Plursky-newcomer needs before they
+// arrive at LVMS. Sourced from the official EDC Festival Guide (gates, bag
+// policy, sunrise sets) and harm-reduction guidance from DanceSafe.
+const FT_SECTIONS = [
+  {
+    id: "gates",
+    icon: "🚪",
+    title: "Gates & entry",
+    items: [
+      "Gates open 4 PM Friday-Sunday. Music runs 7 PM – 5:30 AM.",
+      "Bring a valid government-issued photo ID. 18+ event.",
+      "Wristband activates online before you arrive — don't show up with it un-paired.",
+      "One re-entry per day, only between 4 PM and midnight.",
+      "Clear bag, max 12\" × 6\" × 12\". Hydration packs OK if empty.",
+    ],
+  },
+  {
+    id: "lingo",
+    icon: "🗣️",
+    title: "Words you'll hear",
+    items: [
+      "PLUR — Peace, Love, Unity, Respect. The unspoken code.",
+      "Kandi — beaded bracelets. Trade them with strangers.",
+      "Totem — tall flag/sign so your group can find you in the crowd.",
+      "Sunrise set — the legendary final set as the sun comes up at Kinetic Field.",
+      "Headliner — top-billed act, usually 11 PM – 5 AM at the biggest stages.",
+      "B2B — back-to-back DJ set; two artists trading on the decks.",
+    ],
+  },
+  {
+    id: "survive",
+    icon: "💧",
+    title: "Survive the desert",
+    items: [
+      "Drink water before you're thirsty. Free refill stations all over the map (tap the 💧 chip).",
+      "Days are warm (~70°F), nights are cold (~50°F). Bring a light jacket.",
+      "Earplugs. Your future self will thank you.",
+      "Eat real food before headliners. The food halls in Daisy Lane stay open all night.",
+      "If you or a friend feels off, the Ground Control & GroundedSpace tents are no-questions-asked safe spaces.",
+    ],
+  },
+  {
+    id: "travel",
+    icon: "🚌",
+    title: "Getting there & back",
+    items: [
+      "Shuttles run from Strip hotels all night. Last departure ~5:30 AM.",
+      "Driving: lots fill 6–8 PM, exiting at 5 AM is a 90-min crawl.",
+      "Rideshare: Uber/Lyft pickup is the South Lot — tap the 🚗 button on the map for one-tap deep links.",
+      "Phone signal at the venue is unreliable. Set a meeting point with your group BEFORE entering.",
+    ],
+  },
+  {
+    id: "day1",
+    icon: "🌅",
+    title: "Recommended Day 1",
+    items: [
+      "Arrive by 7 PM. Walk the perimeter once to find your bearings — it's huge.",
+      "Hit Kinetic Field for the opening; the stage drop at sundown is the moment.",
+      "Anchor for one full headliner set, then wander. Don't try to chase 12 sets.",
+      "Eat at midnight. Sleep is for after the sunrise set.",
+      "End at Cosmic Meadow, Stereo Bloom, or stay at Kinetic for the sunrise.",
+    ],
+  },
+];
+
+function FirstTimerGuide({ onClose, onOpenMap, onOpenLineup }) {
+  const [openIdx, setOpenIdx] = React.useState(0); // first section open by default
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 9, display: "flex", flexDirection: "column" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }}/>
+      <div style={{
+        marginTop: "auto", background: "var(--paper)", color: "var(--ink)",
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        maxHeight: "85%", display: "flex", flexDirection: "column",
+        boxShadow: "0 -10px 30px rgba(0,0,0,0.4)", position: "relative",
+      }}>
+        <div style={{
+          padding: "14px 18px 12px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          borderBottom: "1px solid var(--line)",
+          background: "linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%)",
+          borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        }}>
+          <div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "var(--ember)", fontWeight: 700 }}>
+              FIRST TIME AT EDC
+            </div>
+            <div className="serif" style={{ fontSize: 24, lineHeight: 1, marginTop: 2 }}>
+              The basics
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "1px solid var(--line-2)",
+            borderRadius: 999, padding: "6px 12px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+          }}>CLOSE</button>
+        </div>
+        <div style={{ overflowY: "auto", padding: "8px 14px 18px" }}>
+          {FT_SECTIONS.map((s, i) => {
+            const isOpen = openIdx === i;
+            return (
+              <div key={s.id} style={{
+                marginTop: 8, background: "var(--paper)",
+                border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden",
+              }}>
+                <button onClick={() => setOpenIdx(isOpen ? -1 : i)} style={{
+                  width: "100%", padding: "12px 14px",
+                  display: "flex", alignItems: "center", gap: 12,
+                  background: isOpen ? "var(--paper-2)" : "transparent",
+                  border: "none", cursor: "pointer", textAlign: "left",
+                }}>
+                  <span style={{ fontSize: 20 }}>{s.icon}</span>
+                  <span className="serif" style={{ flex: 1, fontSize: 17, lineHeight: 1 }}>{s.title}</span>
+                  <span className="mono" style={{
+                    fontSize: 10, color: "var(--muted)", fontWeight: 700,
+                    transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.2s",
+                  }}>›</span>
+                </button>
+                {isOpen && (
+                  <ul style={{
+                    listStyle: "none", margin: 0, padding: "4px 14px 14px 50px",
+                  }}>
+                    {s.items.map((it, k) => (
+                      <li key={k} style={{
+                        position: "relative", marginTop: 8,
+                        fontSize: 13, lineHeight: 1.4, color: "var(--ink)",
+                      }}>
+                        <span style={{
+                          position: "absolute", left: -14, top: 6,
+                          width: 5, height: 5, borderRadius: 5,
+                          background: "var(--ember)",
+                        }}/>
+                        {it}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Quick-jump CTAs */}
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button onClick={onOpenMap} style={{
+              flex: 1, padding: "10px 12px",
+              background: "var(--ink)", color: "var(--paper)",
+              border: "none", borderRadius: 10, cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+            }}>EXPLORE MAP</button>
+            <button onClick={onOpenLineup} style={{
+              flex: 1, padding: "10px 12px",
+              background: "var(--paper)", color: "var(--ink)",
+              border: "1px solid var(--line-2)", borderRadius: 10, cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+            }}>BROWSE LINEUP</button>
+          </div>
         </div>
       </div>
     </div>
