@@ -377,6 +377,101 @@ function distToMins(d) {
   return Math.max(1, Math.round((lo + hi) / 2));
 }
 
+// Find the user's next saved set today: live now, or starting soon. Returns
+// null if nothing saved on the current festival day. Used by NextSetStrip
+// to power the top-of-map heads-up banner.
+function findNextSavedSet(savedIds) {
+  const nowMin = toNightMin(NOW.time);
+  const todays = savedIds
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(a => a && a.day === NOW.day)
+    .map(a => ({ a, sM: toNightMin(a.start), eM: toNightMin(a.end) }))
+    .filter(x => x.eM > nowMin)
+    .sort((x, y) => x.sM - y.sM);
+  if (!todays.length) return null;
+  const live = todays.find(x => x.sM <= nowMin && x.eM > nowMin);
+  const pick = live || todays[0];
+  return {
+    artist:    pick.a,
+    isLive:    !!live,
+    minsUntil: Math.max(0, pick.sM - nowMin),
+    minsLeft:  Math.max(0, pick.eM - nowMin),
+  };
+}
+
+function NextSetStrip({ savedIds, avatar, onSelect }) {
+  const next = findNextSavedSet(savedIds);
+  if (!next) return null;
+  const stage = STAGES.find(s => s.id === next.artist.stage);
+  if (!stage) return null;
+  const dist = Math.hypot(stage.x - avatar.x, stage.y - avatar.y);
+  const walk = computeWalkRange(avatar.x, avatar.y, stage, dist, NOW.time);
+  const walkLabel = walk.lo === walk.hi ? `${walk.lo}` : `${walk.lo}–${walk.hi}`;
+
+  // "LIVE — 38m left" vs "STARTS 0h 24m" framing
+  const headline = next.isLive
+    ? `LIVE · ${next.minsLeft}M LEFT`
+    : next.minsUntil < 60
+        ? `IN ${next.minsUntil}M`
+        : `IN ${Math.floor(next.minsUntil/60)}H ${next.minsUntil%60}M`;
+  // Walk vs start-time tension flag: if walk hi >= time-until-start, late
+  const willBeLate = !next.isLive && walk.hi >= next.minsUntil && next.minsUntil > 0;
+
+  return (
+    <button onClick={() => onSelect(stage.id)} style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 10,
+      padding: "8px 11px", marginTop: 8,
+      background: next.isLive ? "var(--ember)" : "var(--ink)",
+      color: next.isLive ? "#fff" : "var(--paper)",
+      border: "none", borderRadius: 12,
+      cursor: "pointer", textAlign: "left",
+      boxShadow: next.isLive ? "0 4px 14px rgba(232,93,46,0.35)" : "0 2px 8px rgba(26,18,13,0.18)",
+    }}>
+      <div style={{
+        width: 6, alignSelf: "stretch", borderRadius: 3,
+        background: stage.color,
+      }}/>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 700,
+          opacity: 0.7, marginBottom: 1,
+        }}>
+          {next.isLive ? "★ NEXT UP — LIVE" : "★ NEXT UP"}
+        </div>
+        <div className="serif" style={{
+          fontSize: 17, lineHeight: 1.05, letterSpacing: -0.2,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>{next.artist.name}</div>
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1.1, fontWeight: 600,
+          color: next.isLive ? "rgba(255,255,255,0.85)" : "rgba(247,237,224,0.7)",
+          marginTop: 2,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>
+          {stage.name.toUpperCase()} · {next.artist.start}–{next.artist.end}
+        </div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div className="mono" style={{
+          fontSize: 10, letterSpacing: 1.2, fontWeight: 800,
+        }}>{headline}</div>
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1, fontWeight: 600,
+          opacity: 0.75, marginTop: 2,
+        }}>
+          {walkLabel}M WALK
+        </div>
+        {willBeLate && (
+          <div className="mono" style={{
+            fontSize: 8, letterSpacing: 1, fontWeight: 800,
+            color: "#fbbf24", marginTop: 2,
+          }}>⚠ MOVE NOW</div>
+        )}
+      </div>
+    </button>
+  );
+}
+
 function MapScreen({ state, setState }) {
   const [selectedStage, setSelectedStage] = React.useState(state.focusStage || null);
   const [gpsLive, setGpsLive] = React.useState(true);
@@ -677,6 +772,16 @@ function MapScreen({ state, setState }) {
               </button>
             ))}
           </div>
+        )}
+        {/* NEXT-UP heads-up strip — your next saved set, with countdown +
+            walk time. Tap to focus that stage. Hidden when nothing saved
+            today or when the search box has focus. */}
+        {!search && (
+          <NextSetStrip
+            savedIds={state.saved}
+            avatar={avatar}
+            onSelect={(id) => { setSelectedStage(id); setPeek(false); }}
+          />
         )}
       </div>
 

@@ -52,9 +52,18 @@ function LineupScreen({ state, setState }) {
   // conflicts: 2+ saved sets overlap in time
   const savedToday = ARTISTS.filter(a => a.day === day && state.saved.includes(a.id));
   const conflicts = [];
+  // conflictById: artist.id → array of saved set names this artist clashes with.
+  // Powers the per-card ⚠ chip so users can spot WHICH saved sets clash, not
+  // just the day-tab total.
+  const conflictById = {};
   for (let i = 0; i < savedToday.length; i++) {
     for (let j = i + 1; j < savedToday.length; j++) {
-      if (overlaps(savedToday[i], savedToday[j])) conflicts.push([savedToday[i], savedToday[j]]);
+      if (overlaps(savedToday[i], savedToday[j])) {
+        conflicts.push([savedToday[i], savedToday[j]]);
+        const a = savedToday[i], b = savedToday[j];
+        (conflictById[a.id] = conflictById[a.id] || []).push(b.name);
+        (conflictById[b.id] = conflictById[b.id] || []).push(a.name);
+      }
     }
   }
 
@@ -203,6 +212,7 @@ function LineupScreen({ state, setState }) {
         {dayArtists.map(a => {
           const stage = STAGES.find(s => s.id === a.stage);
           const saved = state.saved.includes(a.id);
+          const clashWith = conflictById[a.id];
           return (
             <div key={a.id} style={{
               display: "flex", gap: 10, padding: "12px 0",
@@ -212,6 +222,15 @@ function LineupScreen({ state, setState }) {
               <div style={{ width: 46, flexShrink: 0 }}>
                 <div className="mono" style={{ fontSize: 13, letterSpacing: 0.5, fontWeight: 500 }}>{a.start}</div>
                 <div className="mono" style={{ fontSize: 9, letterSpacing: 1, color: "var(--muted)" }}>{a.end}</div>
+                {clashWith && (
+                  <div className="mono" title={`Overlaps with ${clashWith.join(", ")}`} style={{
+                    marginTop: 4, fontSize: 8, letterSpacing: 0.8, fontWeight: 800,
+                    color: "var(--ember)", background: "rgba(232,93,46,0.12)",
+                    border: "0.5px solid rgba(232,93,46,0.55)",
+                    padding: "1px 4px", borderRadius: 4,
+                    display: "inline-block",
+                  }}>⚠ CLASH</div>
+                )}
               </div>
               <div style={{ width: 4, alignSelf: "stretch", background: stage.color, borderRadius: 3 }} />
               <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
