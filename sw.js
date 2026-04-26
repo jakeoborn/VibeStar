@@ -1,4 +1,4 @@
-const CACHE = 'vibestar-v32';
+const CACHE = 'vibestar-v33';
 const PRECACHE = [
   './',
   './index.html',
@@ -17,11 +17,16 @@ const PRECACHE = [
 
 const LOCAL_EXTENSIONS = ['.html', '.jsx', '.js', '.json'];
 
-function isLocalAsset(url) {
+function isLocalAsset(url, isNavigate) {
   try {
     const u = new URL(url);
-    return u.origin === self.location.origin &&
-      LOCAL_EXTENSIONS.some(ext => u.pathname.endsWith(ext));
+    if (u.origin !== self.location.origin) return false;
+    // Treat navigation requests and the bare root as local assets so they
+    // go through network-first. Otherwise the cached `/` would pin users to
+    // an old index.html forever (it doesn't end in a tracked extension).
+    if (isNavigate) return true;
+    if (u.pathname === '/' || u.pathname === '') return true;
+    return LOCAL_EXTENSIONS.some(ext => u.pathname.endsWith(ext));
   } catch { return false; }
 }
 
@@ -50,7 +55,7 @@ self.addEventListener('fetch', e => {
   if (req.url.includes('anthropic.com') || req.url.includes('/v1/messages')) return;
   if (req.url.includes('accounts.spotify.com') || req.url.includes('api.spotify.com')) return;
 
-  if (isLocalAsset(req.url)) {
+  if (isLocalAsset(req.url, req.mode === 'navigate')) {
     // Network-first with cache:'no-store' so the browser HTTP cache can't
     // serve us a stale index.html or stale JSX after a deploy. Falls back
     // to the SW cache if offline.
