@@ -49,6 +49,10 @@ const FESTIVAL_CONFIG = {
   lastShuttleHHMM: "05:30",
 
   // ── Geography ──
+  // FESTIVAL_CONFIG.gps is the EDC build centroid (~270m north of the
+  // tri-oval geometric center because EDC extends into the LVMS dirt
+  // area north of the north turn). 0.5mi radius covers the full
+  // festival footprint including South Lot rideshare.
   gps: { lat: 36.27370, lng: -115.0125, onSiteRadiusMi: 0.5 },
 
   // Rideshare pickup zone (universal-link target for Uber/Lyft)
@@ -59,10 +63,30 @@ const FESTIVAL_CONFIG = {
     note:  "Drivers can't enter the venue. Walk south through the rideshare gate.",
   },
 
-  // Three known stage GPS anchors used by the affine transform
-  // from real GPS → SVG-viewBox coords. Replace these for any new
-  // venue — pick three stages with known lat/lng and known SVG
-  // positions (the SVG x/y come from STAGES below).
+  // ── LVMS canonical geometry ──
+  // Las Vegas Motor Speedway: 1.500 mi (2.414 km) tri-oval, long axis
+  // ~N-S, frontstretch (start/finish) on the south side, 20° banking
+  // in turns / 9° on straights. Facility GPS center per Wikipedia /
+  // public records: 36.2713 N, -115.0111 W. EDC's festival footprint
+  // includes the infield + the dirt area north of the north turn.
+  venue: {
+    name: "Las Vegas Motor Speedway",
+    address: "7000 N Las Vegas Blvd, Las Vegas, NV 89115",
+    trackLengthMi: 1.5,
+    trackShape: "tri-oval",
+    bankingTurnsDeg: 20,
+    bankingStraightsDeg: 9,
+    // Tri-oval bounding box (paved track only)
+    ovalBounds:    { north: 36.27520, south: 36.26790, west: -115.01700, east: -115.00540 },
+    ovalCenter:    { lat: 36.27155,   lng: -115.01120 },
+    // Full EDC build footprint (oval + dirt extension + south lots)
+    festivalBounds:{ north: 36.27780, south: 36.26720, west: -115.01740, east: -115.00500 },
+  },
+
+  // ⚠ PROVISIONAL anchors — pending official 2026 EDC site map
+  // (Insomniac typically releases ~2 weeks before the festival).
+  // Update these once the 2026 map drops; the affine transform in
+  // map.jsx auto-retunes the whole GPS→SVG projection.
   gpsAnchors: [
     { stageId: "kinetic", lat: 36.27512, lng: -115.0118 },
     { stageId: "cosmic",  lat: 36.27370, lng: -115.0148 },
