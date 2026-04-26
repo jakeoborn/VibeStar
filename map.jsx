@@ -1367,6 +1367,34 @@ function StageLineupSheet({ stage, minsWalk, dist, peek, setPeek, onClose, onOpe
         }}>×</button>
       </div>
 
+      {/* Stage vibe — vet-flavor descriptor that summarises the room's
+          identity ("Sunrise Cathedral", "Loudest Drops") plus when it peaks.
+          Falls back gracefully if the stage data has no vibe field yet. */}
+      {stage.vibe && (
+        <div style={{
+          marginBottom: 10, padding: "9px 11px", borderRadius: 12,
+          background: "var(--paper-2)",
+          borderLeft: `3px solid ${stage.color}`,
+        }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+            <div className="mono" style={{
+              fontSize: 9, letterSpacing: 1.4, fontWeight: 800,
+              color: stage.color, textTransform: "uppercase",
+            }}>{stage.vibe}</div>
+            {stage.peak && (
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "var(--muted)", fontWeight: 600 }}>
+                PEAKS {stage.peak}
+              </div>
+            )}
+          </div>
+          {stage.vibeNote && (
+            <div style={{ fontSize: 12, lineHeight: 1.35, color: "var(--ink)", marginTop: 4 }}>
+              {stage.vibeNote}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Day tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
         {DAYS.map(d => {

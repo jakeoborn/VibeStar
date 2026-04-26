@@ -392,34 +392,21 @@ function HomeScreen({ state, setState }) {
 
       <InstallBanner />
 
-      {/* First-timer CTA — shows pre-event until dismissed. Bundles the basics
-          (gates, bag policy, lingo, day-1 plan, survival) so newcomers don't
-          have to wade through the lineup tab to figure out what's going on. */}
+      {/* First-timer guide is still available, but tucked behind a small
+          link rather than a hero CTA — the app's default voice is for vets,
+          not newcomers. The link sits next to the countdown so it's
+          discoverable without dominating the screen. */}
       {countdown && !ftDismissed && (
-        <button onClick={() => setFirstTimerOpen(true)} style={{
-          width: "calc(100% - 32px)", margin: "12px 16px 0",
-          background: "linear-gradient(135deg, var(--ember) 0%, var(--horizon) 100%)",
-          color: "#fff", border: "none", borderRadius: 14,
-          padding: "12px 14px", textAlign: "left", cursor: "pointer",
-          boxShadow: "0 6px 20px rgba(232,93,46,0.28)",
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 36, flexShrink: 0,
-            background: "rgba(255,255,255,0.22)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 20,
-          }}>✨</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, fontWeight: 700, opacity: 0.85 }}>
-              FIRST TIME AT EDC?
-            </div>
-            <div className="serif" style={{ fontSize: 17, lineHeight: 1.1, marginTop: 2 }}>
-              Read this before you go
-            </div>
-          </div>
-          <div className="mono" style={{ fontSize: 16, fontWeight: 700, opacity: 0.75 }}>›</div>
-        </button>
+        <div style={{ padding: "10px 20px 0" }}>
+          <button onClick={() => setFirstTimerOpen(true)} style={{
+            background: "transparent", border: "1px solid var(--line-2)",
+            borderRadius: 999, padding: "5px 10px",
+            color: "var(--muted)", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.3, fontWeight: 600,
+          }}>
+            FIRST EDC? READ THE BASICS →
+          </button>
+        </div>
       )}
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
@@ -522,14 +509,10 @@ function HomeScreen({ state, setState }) {
         {/* Tonight: sunrise/sunset · weather · last-shuttle countdown */}
         <TonightCard state={state} setState={setState} />
 
-        {/* Pre-event only: surface the pack list on home so newcomers don't
-            have to dig three tabs deep to find it. The Me-screen copy of the
-            list is still authoritative — same localStorage key. */}
-        {countdown && (
-          <div style={{ marginTop: 4 }}>
-            <PackListCard />
-          </div>
-        )}
+        {/* Don't-miss strip — auto-detected legendary moments (sunrise sets
+            + B2B collabs) for the relevant day. Vets came for THESE, so they
+            sit prominently between the night card and the artist gossip. */}
+        <DontMissStrip day={countdown ? 1 : NOW.day} state={state} setState={setState} />
       </ScrollBody>
 
       {/* Offline banner */}
@@ -835,6 +818,61 @@ function AlertsDrawer({ alerts, onClose, onOpenMap, onOpenLineup }) {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Don't-miss strip ───────────────────────────────────────────────
+// Surfaces auto-detected legendary moments (sunrise sets, B2B collabs)
+// for the given festival day. Same isLegendary logic as lineup.jsx so
+// vets see the same callouts whether they're browsing or skimming home.
+function DontMissStrip({ day, state, setState }) {
+  const moments = React.useMemo(() => {
+    return ARTISTS
+      .filter(a => a.day === day && (typeof isLegendary === "function" ? isLegendary(a) : false))
+      .sort((a, b) => toNightMin(a.start) - toNightMin(b.start))
+      .slice(0, 6);
+  }, [day]);
+  if (!moments.length) return null;
+  const dayMeta = FESTIVAL_CONFIG.dayDates[day];
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="serif" style={{ fontSize: 22 }}>
+          Don't <span style={{ fontStyle: "italic", color: "#fbbf24" }}>miss</span>
+        </div>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)" }}>
+          {dayMeta?.name?.toUpperCase() || `DAY ${day}`} · LEGENDARY
+        </span>
+      </div>
+      <div className="no-scrollbar" style={{
+        display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none",
+        marginRight: -16, paddingRight: 16,
+      }}>
+        {moments.map(a => {
+          const stage = STAGES.find(s => s.id === a.stage);
+          const isSunrise = stage?.id === "kinetic" && parseInt(a.end) >= 5 && parseInt(a.end) < 6;
+          return (
+            <button key={a.id} onClick={() => setState({ ...state, tab: "home", artist: a.id })} style={{
+              flexShrink: 0, width: 168, padding: "10px 11px", textAlign: "left",
+              borderRadius: 14, border: "1px solid rgba(251,191,36,0.45)",
+              background: "linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(232,93,46,0.06) 100%)",
+              cursor: "pointer",
+            }}>
+              <div className="mono" style={{ fontSize: 8, letterSpacing: 1.4, color: "#b8651b", fontWeight: 800 }}>
+                {isSunrise ? "🌅 SUNRISE SET" : "★ B2B COLLAB"}
+              </div>
+              <div className="serif" style={{
+                fontSize: 16, lineHeight: 1.1, marginTop: 5,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>{a.name}</div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 4, textTransform: "uppercase" }}>
+                {stage?.short || ""} · {a.start}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
