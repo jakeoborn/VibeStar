@@ -662,6 +662,115 @@ function NotifyPill({ enabled, onChange }) {
   );
 }
 
+// ── Weather strip ────────────────────────────────────────────
+// Live conditions at the festival lat/lng via Open-Meteo (free, no
+// auth, CORS-friendly). Cached in localStorage for 1h so we don't
+// hammer the API on every map mount. Vegas mid-May norms: 85°F days,
+// 60°F nights, occasional 20+ mph wind gusts that knock totems over.
+const WMO_LABELS = {
+  0:"Clear", 1:"Mostly clear", 2:"Partly cloudy", 3:"Overcast",
+  45:"Fog", 48:"Icy fog",
+  51:"Drizzle", 53:"Drizzle", 55:"Drizzle",
+  61:"Rain", 63:"Rain", 65:"Heavy rain",
+  71:"Snow", 73:"Snow", 75:"Snow",
+  80:"Showers", 81:"Showers", 82:"Heavy showers",
+  95:"Thunder", 96:"Thunder", 99:"Severe thunder",
+};
+function _weatherEmoji(code, isNight) {
+  if (code === 0 || code === 1) return isNight ? "🌙" : "☀️";
+  if (code === 2 || code === 3) return "☁️";
+  if (code === 45 || code === 48) return "🌫️";
+  if (code >= 51 && code <= 65) return "🌧️";
+  if (code >= 71 && code <= 75) return "🌨️";
+  if (code >= 80 && code <= 82) return "🌧️";
+  if (code >= 95) return "⛈️";
+  return "🌡️";
+}
+function _weatherVibe({ tempF, windMph, code }) {
+  if (code >= 95) return "Lightning — find shelter NOW.";
+  if (code >= 61 && code <= 82) return "Rain — kandi runs first, dance second.";
+  if (windMph >= 25) return "Heavy gusts — secure totems and headpieces.";
+  if (windMph >= 15) return "Breezy — light layers stay zipped.";
+  if (tempF <= 55) return "Cold for Vegas — long sleeves, hand warmers.";
+  if (tempF <= 62) return "Cool night — bring a hoodie for sunrise.";
+  if (tempF <= 72) return "Perfect dancing weather.";
+  if (tempF <= 82) return "Warm — hydrate every set.";
+  return "Hot — water station every set, no excuses.";
+}
+function readCachedWeather() {
+  try {
+    const raw = localStorage.getItem("weather_cache");
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.ts || Date.now() - obj.ts > 60 * 60 * 1000) return null;
+    return obj.data;
+  } catch { return null; }
+}
+function writeCachedWeather(data) {
+  try { localStorage.setItem("weather_cache", JSON.stringify({ ts: Date.now(), data })); } catch {}
+}
+function useWeather() {
+  const [w, setW] = React.useState(readCachedWeather);
+  React.useEffect(() => {
+    if (w) return;
+    const lat = FESTIVAL_LAT, lng = FESTIVAL_LNG;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m,weather_code,is_day&temperature_unit=fahrenheit&wind_speed_unit=mph`;
+    let cancelled = false;
+    fetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j?.current) return;
+        const data = {
+          tempF:    Math.round(j.current.temperature_2m),
+          windMph:  Math.round(j.current.wind_speed_10m),
+          code:     j.current.weather_code,
+          isDay:    !!j.current.is_day,
+        };
+        writeCachedWeather(data);
+        setW(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [w]);
+  return w;
+}
+function WeatherStrip() {
+  const w = useWeather();
+  if (!w) return null;
+  const label = WMO_LABELS[w.code] || "Conditions";
+  const emoji = _weatherEmoji(w.code, !w.isDay);
+  const vibe = _weatherVibe(w);
+  const isAlert = w.code >= 95 || w.windMph >= 25 || (w.code >= 61 && w.code <= 82);
+  return (
+    <div style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 10,
+      padding: "8px 11px", marginTop: 8, borderRadius: 12,
+      background: isAlert ? "rgba(232,93,46,0.10)" : "var(--paper-2)",
+      border: `1px solid ${isAlert ? "rgba(232,93,46,0.45)" : "var(--line)"}`,
+    }}>
+      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{emoji}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 700,
+          color: isAlert ? "var(--ember)" : "var(--muted)", marginBottom: 1,
+        }}>LVMS · LIVE WEATHER</div>
+        <div className="serif" style={{
+          fontSize: 16, lineHeight: 1.05, letterSpacing: -0.2, color: "var(--ink)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>{vibe}</div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div className="mono" style={{
+          fontSize: 13, letterSpacing: 0.8, fontWeight: 800, color: "var(--ink)",
+        }}>{w.tempF}°F</div>
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1, fontWeight: 600, color: "var(--muted)", marginTop: 2,
+        }}>{w.windMph} MPH · {label.toUpperCase()}</div>
+      </div>
+    </div>
+  );
+}
+
 // Sunrise countdown to Kinetic Field — only renders 90 min before
 // sunrise to 30 min after. EDC's sunrise sets at KIN are the festival's
 // signature moment; this strip flags it so a vet doesn't sleep through.
@@ -1110,6 +1219,10 @@ function MapScreen({ state, setState }) {
             onSelect={(id) => { setSelectedStage(id); setPeek(false); }}
           />
         )}
+        {/* Live weather at LVMS — temp + wind + a vibe note. Pulls
+            Open-Meteo (free, no auth), 1h cache. Goes ember on rain /
+            lightning / 25+ mph gusts. Hidden if API unreachable. */}
+        {!search && <WeatherStrip />}
       </div>
 
       {/* MAP + PEEK WINDOW */}
