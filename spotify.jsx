@@ -2,7 +2,7 @@
 
 const SPOTIFY_CLIENT_ID = "2219c68606c54629a8799f467a996a81";
 const SPOTIFY_REDIRECT  = "https://plursky.com/callback";
-const SPOTIFY_SCOPES    = "user-top-read user-read-private user-read-email playlist-modify-public playlist-modify-private";
+const SPOTIFY_SCOPES    = "user-top-read user-read-recently-played user-library-read user-read-private user-read-email playlist-read-private playlist-modify-public playlist-modify-private";
 
 // Genre keywords → EDC stage affinity
 const STAGE_GENRES = {
@@ -289,7 +289,13 @@ async function createEdcPlaylist(state) {
   });
   if (!plRes.ok) {
     const err = await plRes.json().catch(() => ({}));
-    return { ok: false, reason: "create_fail", status: plRes.status, error: err.error };
+    // 401/403 usually means the stored token was issued before we added a
+    // scope (e.g. playlist-modify-private). Clear it so the user reconnects.
+    if (plRes.status === 401 || plRes.status === 403) {
+      ["spotify_token","spotify_expires"].forEach(k => localStorage.removeItem(k));
+      return { ok: false, reason: "reconnect", status: plRes.status, message: err.error?.message || "Reconnect required" };
+    }
+    return { ok: false, reason: "create_fail", status: plRes.status, message: err.error?.message || "" };
   }
   const playlist = await plRes.json();
 
@@ -368,30 +374,113 @@ async function fetchSpotifyTopArtists() {
         else byId.set(artist.id, { ...artist, _score: score });
       });
     });
-    return Array.from(byId.values()).sort((a, b) => b._score - a._score);
+    const top = Array.from(byId.values()).sort((a, b) => b._score - a._score);
+
+    // Also pull recently-played + Liked Songs so artists you've played even
+    // once (but aren't in your top 50) get matched against the lineup.
+    // Charlotte de Witte / one-off plays were invisible before this.
+    const seen = new Set(top.map(a => a.id));
+    const extras = [];
+    const pull = async (url, sourceTag, baseScore) => {
+      try {
+        const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+        if (!r.ok) return;  // silently degrade if scope missing on legacy tokens
+        const d = await r.json();
+        (d.items || []).forEach(item => {
+          (item.track?.artists || []).forEach(a => {
+            if (!a?.id || seen.has(a.id)) return;
+            seen.add(a.id);
+            extras.push({ id: a.id, name: a.name, genres: [], _score: baseScore, _source: sourceTag });
+          });
+        });
+      } catch {}
+    };
+    await Promise.all([
+      pull("https://api.spotify.com/v1/me/player/recently-played?limit=50", "recent", 60),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50", "saved", 40),
+    ]);
+
+    // Walk OWNED playlists — any track-level artist who's playing EDC counts
+    // as a match too (e.g. one Charlotte de Witte track buried in a playlist
+    // would have been invisible without this).
+    try {
+      const profile = await ensureSpotifyProfile();
+      const plRes = await fetch("https://api.spotify.com/v1/me/playlists?limit=50", {
+        headers: { Authorization: "Bearer " + token }
+      });
+      if (plRes.ok && profile) {
+        const plData = await plRes.json();
+        const owned = (plData.items || [])
+          .filter(p => p?.owner?.id === profile.id)
+          .slice(0, 30);
+        const fetchPl = async (pl) => {
+          try {
+            const tr = await fetch(
+              `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&fields=items(track(artists(id,name)))`,
+              { headers: { Authorization: "Bearer " + token } }
+            );
+            if (!tr.ok) return;
+            const td = await tr.json();
+            (td.items || []).forEach(item => {
+              (item.track?.artists || []).forEach(a => {
+                if (!a?.id || seen.has(a.id)) return;
+                seen.add(a.id);
+                extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
+              });
+            });
+          } catch {}
+        };
+        // 6-wide concurrency keeps us under Spotify's rate limit
+        for (let i = 0; i < owned.length; i += 6) {
+          await Promise.all(owned.slice(i, i + 6).map(fetchPl));
+        }
+      }
+    } catch {}
+
+    return [...top, ...extras];
   } catch {
     return [];
   }
 }
 
-// Search Spotify for a 30-sec preview URL for a given artist name
+// Search Spotify for a 30-sec preview URL for a given artist name.
+// Spotify deprecated `preview_url` for new apps in late 2024 — most tracks
+// now return null. Falls back to iTunes Search (free, no auth, CORS-OK)
+// which still serves 30s previews for ~95% of mainstream artists.
 async function fetchPreviewUrl(artistName) {
   const token = localStorage.getItem("spotify_token");
-  if (!token) return null;
+  const firstWord = artistName.toLowerCase().split(" ")[0];
+
+  if (token) {
+    try {
+      const q   = encodeURIComponent(artistName);
+      const res = await fetch(
+        `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data   = await res.json();
+        const tracks = data.tracks?.items || [];
+        const first  = tracks.find(t =>
+          t.preview_url &&
+          t.artists.some(a => a.name.toLowerCase().includes(firstWord))
+        ) || tracks.find(t => t.preview_url);
+        if (first) return { url: first.preview_url, name: first.name, source: "spotify" };
+      }
+    } catch {}
+  }
+
+  // iTunes fallback — works without auth, returns 30s m4a previews
   try {
-    const q   = encodeURIComponent(artistName);
-    const res = await fetch(
-      `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const q = encodeURIComponent(artistName);
+    const res = await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=10`);
     if (!res.ok) return null;
-    const data   = await res.json();
-    const tracks = data.tracks?.items || [];
-    const first  = tracks.find(t =>
-      t.preview_url &&
-      t.artists.some(a => a.name.toLowerCase().includes(artistName.toLowerCase().split(" ")[0]))
-    ) || tracks.find(t => t.preview_url);
-    return first ? { url: first.preview_url, name: first.name } : null;
+    const data = await res.json();
+    const results = data.results || [];
+    const first = results.find(t =>
+      t.previewUrl && t.artistName?.toLowerCase().includes(firstWord)
+    ) || results.find(t => t.previewUrl);
+    return first ? { url: first.previewUrl, name: first.trackName, source: "itunes" } : null;
   } catch {
     return null;
   }
@@ -536,7 +625,7 @@ function SpotifyScreen({ state, setState }) {
           <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: 16, maxWidth: "88%" }}>
             {connected
               ? matched.length
-                ? `${matched.length} EDC artists match your Spotify · scanned across recent, 6-month and all-time listens.`
+                ? `${matched.length} EDC artists match your Spotify · scanned across top, recent, liked songs and your playlists.`
                 : spotifyArtists === null ? "Loading your taste…" : "No direct matches — showing genre-based picks below."
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
@@ -1033,17 +1122,22 @@ function BuildPlaylistButton({ state }) {
 
   const onClick = async () => {
     if (status === "working") return;
+    // If we surfaced a reconnect prompt last run, clicking restarts auth.
+    if (status === "err" && result?.reason === "reconnect") {
+      startSpotifyAuth();
+      return;
+    }
     setStatus("working");
     const r = await createEdcPlaylist(state);
     setResult(r);
     if (r.ok) {
       setStatus("done");
-      // Open the playlist in Spotify after a short delay
       if (r.url) setTimeout(() => window.open(r.url, "_blank", "noopener"), 800);
       setTimeout(() => setStatus("idle"), 4000);
     } else {
       setStatus("err");
-      setTimeout(() => setStatus("idle"), 3500);
+      // Reconnect prompts stay sticky (no auto-reset) so user can tap them.
+      if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
     }
   };
 
@@ -1053,9 +1147,18 @@ function BuildPlaylistButton({ state }) {
     label = `✓ ADDED ${result?.added}/${result?.total}`;
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
-    label = result?.reason === "create_fail"
-      ? `✕ FAILED · ${result?.status || "?"}`
-      : "✕ TRY AGAIN";
+    if (result?.reason === "reconnect") {
+      label = "↻ RECONNECT SPOTIFY";
+    } else if (result?.reason === "empty") {
+      label = "SAVE SETS FIRST";
+    } else if (result?.reason === "create_fail") {
+      const msg = (result?.message || "").slice(0, 22);
+      label = msg ? `✕ ${result?.status} · ${msg}` : `✕ FAILED · ${result?.status || "?"}`;
+    } else if (result?.reason === "not_connected") {
+      label = "↻ RECONNECT SPOTIFY";
+    } else {
+      label = "✕ TRY AGAIN";
+    }
     bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
   } else {
     label = "BUILD MY PLAYLIST";
