@@ -678,6 +678,43 @@ async function createHypePlaylist() {
 // Returns full artist objects (with .genres array, deduped across all 3 time ranges,
 // each tagged with a `_score` weighting recent listens 3×, 6mo 2×, all-time 1×).
 // Returns null on token expiry, [] on error.
+// Returns EDC artists the user follows on Spotify but hasn't saved to their lineup.
+// Paginates up to 200 followed artists (4 pages × 50).
+async function fetchFollowedEdcArtists(savedIds) {
+  const token = await getValidToken();
+  if (!token) return [];
+  const savedNames = new Set(
+    savedIds
+      .map(id => ARTISTS.find(a => a.id === id))
+      .filter(Boolean)
+      .flatMap(a => a.name.split(/ b2b /i).map(s => s.trim().toLowerCase()))
+  );
+  const followedLower = [];
+  let after = null;
+  for (let page = 0; page < 4; page++) {
+    try {
+      const url = `https://api.spotify.com/v1/me/following?type=artist&limit=50${after ? "&after=" + after : ""}`;
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+      if (!res.ok) break;
+      const json = await res.json();
+      const items = json.artists?.items || [];
+      items.forEach(a => followedLower.push(a.name.toLowerCase()));
+      after = json.artists?.cursors?.after;
+      if (!after || items.length < 50) break;
+    } catch { break; }
+  }
+  if (!followedLower.length) return [];
+  const result = [];
+  const seen = new Set();
+  ARTISTS.forEach(a => {
+    if (seen.has(a.id)) return;
+    const parts = a.name.split(/ b2b /i).map(s => s.trim().toLowerCase());
+    const follows = parts.some(p => followedLower.some(f => f === p || f.includes(p) || p.includes(f)));
+    if (follows && !savedIds.includes(a.id)) { seen.add(a.id); result.push(a); }
+  });
+  return result;
+}
+
 async function fetchSpotifyTopArtists() {
   const token = await getValidToken();
   if (!token) return [];
@@ -1136,6 +1173,9 @@ function SpotifyScreen({ state, setState }) {
             </button>
           </div>
         </div>
+
+        {/* ── Followed artists nudge ────────────────────── */}
+        {connected && <FollowedNudge state={state} setState={setState} />}
 
         {/* ── Apple Music card ──────────────────────────── */}
         <div style={{
@@ -1771,6 +1811,78 @@ function MeScreen({ state, setState }) {
         <div style={{ padding: 20 }} />
       </ScrollBody>
     </Screen>
+  );
+}
+
+function FollowedNudge({ state, setState }) {
+  const [followed, setFollowed] = React.useState(null); // null=loading, []=none
+  const [expanded, setExpanded] = React.useState(false);
+
+  React.useEffect(() => {
+    fetchFollowedEdcArtists(state.saved).then(setFollowed);
+  }, [state.saved.length]);
+
+  if (!followed || followed.length === 0) return null;
+
+  const handleSave = (artist) => {
+    setState(s => ({ ...s, saved: [...new Set([...s.saved, artist.id])] }));
+  };
+  const handleSaveAll = () => {
+    setState(s => ({ ...s, saved: [...new Set([...s.saved, ...followed.map(a => a.id)])] }));
+  };
+
+  return (
+    <div style={{
+      background: "rgba(29,185,84,0.1)", border: "1px solid rgba(29,185,84,0.25)",
+      borderRadius: 16, padding: "14px 16px", marginBottom: 14,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div>
+          <span className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "#1DB954", fontWeight: 700 }}>
+            YOU FOLLOW {followed.length} EDC ACT{followed.length > 1 ? "S" : ""} NOT IN YOUR LINEUP
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={handleSaveAll} style={{
+            background: "#1DB954", color: "#000", border: "none",
+            borderRadius: 999, padding: "5px 10px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1, fontWeight: 700,
+          }}>SAVE ALL</button>
+          <button onClick={() => setExpanded(e => !e)} style={{
+            background: "transparent", color: "rgba(247,237,224,0.6)",
+            border: "1px solid rgba(247,237,224,0.2)",
+            borderRadius: 999, padding: "5px 10px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1,
+          }}>{expanded ? "HIDE" : "VIEW"}</button>
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {followed.map(a => {
+            const st = STAGES.find(s => s.id === a.stage);
+            return (
+              <div key={a.id} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: "8px 12px",
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--paper)" }}>{a.name}</div>
+                  <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                    {st?.short} · DAY {a.day} · {a.start}
+                  </div>
+                </div>
+                <button onClick={() => handleSave(a)} style={{
+                  background: "transparent", color: st?.color || "#1DB954",
+                  border: `1px solid ${st?.color || "#1DB954"}`,
+                  borderRadius: 999, padding: "5px 10px", cursor: "pointer",
+                  fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1, fontWeight: 700,
+                }}>+ SAVE</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -393,10 +393,21 @@ function ArtistScreen({ state, setState }) {
     fetchTicketmaster(activeName).then(setTmEvents);
   }, [a.id, activeB2B]);
 
-  // On-demand photo fetch — runs when cached photo is absent
+  // Spotify stats: popularity, followers, genres — loaded from cache or fetched alongside photo
+  const [spotifyStats, setSpotifyStats] = React.useState(null);
+
   React.useEffect(() => {
     setFetchedPhoto(null);
-    if (artistImages[activeName.toLowerCase()]) return;
+    // Load stats from cache immediately (no network needed)
+    let hasCachedStats = false;
+    try {
+      const cache = JSON.parse(localStorage.getItem("spotify_artist_data_v1") || "{}");
+      const cached = cache[activeName.toLowerCase()];
+      if (cached) { setSpotifyStats(cached); hasCachedStats = true; }
+      else setSpotifyStats(null);
+    } catch { setSpotifyStats(null); }
+    // Skip network call if we already have both photo and stats cached
+    if (artistImages[activeName.toLowerCase()] && hasCachedStats) return;
     const token = localStorage.getItem("spotify_token");
     const expires = localStorage.getItem("spotify_expires");
     if (!token || !expires || Date.now() >= parseInt(expires)) return;
@@ -406,14 +417,32 @@ function ArtistScreen({ state, setState }) {
     }).then(r => r.ok ? r.json() : null).then(d => {
       const ln = activeName.toLowerCase();
       const items = d?.artists?.items || [];
-      const match = items.find(x => x.name.toLowerCase() === ln) || items.find(x => ln.includes(x.name.toLowerCase())) || items[0];
-      const img = match?.images?.[0]?.url;
-      if (!img) return;
-      setFetchedPhoto(img);
+      const match = items.find(x => x.name.toLowerCase() === ln)
+        || items.find(x => ln.includes(x.name.toLowerCase())) || items[0];
+      if (!match) return;
+      // Photo
+      if (!artistImages[ln]) {
+        const img = match?.images?.[0]?.url;
+        if (img) {
+          setFetchedPhoto(img);
+          try {
+            const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+            imgs[ln] = img;
+            localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+          } catch {}
+        }
+      }
+      // Stats
+      const stats = {
+        popularity: match.popularity || 0,
+        followers:  match.followers?.total || 0,
+        genres:     match.genres || [],
+      };
+      setSpotifyStats(stats);
       try {
-        const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
-        imgs[ln] = img;
-        localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+        const cache = JSON.parse(localStorage.getItem("spotify_artist_data_v1") || "{}");
+        cache[ln] = stats;
+        localStorage.setItem("spotify_artist_data_v1", JSON.stringify(cache));
       } catch {}
     }).catch(() => {});
     return () => ctrl.abort();
@@ -561,6 +590,51 @@ function ArtistScreen({ state, setState }) {
         <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 18, textWrap: "pretty" }}>
           {a.bio}
         </div>
+
+        {/* ── Spotify stats ─────────────────────────────────── */}
+        {connected && spotifyStats && (spotifyStats.popularity > 0 || spotifyStats.followers > 0) && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{
+              background: "var(--paper-2)", border: "1px solid var(--line)",
+              borderRadius: 14, padding: "14px 16px", marginBottom: 8,
+            }}>
+              {spotifyStats.popularity > 0 && (
+                <div style={{ marginBottom: spotifyStats.followers > 0 ? 12 : 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                    <span className="mono" style={{ fontSize: 8, letterSpacing: 1.4, color: "var(--muted)" }}>POPULARITY</span>
+                    <span className="mono" style={{ fontSize: 9, fontWeight: 700 }}>{spotifyStats.popularity} / 100</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--line-2)", borderRadius: 5, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", width: `${spotifyStats.popularity}%`,
+                      background: `linear-gradient(90deg, ${stage.color}88, ${stage.color})`,
+                      borderRadius: 5, transition: "width 0.8s ease",
+                    }} />
+                  </div>
+                </div>
+              )}
+              {spotifyStats.followers > 0 && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span className="serif" style={{ fontSize: 24, lineHeight: 1, letterSpacing: -0.5 }}>
+                    {_fmtCount(spotifyStats.followers)}
+                  </span>
+                  <span className="mono" style={{ fontSize: 8, letterSpacing: 1.3, color: "var(--muted)" }}>SPOTIFY FOLLOWERS</span>
+                </div>
+              )}
+            </div>
+            {spotifyStats.genres?.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {spotifyStats.genres.slice(0, 5).map(g => (
+                  <span key={g} className="mono" style={{
+                    fontSize: 9, letterSpacing: 1, padding: "4px 10px",
+                    background: `${stage.color}18`, border: `1px solid ${stage.color}38`,
+                    borderRadius: 999, color: stage.color, fontWeight: 600,
+                  }}>{g.toUpperCase()}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Last.fm stats ─────────────────────────────────── */}
         {LASTFM_KEY && lfm && (
