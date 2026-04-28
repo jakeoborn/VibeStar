@@ -2,7 +2,7 @@
 
 // ── Setlist.fm ─────────────────────────────────────────────────
 // Free API key at https://api.setlist.fm — paste yours below.
-const SETLISTFM_KEY = "";
+const SETLISTFM_KEY = "Fjj0gHyGxSTN4TfFc_K76CV-KAoTGE1SksfU";
 const _SL_TTL = 24 * 3600000; // cache 24 h
 
 async function fetchSetlists(artistName) {
@@ -82,7 +82,7 @@ async function fetchYouTubeSet(artistName) {
 
 // ── Last.fm ────────────────────────────────────────────────────
 // Free API key at https://www.last.fm/api/account/create
-const LASTFM_KEY = "";
+const LASTFM_KEY = "aae1625166e1c4fa3197ef44774c4ead";
 const _LFM_TTL = 24 * 3600000;
 
 async function fetchLastfm(artistName) {

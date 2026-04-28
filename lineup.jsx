@@ -198,6 +198,42 @@ function LineupScreen({ state, setState }) {
         />
       )}
 
+      {stageFilter !== "all" && (() => {
+        const stage = STAGES.find(s => s.id === stageFilter);
+        if (!stage?.vibe) return null;
+        return (
+          <div style={{
+            margin: "0 16px 10px",
+            padding: "10px 12px",
+            borderRadius: 12,
+            borderLeft: `3px solid ${stage.color}`,
+            background: `${stage.color}12`,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: stage.vibeNote ? 5 : 0 }}>
+              <span className="mono" style={{
+                fontSize: 8.5, letterSpacing: 1.2, fontWeight: 800,
+                color: stage.color, textTransform: "uppercase",
+              }}>{stage.vibe}</span>
+              {stage.peak && (
+                <span className="mono" style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--muted)", fontWeight: 600 }}>
+                  · PEAKS {stage.peak}
+                </span>
+              )}
+              {stage.desc && (
+                <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)", marginLeft: "auto" }}>
+                  {stage.desc.toUpperCase()}
+                </span>
+              )}
+            </div>
+            {stage.vibeNote && (
+              <div style={{ fontSize: 12, lineHeight: 1.4, color: "var(--ink)", fontStyle: "italic" }}>
+                {stage.vibeNote}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <ScrollBody style={{ padding: "0 16px 20px" }}>
         {dayArtists.length === 0 && (
           <div style={{ padding: 40, textAlign: "center" }}>
@@ -234,7 +270,7 @@ function LineupScreen({ state, setState }) {
               </div>
               <div style={{ width: 4, alignSelf: "stretch", background: stage.color, borderRadius: 3 }} />
               <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                   onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
+                   onClick={() => setState({ ...state, artist: a.id })}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
                   <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, letterSpacing: -0.3 }}>{a.name}</div>
                   <TierStars tier={a.tier} />
@@ -256,6 +292,23 @@ function LineupScreen({ state, setState }) {
                     {a.genre}
                   </span>
                 </div>
+                {stage.vibe && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                    <span className="mono" style={{
+                      fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
+                      color: stage.color,
+                      padding: "1px 6px", borderRadius: 999,
+                      background: `${stage.color}1a`,
+                      border: `0.5px solid ${stage.color}55`,
+                      textTransform: "uppercase",
+                    }}>{stage.vibe}</span>
+                    {stage.peak && (
+                      <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)" }}>
+                        PEAKS {stage.peak}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <button onClick={() => toggleSave(state, setState, a.id)} style={{
                 width: 36, height: 36, borderRadius: 36,

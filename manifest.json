@@ -1,7 +1,7 @@
 {
-  "name": "Vibestar - EDC Las Vegas 2026",
-  "short_name": "VIBESTAR",
-  "description": "The world's most immersive festival companion. 3D live map, artist spider web, AI guide. Works offline.",
+  "name": "Plursky — EDC Las Vegas 2026",
+  "short_name": "PLURSKY",
+  "description": "Your offline-first festival companion for EDC Las Vegas 2026. Personalized lineup matching via Spotify & Apple Music, interactive stage map, 15-min set reminders, real-time friend locations, and cloud sync.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

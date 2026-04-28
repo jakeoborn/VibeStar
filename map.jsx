@@ -905,7 +905,7 @@ function MapScreen({ state, setState }) {
   const [peek, setPeek] = React.useState(false);
   const [meetMode, setMeetMode] = React.useState(false);
   const [meetTarget, setMeetTarget] = React.useState(null);
-  const [meetWith, setMeetWith] = React.useState(null);
+  const [meetGroup, setMeetGroup] = React.useState([]);
   const [search, setSearch] = React.useState("");
   const [heading, setHeading] = React.useState(0);
   const [chatFriend, setChatFriend] = React.useState(null);
@@ -1002,7 +1002,7 @@ function MapScreen({ state, setState }) {
         };
       });
       setFriends(prev => prev.map(f => {
-        if (meetMode && meetTarget && f.id === meetWith) {
+        if (meetMode && meetTarget && meetGroup.includes(f.id)) {
           const dx = meetTarget.x - f.x, dy = meetTarget.y - f.y;
           const d = Math.hypot(dx, dy);
           if (d < 1.2) return f;
@@ -1016,7 +1016,7 @@ function MapScreen({ state, setState }) {
       }));
     }, bsActive ? 2400 : 600);
     return () => clearInterval(id);
-  }, [useDemo, selectedStage, meetMode, meetTarget, meetWith, bsActive]);
+  }, [useDemo, selectedStage, meetMode, meetTarget, meetGroup, bsActive]);
 
   // Heading derivation when real GPS is on-site and walking toward a goal
   React.useEffect(() => {
@@ -1047,13 +1047,22 @@ function MapScreen({ state, setState }) {
     const rect = svg.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setMeetTarget({ x, y, label: meetWith ? `Meet ${friends.find(f=>f.id===meetWith).name}` : "Meet here" });
+    const names = meetGroup.map(id => friends.find(f => f.id === id)?.name).filter(Boolean);
+    setMeetTarget({ x, y, label: names.length ? `Meet ${names.join(" + ")}` : "Meet here" });
   };
 
-  const suggestMidpoint = (friendId) => {
-    const f = friends.find(fr => fr.id === friendId);
-    setMeetWith(friendId);
-    setMeetTarget({ x: (avatar.x + f.x) / 2, y: (avatar.y + f.y) / 2, label: `Meet ${f.name}` });
+  const toggleGroupMember = (friendId) => {
+    const newGroup = meetGroup.includes(friendId)
+      ? meetGroup.filter(id => id !== friendId)
+      : [...meetGroup, friendId];
+    setMeetGroup(newGroup);
+    if (newGroup.length === 0) { setMeetTarget(null); return; }
+    const selected = newGroup.map(id => friends.find(f => f.id === id)).filter(Boolean);
+    const allX = [avatar.x, ...selected.map(f => f.x)];
+    const allY = [avatar.y, ...selected.map(f => f.y)];
+    const cx = allX.reduce((s, v) => s + v, 0) / allX.length;
+    const cy = allY.reduce((s, v) => s + v, 0) / allY.length;
+    setMeetTarget({ x: cx, y: cy, label: `Meet ${selected.map(f => f.name).join(" + ")}` });
   };
 
   // GPS pill label — reflects real status
@@ -1248,7 +1257,7 @@ function MapScreen({ state, setState }) {
           saved={state.saved} showLabels={showLabels}
           compass={compass && compassStatus === "live"}
           compassHeading={compassHeading}
-          selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetWith={meetWith}
+          selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
         />
@@ -1275,9 +1284,9 @@ function MapScreen({ state, setState }) {
                 <span style={{ width: 7, height: 7, borderRadius: 7, background: "#fff", animation: "pulse 1.4s infinite" }}/>
                 {meetTarget.isAmenity
                   ? `→ ${meetTarget.label.toUpperCase()}`
-                  : `${meetTarget.label.toUpperCase()} · BOTH WALKING`}
+                  : `${meetTarget.label.toUpperCase()} · ${meetGroup.length > 1 ? `GROUP (${meetGroup.length + 1})` : "BOTH"} WALKING`}
               </>
-            ) : "PICK A FRIEND OR TAP MAP"}
+            ) : meetGroup.length ? "TAP MAP TO DROP PIN" : "PICK FRIENDS OR TAP MAP"}
           </div>
         )}
 
@@ -1292,7 +1301,7 @@ function MapScreen({ state, setState }) {
           transition: "bottom 0.3s",
         }}>
           <button onClick={() => {
-            if (meetMode) { setMeetMode(false); setMeetTarget(null); setMeetWith(null); }
+            if (meetMode) { setMeetMode(false); setMeetTarget(null); setMeetGroup([]); }
             else { setMeetMode(true); }
           }} style={{
             background: meetMode ? "var(--ember)" : "var(--ink)",
@@ -1311,10 +1320,10 @@ function MapScreen({ state, setState }) {
           <div className="no-scrollbar" style={{ display: "flex", gap: 5, overflowX: "auto", flex: 1, scrollbarWidth: "none" }}>
             {friends.map(f => {
               const d = Math.round(Math.sqrt((f.x-avatar.x)**2 + (f.y-avatar.y)**2) * 1.8);
-              const active = meetWith === f.id;
+              const active = meetGroup.includes(f.id);
               const unread = unreadCount(f.id);
               const handleClick = () => {
-                if (meetMode) { suggestMidpoint(f.id); return; }
+                if (meetMode) { toggleGroupMember(f.id); return; }
                 setChatFriend(f);
               };
               return (
@@ -1356,7 +1365,7 @@ function MapScreen({ state, setState }) {
           onClose={() => setChatFriend(null)}
           onSwitchToMeet={() => {
             setMeetMode(true);
-            setMeetWith(chatFriend.id);
+            setMeetGroup([chatFriend.id]);
             const f = friends.find(fr => fr.id === chatFriend.id);
             if (f) setMeetTarget({ x: (avatar.x + f.x) / 2, y: (avatar.y + f.y) / 2, label: `Meet ${f.name}` });
             setChatFriend(null);
@@ -1369,9 +1378,9 @@ function MapScreen({ state, setState }) {
         <BottomSheet
           stage={stage} nowAtStage={nowAtStage} dist={dist} walk={walk}
           peek={peek} setPeek={setPeek}
-          meetMode={meetMode} meetTarget={meetTarget} friends={friends} meetWith={meetWith} avatar={avatar}
+          meetMode={meetMode} meetTarget={meetTarget} friends={friends} meetGroup={meetGroup} avatar={avatar}
           onClose={() => setSelectedStage(null)}
-          onCancelMeet={() => { setMeetMode(false); setMeetTarget(null); setMeetWith(null); }}
+          onCancelMeet={() => { setMeetMode(false); setMeetTarget(null); setMeetGroup([]); }}
           onOpenArtist={(id) => setState({ ...state, tab: "home", artist: id })}
           state={state} setState={setState}
         />
@@ -1516,7 +1525,7 @@ function StageIcon({ id, cx, cy, r, on, color }) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetWith, onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], onPickStage, onClick }) {
   // Compass mode: rotate the entire map by -heading so the user's facing
   // direction is always "up" on screen. Readable text labels counter-rotate
   // back to upright so they stay legible at any heading.
@@ -1720,7 +1729,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
 
         {/* Friends */}
         {friends.map(f => {
-          const focused = f.id === meetWith;
+          const focused = meetGroup.includes(f.id);
           return (
             <g key={f.id}>
               <circle cx={f.x} cy={f.y} r="2.5" fill={f.color} opacity="0.22">
@@ -1872,7 +1881,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           );
         })}
 
-        {friends.map(f => f.id === meetWith && (
+        {friends.map(f => meetGroup.includes(f.id) && (
           <div key={f.id} style={{
             position: "absolute", left: `${f.x}%`, top: `${f.y}%`,
             transform: `translate(-50%, 14px)${counterRot}`,
@@ -2064,13 +2073,17 @@ function GroundPeek({ stage, onClose }) {
 }
 
 // ---- BOTTOM SHEET ----
-function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, meetTarget, friends, meetWith, avatar, onClose, onCancelMeet, onOpenArtist, state, setState }) {
+function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, meetTarget, friends, meetGroup = [], avatar, onClose, onCancelMeet, onOpenArtist, state, setState }) {
   if (meetMode && meetTarget) {
-    const f = friends.find(fr => fr.id === meetWith);
+    const groupFriends = meetGroup.map(id => friends.find(fr => fr.id === id)).filter(Boolean);
     const youDist = Math.sqrt((meetTarget.x-avatar.x)**2 + (meetTarget.y-avatar.y)**2);
     const youMins = distToMins(youDist);
-    const fMins = f ? distToMins(Math.sqrt((meetTarget.x-f.x)**2 + (meetTarget.y-f.y)**2)) : 0;
-    const eta = Math.max(youMins, fMins);
+    const fEtas = groupFriends.map(f => ({ f, mins: distToMins(Math.sqrt((meetTarget.x-f.x)**2 + (meetTarget.y-f.y)**2)) }));
+    const eta = Math.max(youMins, ...fEtas.map(e => e.mins), 0);
+    const title = groupFriends.length === 0 ? "Pinned spot"
+      : groupFriends.length === 1 ? `You + ${groupFriends[0].name}`
+      : `Group · ${groupFriends.length + 1} people`;
+    const routingLabel = groupFriends.length > 1 ? "ALL ROUTING LIVE" : groupFriends.length === 1 ? "BOTH ROUTING LIVE" : "ROUTING LIVE";
     return (
       <div style={{ background: "var(--paper)", color: "var(--ink)", padding: "14px 16px 12px", borderTopLeftRadius: 22, borderTopRightRadius: 22, boxShadow: "0 -10px 30px rgba(0,0,0,0.4)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -2079,22 +2092,22 @@ function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, m
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--ember)", fontWeight: 700 }}>MEETING</div>
-            <div className="serif" style={{ fontSize: 20, lineHeight: 1.05 }}>{f ? `You + ${f.name}` : "Pinned spot"}</div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2 }}>ETA ~{eta} MIN · BOTH ROUTING LIVE</div>
+            <div className="serif" style={{ fontSize: 20, lineHeight: 1.05 }}>{title}</div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2 }}>ETA ~{eta} MIN · {routingLabel}</div>
           </div>
           <button onClick={onCancelMeet} style={{ background: "transparent", border: "1px solid var(--line-2)", color: "var(--muted)", borderRadius: 999, padding: "7px 10px", cursor: "pointer", fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 600 }}>END</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <div style={{ background: "var(--paper-2)", borderRadius: 10, padding: "7px 10px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ flex: "1 0 calc(50% - 4px)", background: "var(--paper-2)", borderRadius: 10, padding: "7px 10px" }}>
             <div className="mono" style={{ fontSize: 8, letterSpacing: 1.3, color: "var(--muted)" }}>YOUR ETA</div>
             <div className="serif" style={{ fontSize: 18, marginTop: 2 }}>{youMins} <span style={{ fontSize: 11 }}>min</span></div>
           </div>
-          {f && (
-            <div style={{ background: "var(--paper-2)", borderRadius: 10, padding: "7px 10px" }}>
+          {fEtas.map(({ f, mins }) => (
+            <div key={f.id} style={{ flex: "1 0 calc(50% - 4px)", background: "var(--paper-2)", borderRadius: 10, padding: "7px 10px" }}>
               <div className="mono" style={{ fontSize: 8, letterSpacing: 1.3, color: f.color }}>{f.name.toUpperCase()} ETA</div>
-              <div className="serif" style={{ fontSize: 18, marginTop: 2 }}>{fMins} <span style={{ fontSize: 11 }}>min</span></div>
+              <div className="serif" style={{ fontSize: 18, marginTop: 2 }}>{mins} <span style={{ fontSize: 11 }}>min</span></div>
             </div>
-          )}
+          ))}
         </div>
       </div>
     );

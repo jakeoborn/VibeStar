@@ -137,19 +137,33 @@ function OnboardingModal({ onDone, setState, state }) {
   );
 }
 
+const _FID = FESTIVAL_CONFIG.id;
+const _SAVED_KEY = `${_FID}_saved_v1`;
+
 function App() {
   const [showOnboarding, setShowOnboarding] = React.useState(() => {
     try { return localStorage.getItem("onboarded") !== ONBOARD_VERSION; }
     catch { return false; }
   });
-  const [state, setState] = React.useState({
-    tab: "home",
-    saved: ["k9", "k11", "k4", "c5", "w1"],
-    spotifyConnected: spotifyTokenValid(),
-    artist: null,
-    focusStage: null,
-    lineupDay: NOW.day,
+  const [state, setState] = React.useState(() => {
+    let saved;
+    try {
+      const raw = localStorage.getItem(_SAVED_KEY);
+      saved = raw ? JSON.parse(raw) : null;
+    } catch {}
+    return {
+      tab: "home",
+      saved: saved ?? ["k9", "k11", "k4", "c5", "w1"],
+      spotifyConnected: spotifyTokenValid(),
+      artist: null,
+      focusStage: null,
+      lineupDay: NOW.day,
+    };
   });
+
+  React.useEffect(() => {
+    try { localStorage.setItem(_SAVED_KEY, JSON.stringify(state.saved)); } catch {}
+  }, [state.saved]);
 
   let body;
   if (state.artist) body = <ArtistScreen state={state} setState={setState} />;

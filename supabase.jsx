@@ -265,4 +265,354 @@ function AccountCard({ state, setState }) {
   );
 }
 
-Object.assign(window, { AccountCard, sbSignIn, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange });
+// ── Realtime presence (friend locations) ─────────────────────
+// No DB table needed — presence is ephemeral, managed by Supabase
+// Realtime. Channel is scoped per festival so events don't bleed.
+
+const PRESENCE_CHANNEL_NAME = `presence-${FESTIVAL_CONFIG?.id || "festival"}`;
+const PRESENCE_COLORS = [
+  "#e85d2e","#7b3d9a","#f59a36","#6f8fb8",
+  "#2d7a55","#e85d8f","#34b4e8","#a855f7",
+];
+
+function _presColor(id) {
+  if (!id) return PRESENCE_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PRESENCE_COLORS[h % PRESENCE_COLORS.length];
+}
+
+function _myPresId() {
+  let id;
+  try { id = localStorage.getItem("plursky_pid"); } catch {}
+  if (!id) {
+    id = "p_" + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem("plursky_pid", id); } catch {}
+  }
+  return id;
+}
+
+let _presCh   = null;
+let _presCbs  = new Set();
+let _presSnap = {};
+let _presMyId = null;
+
+function _presNotify() {
+  const s = { ..._presSnap };
+  _presCbs.forEach(fn => { try { fn(s); } catch {} });
+}
+
+function sbPresenceJoin({ name, stageId }) {
+  if (!_sb) return;
+  _presMyId = _myPresId();
+  const color = _presColor(_presMyId);
+  if (_presCh) { _sb.removeChannel(_presCh); _presCh = null; }
+  _presCh = _sb.channel(PRESENCE_CHANNEL_NAME, {
+    config: { presence: { key: _presMyId } },
+  });
+  _presCh
+    .on("presence", { event: "sync" }, () => {
+      const raw  = _presCh.presenceState();
+      const snap = {};
+      Object.entries(raw).forEach(([key, arr]) => {
+        const e = arr[arr.length - 1];
+        if (e) snap[key] = e;
+      });
+      _presSnap = snap;
+      _presNotify();
+    })
+    .subscribe(async status => {
+      if (status === "SUBSCRIBED") {
+        await _presCh.track({ name, stageId, color, ts: Date.now() });
+      }
+    });
+}
+
+async function sbPresenceUpdate(stageId) {
+  if (!_presCh || !_presMyId) return;
+  const cur = (_presCh.presenceState()[_presMyId] || [])[0];
+  if (cur) await _presCh.track({ ...cur, stageId, ts: Date.now() });
+}
+
+function sbPresenceLeave() {
+  if (_presCh && _sb) { _sb.removeChannel(_presCh); _presCh = null; }
+  _presSnap = {};
+  _presMyId = null;
+  _presNotify();
+}
+
+function sbOnPresenceChange(cb) {
+  _presCbs.add(cb);
+  return () => _presCbs.delete(cb);
+}
+
+function sbGetMyPresId() { return _presMyId; }
+function sbGetPresSnap()  { return { ..._presSnap }; }
+
+// ── FriendsCard ───────────────────────────────────────────────
+// Replaces the hardcoded friends array in MeScreen.
+// Demo mode (no Supabase) shows mock data. Live mode uses presence.
+function FriendsCard({ state, setState }) {
+  const configured = !!(SUPABASE_URL && SUPABASE_ANON);
+
+  const [sharing,   setSharing]   = React.useState(false);
+  const [myName,    setMyName]    = React.useState(() => {
+    try {
+      return localStorage.getItem("plursky_display_name")
+          || localStorage.getItem("user_name")
+          || "";
+    } catch { return ""; }
+  });
+  const [stageId,   setStageId]   = React.useState(() => STAGES?.[0]?.id || "");
+  const [editName,  setEditName]  = React.useState(false);
+  const [nameInput, setNameInput] = React.useState("");
+  const [snap,      setSnap]      = React.useState(() => sbGetPresSnap());
+
+  React.useEffect(() => sbOnPresenceChange(setSnap), []);
+
+  React.useEffect(() => {
+    if (!myName && state.spotifyConnected) {
+      ensureSpotifyProfile().then(p => {
+        const first = p?.name?.split(/\s+/)[0] || "";
+        if (first && !localStorage.getItem("plursky_display_name")) setMyName(first);
+      });
+    }
+  }, [state.spotifyConnected]);
+
+  const myId    = sbGetMyPresId();
+  const friends = Object.entries(snap)
+    .filter(([id]) => id !== myId)
+    .map(([id, e]) => ({ id, ...e }));
+
+  const saveName = (val) => {
+    const v = val.trim().slice(0, 20);
+    if (!v) return;
+    setMyName(v);
+    try { localStorage.setItem("plursky_display_name", v); } catch {}
+    setEditName(false);
+    setNameInput("");
+  };
+
+  const handleToggle = () => {
+    if (!sharing) {
+      if (!myName) { setEditName(true); return; }
+      sbPresenceJoin({ name: myName, stageId });
+      setSharing(true);
+    } else {
+      sbPresenceLeave();
+      setSharing(false);
+    }
+  };
+
+  const handleStage = (id) => {
+    setStageId(id);
+    if (sharing) sbPresenceUpdate(id);
+  };
+
+  if (!configured) {
+    const demo = [
+      { id: "r", name: "Remi", color: "#e85d2e", stageId: "bionic",  ts: Date.now() - 60000 },
+      { id: "j", name: "Juno", color: "#7b3d9a", stageId: "quantum", ts: Date.now() - 120000 },
+      { id: "k", name: "Kai",  color: "#f59a36", stageId: "stereo",  ts: Date.now() - 240000 },
+      { id: "s", name: "Sage", color: "#6f8fb8", stageId: "circuit", ts: Date.now() - 30000 },
+    ];
+    return (
+      <>
+        <_FriendsHeader count={4} live={false} />
+        <_FriendRows friends={demo} state={state} setState={setState} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <_FriendsHeader count={friends.length} live={sharing} />
+
+      {/* My sharing tile */}
+      <div style={{
+        padding: "12px 14px", borderRadius: 12, marginBottom: 8,
+        background: sharing ? "var(--ink)" : "var(--paper)",
+        border: `1px solid ${sharing ? "transparent" : "var(--line)"}`,
+        color: sharing ? "var(--paper)" : "var(--ink)",
+        transition: "background .2s",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 38, flexShrink: 0,
+            background: sharing ? _presColor(_presMyId || "x") : "var(--paper-2)",
+            border: sharing ? "none" : "1px solid var(--line-2)",
+            color: sharing ? "#fff" : "var(--muted)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "Instrument Serif, serif", fontSize: 18, position: "relative",
+          }}>
+            {myName ? myName[0].toUpperCase() : "?"}
+            {sharing && (
+              <div style={{
+                position: "absolute", bottom: -1, right: -1,
+                width: 11, height: 11, borderRadius: 11,
+                background: "var(--success)", border: "2px solid var(--ink)",
+              }} />
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="serif" style={{ fontSize: 16, lineHeight: 1 }}>
+              {myName || "Set your name"}
+            </div>
+            <div className="mono" style={{
+              fontSize: 9, letterSpacing: 1.2, marginTop: 3, textTransform: "uppercase",
+              color: sharing ? "rgba(247,237,224,0.55)" : "var(--muted)",
+            }}>
+              {sharing
+                ? (STAGES?.find(s => s.id === stageId)?.name || stageId) + " · LIVE"
+                : "You · tap GO LIVE to share"}
+            </div>
+          </div>
+          <button onClick={handleToggle} style={{
+            background: sharing ? "rgba(247,237,224,0.15)" : "var(--ember)",
+            color: "#fff", border: "none", borderRadius: 999,
+            padding: "7px 12px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace",
+            fontSize: 9, letterSpacing: 1.2, fontWeight: 700, flexShrink: 0,
+          }}>
+            {sharing ? "STOP" : myName ? "GO LIVE" : "SET NAME"}
+          </button>
+        </div>
+
+        {!sharing && editName && (
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && saveName(nameInput)}
+              placeholder="First name…"
+              autoFocus
+              maxLength={20}
+              style={{
+                flex: 1,
+                background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                borderRadius: 10, padding: "8px 12px",
+                fontFamily: "Geist, sans-serif", fontSize: 14,
+                color: "var(--ink)", outline: "none",
+              }}
+            />
+            <button onClick={() => saveName(nameInput)} style={{
+              background: nameInput.trim() ? "var(--ember)" : "var(--paper-2)",
+              color: nameInput.trim() ? "#fff" : "var(--muted)",
+              border: "none", borderRadius: 10, padding: "8px 12px",
+              cursor: nameInput.trim() ? "pointer" : "default",
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.1, fontWeight: 700,
+            }}>OK</button>
+          </div>
+        )}
+
+        {sharing && (
+          <div style={{ marginTop: 10 }}>
+            <div className="mono" style={{
+              fontSize: 8.5, letterSpacing: 1.2,
+              color: "rgba(247,237,224,0.45)", marginBottom: 6,
+            }}>CURRENT STAGE</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {STAGES?.map(s => (
+                <button key={s.id} onClick={() => handleStage(s.id)} style={{
+                  background: stageId === s.id ? s.color : "rgba(247,237,224,0.08)",
+                  color: stageId === s.id ? "#fff" : "rgba(247,237,224,0.65)",
+                  border: `1px solid ${stageId === s.id ? s.color : "rgba(247,237,224,0.18)"}`,
+                  borderRadius: 999, padding: "4px 9px", cursor: "pointer",
+                  fontFamily: "Geist Mono, monospace",
+                  fontSize: 8, letterSpacing: 1, fontWeight: 600,
+                  transition: "all .12s",
+                }}>{s.name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {friends.length > 0
+        ? <_FriendRows friends={friends} state={state} setState={setState} />
+        : (
+          <div style={{
+            padding: "13px 14px", borderRadius: 12,
+            background: "var(--paper)", border: "1px solid var(--line)",
+          }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)" }}>
+              NO FRIENDS ONLINE YET
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.45 }}>
+              Share Plursky with your crew — anyone who taps GO LIVE shows up here instantly.
+            </div>
+          </div>
+        )
+      }
+    </>
+  );
+}
+
+function _FriendsHeader({ count, live }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+      <div className="serif" style={{ fontSize: 22 }}>Friends at EDC</div>
+      {live && count > 0 && (
+        <span className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--success)" }}>
+          ● {count} LIVE
+        </span>
+      )}
+    </div>
+  );
+}
+
+function _FriendRows({ friends, state, setState }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {friends.map(f => {
+        const stage   = STAGES?.find(s => s.id === f.stageId);
+        const minsAgo = f.ts ? Math.floor((Date.now() - f.ts) / 60000) : null;
+        const age     = minsAgo == null ? "Live"
+          : minsAgo < 1 ? "Just now"
+          : `${minsAgo}m ago`;
+        return (
+          <div key={f.id} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+            background: "var(--paper)", border: "1px solid var(--line)",
+            borderRadius: 12,
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 38,
+              background: f.color || "#888",
+              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "Instrument Serif, serif", fontSize: 18, position: "relative",
+              flexShrink: 0,
+            }}>
+              {(f.name || "?")[0].toUpperCase()}
+              <div style={{
+                position: "absolute", bottom: -1, right: -1,
+                width: 11, height: 11, borderRadius: 11,
+                background: "var(--success)", border: "2px solid var(--paper)",
+              }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="serif" style={{ fontSize: 17, lineHeight: 1 }}>{f.name || "Friend"}</div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3, textTransform: "uppercase" }}>
+                {stage?.name || f.stageId || "Unknown"} · {age}
+              </div>
+            </div>
+            <button onClick={() => setState({ ...state, tab: "map" })} style={{
+              background: "transparent", border: "1px solid var(--line-2)",
+              borderRadius: 999, padding: "6px 10px", cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+              color: "var(--ink)",
+            }}>LOCATE</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+Object.assign(window, {
+  AccountCard, sbSignIn, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
+  sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
+  sbGetMyPresId, sbGetPresSnap,
+  FriendsCard,
+});

@@ -397,7 +397,7 @@ async function createEdcPlaylist(state) {
     },
     body: JSON.stringify({
       name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
-      description: `${saved.length} sets · built with Plursky · ${dateStr}`,
+      description: `${saved.length} saved sets · up to 2 top tracks each · Plursky · ${dateStr}`,
       public: false,
     }),
   });
@@ -413,20 +413,35 @@ async function createEdcPlaylist(state) {
   }
   const playlist = await plRes.json();
 
-  // 2) Find a top track per artist (parallel, throttled to ~6 in flight)
+  // 2) Find up to 2 top tracks per artist via artist-ID lookup + top-tracks endpoint.
+  //    This is more accurate than a text search and gives better quality tracks.
   const uris = [];
   let missed = 0;
   const search = async (artist) => {
     try {
-      const r = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"' + artist.name + '"')}&type=track&limit=1`,
+      // Step 1: resolve artist name → Spotify artist ID
+      const ar = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(artist.name)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!r.ok) { missed++; return; }
-      const j = await r.json();
-      const t = j.tracks?.items?.[0];
-      if (t?.uri) uris.push(t.uri);
-      else missed++;
+      if (!ar.ok) { missed++; return; }
+      const aj = await ar.json();
+      const ln = artist.name.toLowerCase();
+      const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
+        || (aj.artists?.items || []).find(a =>
+            a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
+      if (!found) { missed++; return; }
+
+      // Step 2: get their top tracks (US market) and add up to 2
+      const tr = await fetch(
+        `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!tr.ok) { missed++; return; }
+      const tj = await tr.json();
+      let added = 0;
+      (tj.tracks || []).forEach(t => { if (t?.uri && added < 2) { uris.push(t.uri); added++; } });
+      if (added === 0) missed++;
     } catch { missed++; }
   };
   // 6-wide concurrency to stay friendly to Spotify rate limits
@@ -454,6 +469,77 @@ async function createEdcPlaylist(state) {
     url:      playlist.external_urls?.spotify,
     id:       playlist.id,
   };
+}
+
+// Pre-game hype playlist — full lineup, 1 top track per artist, headliners first.
+// Distinct from createEdcPlaylist (saved sets, 2 tracks each = post-festival recap).
+async function createHypePlaylist() {
+  const token   = await getValidToken();
+  const profile = await ensureSpotifyProfile();
+  if (!token || !profile) return { ok: false, reason: "not_connected" };
+
+  // Full lineup sorted tier-desc, deduplicated by name (some artists span days)
+  const seen = new Set();
+  const artists = [...ARTISTS]
+    .sort((a, b) => (b.tier - a.tier) || a.name.localeCompare(b.name))
+    .filter(a => { const k = a.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+
+  const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: `${FESTIVAL_CONFIG.shortName} 2026 — Pre-Game Hype`,
+      description: `${artists.length} acts · 1 track each · headliners first · built with Plursky · ${dateStr}`,
+      public: false,
+    }),
+  });
+  if (!plRes.ok) {
+    const err = await plRes.json().catch(() => ({}));
+    if (plRes.status === 401 || plRes.status === 403) {
+      ["spotify_token","spotify_expires"].forEach(k => localStorage.removeItem(k));
+      return { ok: false, reason: "reconnect", status: plRes.status };
+    }
+    return { ok: false, reason: "create_fail", status: plRes.status, message: err.error?.message || "" };
+  }
+  const playlist = await plRes.json();
+
+  const uris = [];
+  let missed = 0;
+  const search = async (artist) => {
+    try {
+      const ar = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(artist.name)}&type=artist&limit=5`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!ar.ok) { missed++; return; }
+      const aj = await ar.json();
+      const ln = artist.name.toLowerCase();
+      const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
+        || (aj.artists?.items || []).find(a =>
+            a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
+      if (!found) { missed++; return; }
+      const tr = await fetch(
+        `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!tr.ok) { missed++; return; }
+      const tj = await tr.json();
+      const first = (tj.tracks || []).find(t => t?.uri);
+      if (first) uris.push(first.uri); else missed++;
+    } catch { missed++; }
+  };
+  for (let i = 0; i < artists.length; i += 6) {
+    await Promise.all(artists.slice(i, i + 6).map(search));
+  }
+  for (let i = 0; i < uris.length; i += 100) {
+    await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ uris: uris.slice(i, i + 100) }),
+    });
+  }
+  return { ok: true, added: uris.length, total: artists.length, missed, url: playlist.external_urls?.spotify, id: playlist.id };
 }
 
 // Returns full artist objects (with .genres array, deduped across all 3 time ranges,
@@ -529,6 +615,8 @@ async function fetchSpotifyTopArtists() {
 
     // Walk ALL playlists (owned + followed) — paginate both the playlist list
     // and each playlist's tracks so a 1000-song playlist is fully scanned.
+    // _playlistCount stays 0 if the scope or token blocks the list endpoint.
+    let _playlistCount = 0;
     try {
       // Fetch every playlist the user has (paginate the list — max 50 per page)
       const allPlaylists = [];
@@ -545,6 +633,7 @@ async function fetchSpotifyTopArtists() {
         if (items.length < 50 || !plData.next) break;
         plOffset += 50;
       }
+      _playlistCount = allPlaylists.length;
 
       // Per-playlist: paginate every track page (100 tracks at a time)
       // No `fields=` param — avoids comma encoding bugs that break `next`
@@ -579,7 +668,9 @@ async function fetchSpotifyTopArtists() {
       }
     } catch {}
 
-    return [...top, ...extras];
+    const result = [...top, ...extras];
+    result._playlistCount = _playlistCount;
+    return result;
   } catch {
     return [];
   }
@@ -704,9 +795,11 @@ function getDiscoveries(spotifyArtists, matched, savedIds, max = 8) {
 // ── SPOTIFY SCREEN ────────────────────────────────────────────
 function SpotifyScreen({ state, setState }) {
   const connected = state.spotifyConnected;
-  const [spotifyArtists, setSpotifyArtists] = React.useState(null);
-  const [tokenBad,  setTokenBad]  = React.useState(false);
-  const [saveFlash, setSaveFlash] = React.useState(false);
+  const [spotifyArtists,  setSpotifyArtists]  = React.useState(null);
+  const [tokenBad,        setTokenBad]        = React.useState(false);
+  const [saveFlash,       setSaveFlash]       = React.useState(false);
+  const [playlistCount,   setPlaylistCount]   = React.useState(null);
+  const [showAllArtists,  setShowAllArtists]  = React.useState(false);
 
   // Apple Music state
   const [amConnected, setAmConnected] = React.useState(() => !!localStorage.getItem("am_user_token"));
@@ -715,10 +808,13 @@ function SpotifyScreen({ state, setState }) {
   const [amError,     setAmError]     = React.useState("");
 
   React.useEffect(() => {
-    if (!connected) { setSpotifyArtists([]); return; }
+    if (!connected) { setSpotifyArtists([]); setPlaylistCount(null); return; }
     fetchSpotifyTopArtists().then(artists => {
       if (artists === null) { setTokenBad(true); setState({ ...state, spotifyConnected: false }); }
-      else setSpotifyArtists(artists);
+      else {
+        setSpotifyArtists(artists);
+        setPlaylistCount(artists._playlistCount ?? null);
+      }
     });
   }, [connected]);
 
@@ -795,13 +891,27 @@ function SpotifyScreen({ state, setState }) {
               ? <>Your lineup is <span style={{ fontStyle: "italic" }}>personalised</span></>
               : <>Build your <span style={{ fontStyle: "italic" }}>perfect</span> EDC night</>}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: 16, maxWidth: "88%" }}>
+          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: connected && spotifyArtists !== null && playlistCount === 0 ? 8 : 16, maxWidth: "88%" }}>
             {connected
               ? matched.length
-                ? `${matched.length} EDC artists match your Spotify · scanned across top, recent, liked songs and your playlists.`
+                ? `${matched.length} EDC artists match · scanned top, recent, liked songs${playlistCount > 0 ? ` + ${playlistCount} playlist${playlistCount === 1 ? "" : "s"}` : ""}.`
                 : spotifyArtists === null ? "Loading your taste…" : "No direct matches — showing genre-based picks below."
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
+
+          {connected && spotifyArtists !== null && playlistCount === 0 && (
+            <button
+              onClick={() => { disconnectSpotify(setState, state); startSpotifyAuth(); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                fontSize: 11, lineHeight: 1.5, marginBottom: 14,
+                background: "rgba(245,154,54,0.18)", border: "1px solid rgba(245,154,54,0.4)",
+                borderRadius: 8, padding: "8px 10px", color: "#fde68a",
+                cursor: "pointer", fontFamily: "inherit",
+              }}>
+              ↻ Your playlists weren't scanned. Tap here to reconnect Spotify with full access — this fixes missing artists like those in private playlists.
+            </button>
+          )}
 
           {tokenBad && (
             <div style={{ fontSize: 11, color: "#f87171", marginBottom: 10, letterSpacing: 0.8 }}>
@@ -823,6 +933,9 @@ function SpotifyScreen({ state, setState }) {
             )}
             {connected && state.saved.length > 0 && (
               <BuildPlaylistButton state={state} />
+            )}
+            {connected && (
+              <HypePlaylistButton />
             )}
             <button
               onClick={() => connected ? disconnectSpotify(setState, state) : startSpotifyAuth()}
@@ -1084,6 +1197,54 @@ function SpotifyScreen({ state, setState }) {
             })}
           </>
         )}
+
+        {/* ── All scanned artists ─────────────────────────── */}
+        {connected && spotifyArtists !== null && spotifyArtists.length > 0 && (
+          <div style={{ marginTop: 28, marginBottom: 8 }}>
+            <button
+              onClick={() => setShowAllArtists(v => !v)}
+              style={{
+                width: "100%", textAlign: "left", background: "none", border: "none",
+                padding: 0, cursor: "pointer", display: "flex", alignItems: "center",
+                justifyContent: "space-between",
+              }}>
+              <div>
+                <div className="serif" style={{ fontSize: 22, letterSpacing: -0.3 }}>
+                  Your scanned artists
+                </div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", marginTop: 3 }}>
+                  {spotifyArtists.length} ARTISTS FROM YOUR SPOTIFY
+                </div>
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 1 }}>
+                {showAllArtists ? "▲ HIDE" : "▼ SHOW"}
+              </div>
+            </button>
+
+            {showAllArtists && (
+              <div style={{ marginTop: 14 }}>
+                {[...spotifyArtists]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((a, i) => {
+                    const srcLabel = a._source === "top" ? "TOP" : a._source === "recent" ? "RECENT" : a._source === "saved" ? "LIKED" : "PLAYLIST";
+                    const srcColor = a._source === "top" ? "var(--ember)" : a._source === "recent" ? "var(--horizon)" : a._source === "saved" ? "#34d399" : "var(--muted)";
+                    const isEdc = ARTISTS.some(e => e.name.toLowerCase() === a.name.toLowerCase());
+                    return (
+                      <div key={a.id || i} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "7px 0", borderBottom: "1px solid var(--line)",
+                      }}>
+                        <div style={{ fontSize: 14, color: isEdc ? "var(--ink)" : "var(--muted)", fontWeight: isEdc ? 500 : 400 }}>
+                          {a.name}{isEdc && <span style={{ fontSize: 10, color: "var(--ember)", marginLeft: 6 }}>· EDC</span>}
+                        </div>
+                        <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: srcColor }}>{srcLabel}</div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
       </ScrollBody>
     </Screen>
   );
@@ -1201,7 +1362,7 @@ const PACK_ITEMS = [
 
 function PackListCard() {
   const [checked, setChecked] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("pack_list_v1") || "{}"); }
+    try { return JSON.parse(localStorage.getItem(`${FESTIVAL_CONFIG.id}_pack_v1`) || "{}"); }
     catch { return {}; }
   });
   const [custom, setCustom] = React.useState(() => {
@@ -1212,7 +1373,7 @@ function PackListCard() {
 
   const saveChecked = (next) => {
     setChecked(next);
-    try { localStorage.setItem("pack_list_v1", JSON.stringify(next)); } catch {}
+    try { localStorage.setItem(`${FESTIVAL_CONFIG.id}_pack_v1`, JSON.stringify(next)); } catch {}
   };
   const saveCustom = (next) => {
     setCustom(next);
@@ -1311,13 +1472,6 @@ function PackListCard() {
 }
 
 function MeScreen({ state, setState }) {
-  const friends = [
-    { name: "Remi", color: "#e85d2e", at: "Bionic Jungle",   dist: "Here" },
-    { name: "Juno", color: "#7b3d9a", at: "Quantum Valley",  dist: "4 min walk" },
-    { name: "Kai",  color: "#f59a36", at: "Stereo Bloom",    dist: "8 min walk" },
-    { name: "Sage", color: "#6f8fb8", at: "Circuit Grounds", dist: "Approaching" },
-  ];
-
   // Build identity from Spotify profile when available, else fall back to demo
   const [profile, setProfile] = React.useState(getSpotifyProfileSync);
   React.useEffect(() => {
@@ -1385,41 +1539,10 @@ function MeScreen({ state, setState }) {
           ))}
         </div>
 
-        {/* Friends */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-          <div className="serif" style={{ fontSize: 22 }}>Friends at EDC</div>
-          <span className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>4 LIVE</span>
+        {/* Friends — live via Supabase Realtime Presence */}
+        <div style={{ marginBottom: 20 }}>
+          <FriendsCard state={state} setState={setState} />
         </div>
-        {friends.map(f => (
-          <div key={f.name} style={{
-            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-            background: "var(--paper)", border: "1px solid var(--line)",
-            borderRadius: 12, marginBottom: 8,
-          }}>
-            <div style={{
-              width: 38, height: 38, borderRadius: 38, background: f.color,
-              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "Instrument Serif, serif", fontSize: 18, position: "relative",
-            }}>{f.name[0]}
-              <div style={{
-                position: "absolute", bottom: -1, right: -1,
-                width: 11, height: 11, borderRadius: 11,
-                background: "var(--success)", border: "2px solid var(--paper)",
-              }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="serif" style={{ fontSize: 17, lineHeight: 1 }}>{f.name}</div>
-              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3, textTransform: "uppercase" }}>
-                {f.at} · {f.dist}
-              </div>
-            </div>
-            <button onClick={() => setState({ ...state, tab: "map" })} style={{
-              background: "transparent", border: "1px solid var(--line-2)",
-              borderRadius: 999, padding: "6px 10px", cursor: "pointer",
-              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
-            }}>LOCATE</button>
-          </div>
-        ))}
 
         {/* Cloud account / sync */}
         <AccountCard state={state} setState={setState} />
@@ -1509,6 +1632,48 @@ function BuildPlaylistButton({ state }) {
     bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
   } else {
     label = "BUILD MY PLAYLIST";
+  }
+
+  return (
+    <button onClick={onClick} disabled={status === "working"} style={{
+      background: bg, color, border,
+      borderRadius: 999, padding: "10px 16px",
+      cursor: status === "working" ? "wait" : "pointer",
+      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+      transition: "all .2s",
+    }}>{label}</button>
+  );
+}
+
+function HypePlaylistButton() {
+  const [status, setStatus] = React.useState("idle");
+  const [result, setResult] = React.useState(null);
+
+  const onClick = async () => {
+    if (status === "working") return;
+    if (status === "err" && result?.reason === "reconnect") { startSpotifyAuth(); return; }
+    setStatus("working");
+    const r = await createHypePlaylist();
+    setResult(r);
+    if (r.ok) {
+      setStatus("done");
+      if (r.url) setTimeout(() => window.open(r.url, "_blank", "noopener"), 800);
+      setTimeout(() => setStatus("idle"), 4000);
+    } else {
+      setStatus("err");
+      if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+    }
+  };
+
+  let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
+  if (status === "working") label = "BUILDING…";
+  else if (status === "done") { label = `✓ ${result?.added} TRACKS`; bg = "#1DB954"; color = "#000"; border = "none"; }
+  else if (status === "err") {
+    if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT";
+    else label = "✕ TRY AGAIN";
+    bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
+  } else {
+    label = "PRE-GAME HYPE PLAYLIST";
   }
 
   return (
