@@ -379,14 +379,15 @@ async function ensureSpotifyProfile() {
 
 // #12 Build my playlist — push the user's saved EDC sets into a
 // Spotify playlist on their account. Skips artists Spotify can't find.
-async function createEdcPlaylist(state) {
+async function createEdcPlaylist(state, day = null) {
   const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
   if (!token || !profile) return { ok: false, reason: "not_connected" };
 
   const saved = state.saved
     .map(id => ARTISTS.find(a => a.id === id))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(a => day === null || a.day === day);
   if (saved.length === 0) return { ok: false, reason: "empty" };
 
   // Sort by night (day 1→2→3) then by set start time with after-midnight wrap
@@ -400,12 +401,15 @@ async function createEdcPlaylist(state) {
 
   // 1) Create empty playlist on user's account
   const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const dayLabel = day ? ` — ${FESTIVAL_CONFIG.dayDates[day].name}` : "";
   const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({
-      name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
-      description: `${sorted.length} acts · FRI→SAT→SUN by set time · headliners 5 tracks · built with Plursky · ${dateStr}`,
+      name: `My ${FESTIVAL_CONFIG.shortName} Lineup${dayLabel}`,
+      description: day
+        ? `${sorted.length} acts · ${FESTIVAL_CONFIG.dayDates[day].name} night · headliners 5 tracks · Plursky · ${dateStr}`
+        : `${sorted.length} acts · FRI→SAT→SUN by set time · headliners 5 tracks · built with Plursky · ${dateStr}`,
       public: false,
     }),
   });
@@ -453,6 +457,29 @@ async function createEdcPlaylist(state) {
       return { added, id: found.id };
     } catch { return { added: 0, id: null }; }
   };
+  // For B2B sets, also search Spotify for actual collab tracks featuring both artists
+  const searchB2BCollab = async (parts) => {
+    try {
+      const q = parts.join(" ");
+      const res = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!res.ok) return;
+      const rj = await res.json();
+      const lparts = parts.map(p => p.toLowerCase());
+      for (const t of (rj.tracks?.items || [])) {
+        if (seenUris.has(t.uri)) continue;
+        // Only add if the track's artist list contains at least one of the B2B parts
+        const trackArtists = (t.artists || []).map(a => a.name.toLowerCase());
+        const match = lparts.some(p => trackArtists.some(ta => ta.includes(p) || p.includes(ta)));
+        if (!match) continue;
+        seenUris.add(t.uri); uris.push(t.uri);
+        break; // 1 collab track per B2B set
+      }
+    } catch {}
+  };
+
   const search = async (artist) => {
     const parts = artist.name.split(/ b2b /i).map(s => s.trim());
     const limit = trackLimit(artist.tier);
@@ -462,6 +489,8 @@ async function createEdcPlaylist(state) {
       totalAdded += added;
       if (id) savedSpotifyIds.push({ name: part, id });
     }
+    // For B2B sets, attempt to surface 1 actual collab track
+    if (parts.length > 1) await searchB2BCollab(parts);
     if (totalAdded === 0) missed++;
   };
   // Process in schedule order, 6-wide concurrency
@@ -1077,9 +1106,9 @@ function SpotifyScreen({ state, setState }) {
             {connected && state.saved.length > 0 && (
               <BuildPlaylistButton state={state} />
             )}
-            {connected && (
-              <HypePlaylistButton />
-            )}
+            {connected && state.saved.length > 0 && [1, 2, 3].map(d => (
+              <DayPlaylistButton key={d} state={state} day={d} />
+            ))}
             <button
               onClick={() => connected ? disconnectSpotify(setState, state) : startSpotifyAuth()}
               style={{
@@ -1795,44 +1824,46 @@ function BuildPlaylistButton({ state }) {
   );
 }
 
-function HypePlaylistButton() {
+function DayPlaylistButton({ state, day }) {
   const [status, setStatus] = React.useState("idle");
   const [result, setResult] = React.useState(null);
 
+  const dayInfo = FESTIVAL_CONFIG.dayDates[day];
+  const count = state.saved.filter(id => ARTISTS.find(a => a.id === id)?.day === day).length;
+  if (count === 0) return null;
+
   const onClick = async () => {
     if (status === "working") return;
-    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) { startSpotifyAuth(); return; }
     if (status === "done" && result?.url) { window.open(result.url, "_blank", "noopener"); return; }
+    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) { startSpotifyAuth(); return; }
     setStatus("working");
-    const r = await createHypePlaylist();
+    const r = await createEdcPlaylist(state, day);
     setResult(r);
-    if (r.ok) {
-      setStatus("done"); // stays until user taps "OPEN"
-    } else {
-      setStatus("err");
-      if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
-    }
+    setStatus(r.ok ? "done" : "err");
+    if (!r.ok && r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
   };
 
-  let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
-  if (status === "working") label = "BUILDING…";
-  else if (status === "done") { label = `✓ ${result?.added} TRACKS — OPEN ↗`; bg = "#1DB954"; color = "#000"; border = "none"; }
-  else if (status === "err") {
-    if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT";
-    else label = "✕ TRY AGAIN";
-    bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
+  let label, bg, color, border;
+  if (status === "working") {
+    label = "…"; bg = "rgba(29,185,84,0.1)"; color = "#1DB954"; border = "1px solid rgba(29,185,84,0.4)";
+  } else if (status === "done") {
+    label = `✓ ${result?.added}`; bg = "#1DB954"; color = "#000"; border = "none";
+  } else if (status === "err") {
+    label = "✕"; bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
   } else {
-    label = "PRE-GAME HYPE PLAYLIST";
+    label = dayInfo.short; bg = "rgba(29,185,84,0.08)"; color = "#1DB954"; border = "1px solid rgba(29,185,84,0.4)";
   }
 
   return (
-    <button onClick={onClick} disabled={status === "working"} style={{
-      background: bg, color, border,
-      borderRadius: 999, padding: "10px 16px",
-      cursor: status === "working" ? "wait" : "pointer",
-      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-      transition: "all .2s",
-    }}>{label}</button>
+    <button onClick={onClick} disabled={status === "working"}
+      title={`Build ${dayInfo.name} night playlist · ${count} saved sets`}
+      style={{
+        background: bg, color, border,
+        borderRadius: 999, padding: "10px 14px",
+        cursor: status === "working" ? "wait" : "pointer",
+        fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+        transition: "all .2s",
+      }}>{label}</button>
   );
 }
 
