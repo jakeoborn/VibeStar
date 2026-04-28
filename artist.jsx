@@ -1,5 +1,46 @@
 // Artist detail — shown as a modal-style pane when state.artist is set
 
+// ── Setlist.fm ─────────────────────────────────────────────────
+// Free API key at https://api.setlist.fm — paste yours below.
+const SETLISTFM_KEY = "";
+const _SL_TTL = 24 * 3600000; // cache 24 h
+
+async function fetchSetlists(artistName) {
+  if (!SETLISTFM_KEY) return null;
+  const cacheKey = `setlist_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _SL_TTL) return c.data;
+  } catch {}
+  try {
+    const res = await fetch(
+      `https://api.setlist.fm/rest/1.0/search/setlists?artistName=${encodeURIComponent(artistName)}&p=1`,
+      { headers: { "x-api-key": SETLISTFM_KEY, "Accept": "application/json" } }
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    // Keep up to 3 setlists that actually have songs documented
+    const lists = (json.setlist || [])
+      .filter(s => (s.sets?.set || []).some(set => (set.song || []).length > 0))
+      .slice(0, 3);
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data: lists, fetchedAt: Date.now() })); } catch {}
+    return lists;
+  } catch { return []; }
+}
+
+function _slDate(d) {
+  // "17-05-2024" → "May 17, 2024"
+  const [day, m, y] = d.split("-");
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]} ${+day}, ${y}`;
+}
+function _slIsEdc(sl) {
+  const v = (sl.venue?.name || "").toLowerCase();
+  const c = (sl.venue?.city?.name || "").toLowerCase();
+  return v.includes("edc") || v.includes("las vegas motor") ||
+    v.includes("kinetic") || v.includes("cosmic") || v.includes("circuit") ||
+    (v.includes("las vegas") && c.includes("las vegas"));
+}
+
 const ARTIST_NOTES_KEY = "artist_notes_v1";
 function _getArtistNotes() {
   try { return JSON.parse(localStorage.getItem(ARTIST_NOTES_KEY) || "{}"); }
@@ -22,6 +63,11 @@ function ArtistScreen({ state, setState }) {
     if (text.trim()) notes[a.id] = text; else delete notes[a.id];
     try { localStorage.setItem(ARTIST_NOTES_KEY, JSON.stringify(notes)); } catch {}
   };
+
+  // ── Setlist.fm state ─────────────────────────────────────
+  const [setlists, setSetlists] = React.useState(undefined); // undefined=loading, null=no key, []=empty
+  const [slExpanded, setSlExpanded] = React.useState({});
+  React.useEffect(() => { fetchSetlists(a.name).then(setSetlists); }, [a.id]);
 
   // ── Preview player state ──────────────────────────────────
   const audioRef = React.useRef(null);
@@ -146,6 +192,78 @@ function ArtistScreen({ state, setState }) {
         <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 18, textWrap: "pretty" }}>
           {a.bio}
         </div>
+
+        {/* ── Setlist history ───────────────────────────────── */}
+        {SETLISTFM_KEY && (
+          <div style={{ marginBottom: 18 }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              SETLIST HISTORY
+              {setlists === undefined && <span style={{ fontSize: 8, opacity: 0.7 }}>LOADING…</span>}
+            </div>
+
+            {setlists !== undefined && setlists !== null && setlists.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>No documented setlists found.</div>
+            )}
+
+            {Array.isArray(setlists) && setlists.map((sl, idx) => {
+              const songs = (sl.sets?.set || []).flatMap(s => s.song || []);
+              const isOpen = !!slExpanded[idx];
+              const displaySongs = isOpen ? songs : songs.slice(0, 5);
+              const isEdc = _slIsEdc(sl);
+              const venue = sl.venue?.name || "";
+              const city  = sl.venue?.city?.name || "";
+              const state = sl.venue?.city?.stateCode || sl.venue?.city?.country?.code || "";
+              return (
+                <div key={idx} style={{
+                  background: "var(--paper-2)", borderRadius: 12,
+                  padding: "12px 14px", marginBottom: 10,
+                  border: `1px solid ${isEdc ? "rgba(232,93,46,0.4)" : "var(--line)"}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div>
+                      {isEdc && (
+                        <div className="mono" style={{ fontSize: 8, letterSpacing: 1.4, color: "var(--ember)", fontWeight: 700, marginBottom: 3 }}>
+                          ★ EDC LAS VEGAS
+                        </div>
+                      )}
+                      <div className="mono" style={{ fontSize: 10, letterSpacing: 0.8, color: "var(--ink)", fontWeight: 600 }}>
+                        {_slDate(sl.eventDate)}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                        {venue}{city ? ` · ${city}${state ? `, ${state}` : ""}` : ""}
+                      </div>
+                    </div>
+                    {sl.url && (
+                      <a href={sl.url} target="_blank" rel="noopener noreferrer" style={{
+                        fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.1,
+                        color: "var(--muted)", textDecoration: "none", flexShrink: 0, marginLeft: 8, marginTop: 2,
+                      }}>SETLIST.FM ↗</a>
+                    )}
+                  </div>
+
+                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+                    {displaySongs.map((song, si) => (
+                      <div key={si} style={{ display: "flex", alignItems: "center", gap: 10, padding: "3px 0" }}>
+                        <span className="mono" style={{ fontSize: 9, color: "var(--muted)", width: 18, textAlign: "right", flexShrink: 0 }}>{si + 1}</span>
+                        <span style={{ fontSize: 13, color: "var(--ink)", flex: 1 }}>{song.name}</span>
+                        {song.tape && <span className="mono" style={{ fontSize: 8, color: "var(--muted)", letterSpacing: 1 }}>TAPE</span>}
+                      </div>
+                    ))}
+                    {songs.length > 5 && (
+                      <button onClick={() => setSlExpanded(e => ({ ...e, [idx]: !e[idx] }))} style={{
+                        background: "transparent", border: "none", cursor: "pointer",
+                        fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+                        color: "var(--ember)", padding: "6px 0 2px", display: "block",
+                      }}>
+                        {isOpen ? "SHOW LESS ↑" : `+${songs.length - 5} MORE SONGS ↓`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Personal note */}
         <div style={{ marginBottom: 16 }}>
