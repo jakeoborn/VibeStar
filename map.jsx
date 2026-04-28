@@ -1742,6 +1742,22 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
     return map;
   }, [saved]);
 
+  // Pre-computed starfield — deterministic LCG so it doesn't flicker on re-render
+  const stars = React.useMemo(() => {
+    let s = 0xdeadbeef;
+    const rng = () => { s = Math.imul(s ^ (s >>> 17), 0x45d9f3b) ^ ((s * 0x119de1f3) >>> 16); return ((s >>> 0) / 0x100000000); };
+    const out = [];
+    for (let i = 0; i < 55; i++) {
+      const angle = rng() * Math.PI * 2;
+      const dist  = 36 + rng() * 28;
+      const x     = +(50 + Math.cos(angle) * dist).toFixed(1);
+      const y     = +(50 + Math.sin(angle) * dist).toFixed(1);
+      if (x < 0.5 || x > 99.5 || y < 0.5 || y > 99.5) continue;
+      out.push({ x, y, r: +(0.18 + rng() * 0.32).toFixed(2), op: +(0.25 + rng() * 0.55).toFixed(2) });
+    }
+    return out;
+  }, []);
+
   // Push label OUT from stage in the direction farthest from the Daisy Lane
   // plaza centre (50,50), so labels never collide with the central rectangle.
   const anchorFor = (s) => {
@@ -1754,8 +1770,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
   return (
     <div style={{
       position: "absolute", inset: 0, overflow: "hidden",
-      // Warm dune letterbox — matches the website palette
-      background: "var(--paper-2)",
+      background: "#060412",
     }}>
     <div style={{
       position: "absolute", inset: 0,
@@ -1769,12 +1784,24 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
         onClick={onClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
-          <radialGradient id="mapGround" cx="50%" cy="48%" r="70%">
-            <stop offset="0%"  stopColor="#f7ede0"/>
-            <stop offset="60%" stopColor="#ead8b8"/>
-            <stop offset="100%" stopColor="#d9bf94"/>
+          {/* Night sky ground — deepest at edges, slightly less dark at center */}
+          <radialGradient id="mapGround" cx="50%" cy="48%" r="72%">
+            <stop offset="0%"   stopColor="#130b28"/>
+            <stop offset="55%"  stopColor="#0c0820"/>
+            <stop offset="100%" stopColor="#060412"/>
           </radialGradient>
-          {/* Subtle rainbow accent retained on the track edge as a nod to EDC */}
+          {/* Purple–teal nebula wash over the infield */}
+          <radialGradient id="infieldGlow" cx="50%" cy="50%" r="55%">
+            <stop offset="0%"   stopColor="rgba(120,60,210,0.22)"/>
+            <stop offset="60%"  stopColor="rgba(60,30,120,0.08)"/>
+            <stop offset="100%" stopColor="rgba(0,0,0,0)"/>
+          </radialGradient>
+          {/* Warm amber glow at exact infield center for Daisy Lane plaza */}
+          <radialGradient id="daisyGlow" cx="50%" cy="50%" r="60%">
+            <stop offset="0%"   stopColor="rgba(240,160,40,0.18)"/>
+            <stop offset="100%" stopColor="rgba(240,160,40,0)"/>
+          </radialGradient>
+          {/* Rainbow LED ring — unchanged, looks great on dark bg */}
           <linearGradient id="ledring" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%"   stopColor="#e85d2e"/>
             <stop offset="20%"  stopColor="#f59a36"/>
@@ -1783,40 +1810,45 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             <stop offset="80%"  stopColor="#a78bfa"/>
             <stop offset="100%" stopColor="#ec4899"/>
           </linearGradient>
-          <radialGradient id="infieldGlow" cx="50%" cy="50%" r="55%">
-            <stop offset="0%"   stopColor="rgba(245,154,54,0.10)"/>
-            <stop offset="100%" stopColor="rgba(232,93,46,0)"/>
-          </radialGradient>
-          <filter id="stageglow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" result="blur"/>
+          {/* Strong glow for stage markers on dark background */}
+          <filter id="stageglow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          {/* Soft outer bloom for star twinkle */}
+          <filter id="starbloom" x="-200%" y="-200%" width="500%" height="500%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="0.5" result="blur"/>
             <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
         </defs>
 
-        {/* Warm paper ground */}
+        {/* Night sky base */}
         <rect x="0" y="0" width="100" height="100" fill="url(#mapGround)"/>
 
-        {/* Speedway track — 1.5-mile LVMS tri-oval. Back straight (north)
-            is flat; front straight (south) has the signature tri-oval
-            dogleg bulging out toward the start/finish line. Solid ink
-            outline reads cleanly on paper; a faint rainbow accent on the
-            inside echoes the EDC LED perimeter without overpowering
-            navigation. */}
-        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
-          fill="none" stroke="rgba(26,18,13,0.08)" strokeWidth="3.2"/>
-        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
-          fill="none" stroke="url(#ledring)" strokeWidth="0.9" opacity="0.7"/>
-        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
-          fill="none" stroke="rgba(26,18,13,0.55)" strokeWidth="0.35"/>
-        <path d="M 47 19 L 53 19 A 31 31 0 0 1 53 81 Q 51.5 82.5 50 84 Q 48.5 82.5 47 81 A 31 31 0 0 1 47 19 Z"
-          fill="none" stroke="rgba(26,18,13,0.18)" strokeWidth="0.22" strokeDasharray="1 1.5"/>
-        {/* Start/finish stripe at the tri-oval apex — small black-and-white
-            checker-style tick so the track reads as a real speedway. */}
-        <line x1="50" y1="89.4" x2="50" y2="91.6" stroke="rgba(26,18,13,0.7)" strokeWidth="0.55" strokeLinecap="round"/>
-        <line x1="49" y1="90.5" x2="51" y2="90.5" stroke="rgba(247,237,224,0.95)" strokeWidth="0.45" strokeLinecap="round"/>
+        {/* Starfield — pre-computed positions, no re-render flicker */}
+        <g filter="url(#starbloom)">
+          {stars.map((st, i) => (
+            <circle key={i} cx={st.x} cy={st.y} r={st.r} fill="#fff" opacity={st.op}/>
+          ))}
+        </g>
 
-        {/* Infield warm wash */}
+        {/* LVMS tri-oval track — LED ring blazes bright on dark sky */}
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
+          fill="rgba(20,12,40,0.6)" stroke="rgba(180,140,255,0.12)" strokeWidth="3.2"/>
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
+          fill="none" stroke="url(#ledring)" strokeWidth="1.2" opacity="0.95"/>
+        <path d="M 42 14 L 58 14 A 36 36 0 0 1 58 86 Q 54 88 50 90 Q 46 88 42 86 A 36 36 0 0 1 42 14 Z"
+          fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.3"/>
+        <path d="M 47 19 L 53 19 A 31 31 0 0 1 53 81 Q 51.5 82.5 50 84 Q 48.5 82.5 47 81 A 31 31 0 0 1 47 19 Z"
+          fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.22" strokeDasharray="1 1.5"/>
+        {/* Start/finish stripe */}
+        <line x1="50" y1="89.4" x2="50" y2="91.6" stroke="rgba(255,255,255,0.6)" strokeWidth="0.55" strokeLinecap="round"/>
+        <line x1="49" y1="90.5" x2="51" y2="90.5" stroke="rgba(0,0,0,0.9)" strokeWidth="0.45" strokeLinecap="round"/>
+
+        {/* Infield nebula glow */}
         <ellipse cx="50" cy="50" rx="38" ry="30" fill="url(#infieldGlow)"/>
+        {/* Daisy Lane plaza warm amber center glow */}
+        <rect x="37" y="43" width="26" height="16" rx="4" fill="url(#daisyGlow)" opacity="0.85"/>
 
         {/* Crowd heatmap — estimated density per stage based on lineup tiers.
             Gaussian-blurred circles shift amber→orange→red with crowd level. */}
@@ -1847,32 +1879,31 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
           );
         })()}
 
-        {/* Pedestrian arteries — paper-friendly dashed ink with a subtle
-            cream sidewalk halo so they read as walkways, not power lines. */}
-        <path d="M50,16 Q50,50 50,84" stroke="rgba(247,237,224,0.7)" strokeWidth="3.4" fill="none" strokeLinecap="round"/>
-        <path d="M50,16 Q50,50 50,84" stroke="rgba(26,18,13,0.22)" strokeWidth="0.55" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
-        <path d="M16,50 Q50,52 84,50" stroke="rgba(247,237,224,0.6)" strokeWidth="2.4" fill="none" strokeLinecap="round"/>
-        <path d="M16,50 Q50,52 84,50" stroke="rgba(26,18,13,0.18)" strokeWidth="0.45" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
-        <path d="M28,28 Q38,38 50,51" stroke="rgba(26,18,13,0.16)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
-        <path d="M72,28 Q62,38 50,51" stroke="rgba(26,18,13,0.16)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
+        {/* Pedestrian arteries — glowing white paths on night sky */}
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,255,255,0.06)" strokeWidth="3.4" fill="none" strokeLinecap="round"/>
+        <path d="M50,16 Q50,50 50,84" stroke="rgba(255,255,255,0.18)" strokeWidth="0.55" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,255,255,0.05)" strokeWidth="2.4" fill="none" strokeLinecap="round"/>
+        <path d="M16,50 Q50,52 84,50" stroke="rgba(255,255,255,0.14)" strokeWidth="0.45" fill="none" strokeLinecap="round" strokeDasharray="1.2 1.6"/>
+        <path d="M28,28 Q38,38 50,51" stroke="rgba(255,255,255,0.08)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
+        <path d="M72,28 Q62,38 50,51" stroke="rgba(255,255,255,0.08)" strokeWidth="0.4" fill="none" strokeLinecap="round" strokeDasharray="0.8 1.2"/>
 
-        {/* Daisy Lane central plaza — ember accent on paper */}
-        <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.08)" stroke="rgba(232,93,46,0.45)" strokeWidth="0.32" rx="2"/>
-        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(232,93,46,0.35)" strokeWidth="0.3"/>
-        <circle cx="50" cy="51" r="1.2" fill="rgba(232,93,46,0.85)"/>
+        {/* Daisy Lane central plaza — glowing ember on dark sky */}
+        <rect x="37" y="43" width="26" height="16" fill="rgba(232,93,46,0.10)" stroke="rgba(232,93,46,0.55)" strokeWidth="0.35" rx="2.5"/>
+        <circle cx="50" cy="51" r="3.5" fill="none" stroke="rgba(232,93,46,0.4)" strokeWidth="0.35"/>
+        <circle cx="50" cy="51" r="1.4" fill="rgba(240,160,60,1)">
+          <animate attributeName="r" values="1.0;1.6;1.0" dur="3s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.9;1;0.9" dur="3s" repeatCount="indefinite"/>
+        </circle>
 
-        {/* Entrance gates — perimeter access points. Three official EDC gates:
-            GATE S (NE), GATE C/D (west), GATE P (SW). Rendered as small green
-            chevron-style markers ON the LED ring, with the tiny label sitting
-            in the overlay slightly outside the track. */}
+        {/* Entrance gates — bright green on dark, easy to spot */}
         {[
           { id: "S",  x: 76, y: 16 },
           { id: "CD", x:  8, y: 50 },
           { id: "P",  x: 18, y: 84 },
         ].map(g => (
           <g key={g.id}>
-            <circle cx={g.x} cy={g.y} r="2.2" fill="rgba(34,197,94,0.18)"/>
-            <circle cx={g.x} cy={g.y} r="1.4" fill="#22c55e" stroke="rgba(255,255,255,0.92)" strokeWidth="0.3"/>
+            <circle cx={g.x} cy={g.y} r="2.8" fill="rgba(34,197,94,0.22)"/>
+            <circle cx={g.x} cy={g.y} r="1.5" fill="#22c55e" stroke="rgba(255,255,255,0.95)" strokeWidth="0.35"/>
             <circle cx={g.x} cy={g.y} r="0.5" fill="#fff"/>
           </g>
         ))}
@@ -1931,7 +1962,7 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
                   <animate attributeName="opacity" values="0.8;0;0.8" dur="2s" repeatCount="indefinite"/>
                 </circle>
               )}
-              <circle cx={s.x} cy={s.y} r={r + 1.8} fill={s.color} opacity={on ? 0.18 : 0.09} filter="url(#stageglow)"/>
+              <circle cx={s.x} cy={s.y} r={r + 2.4} fill={s.color} opacity={on ? 0.32 : 0.14} filter="url(#stageglow)"/>
               <StageIcon id={s.id} cx={s.x} cy={s.y} r={r} on={on} color={s.color}/>
               {/* Gold ★ pin if the user has an upcoming saved set on this stage */}
               {savedHere && (
@@ -2007,7 +2038,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             position: "absolute", left: `${g.x}%`, top: `${g.y}%`,
             transform: `translate(-50%, -50%)${counterRot}`,
             fontFamily: "Geist Mono, monospace", fontSize: 5.6, letterSpacing: 1.4, fontWeight: 700,
-            color: "var(--success)",
+            color: "rgba(80,230,160,0.92)",
+            textShadow: "0 0 8px rgba(80,230,160,0.5)",
             whiteSpace: "nowrap", pointerEvents: "none",
           }}>{g.label}</div>
         ))}
@@ -2039,7 +2071,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             transform: `translate(-50%, -50%) rotate(${lm.rot}deg)`,
             fontFamily: "Geist Mono, monospace",
             fontSize: lm.size, letterSpacing: lm.ls, fontWeight: 700,
-            color: "rgba(26,18,13,0.55)",
+            color: lm.color,
+            textShadow: "0 1px 6px rgba(0,0,0,0.8)",
             whiteSpace: "nowrap", pointerEvents: "none",
           }}>{lm.label}</div>
         ))}
@@ -2075,9 +2108,9 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
               style={{
                 position: "absolute", ...pos, ...tx,
                 pointerEvents: "auto", cursor: "pointer",
-                background: on ? s.color : "var(--paper)",
-                color: on ? "#fff" : "var(--ink)",
-                border: `1px solid ${on ? s.color : "var(--line-2)"}`,
+                background: on ? s.color : "rgba(6,4,18,0.82)",
+                color: on ? "#fff" : "rgba(255,255,255,0.88)",
+                border: `1px solid ${on ? s.color : "rgba(255,255,255,0.18)"}`,
                 padding: on ? "4px 10px" : "3px 9px",
                 borderRadius: 999,
                 fontFamily: "Geist Mono, monospace",
@@ -2085,8 +2118,8 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
                 letterSpacing: 1.2, fontWeight: 700,
                 whiteSpace: "nowrap",
                 boxShadow: on
-                  ? `0 4px 14px ${s.color}55, 0 1px 0 rgba(0,0,0,0.06)`
-                  : "0 1px 0 rgba(0,0,0,0.04), 0 2px 8px rgba(26,18,13,0.10)",
+                  ? `0 4px 18px ${s.color}66, 0 0 8px ${s.color}33`
+                  : "0 1px 0 rgba(0,0,0,0.4), 0 2px 12px rgba(0,0,0,0.5)",
                 transition: "all 0.15s",
               }}>
               <span style={{

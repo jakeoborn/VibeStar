@@ -416,35 +416,38 @@ async function createEdcPlaylist(state) {
   const playlist = await plRes.json();
 
   // 2) Find up to 2 top tracks per artist via artist-ID lookup + top-tracks endpoint.
-  //    This is more accurate than a text search and gives better quality tracks.
+  //    B2B sets ("A b2b B") are searched per-individual so both halves contribute tracks.
   const uris = [];
   let missed = 0;
-  const search = async (artist) => {
+  const searchOne = async (searchName) => {
     try {
-      // Step 1: resolve artist name → Spotify artist ID
       const ar = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(artist.name)}&type=artist&limit=5`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!ar.ok) { missed++; return; }
+      if (!ar.ok) return 0;
       const aj = await ar.json();
-      const ln = artist.name.toLowerCase();
+      const ln = searchName.toLowerCase();
       const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
         || (aj.artists?.items || []).find(a =>
             a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
-      if (!found) { missed++; return; }
-
-      // Step 2: get their top tracks (US market) and add up to 2
+      if (!found) return 0;
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!tr.ok) { missed++; return; }
+      if (!tr.ok) return 0;
       const tj = await tr.json();
       let added = 0;
       (tj.tracks || []).forEach(t => { if (t?.uri && added < 2) { uris.push(t.uri); added++; } });
-      if (added === 0) missed++;
-    } catch { missed++; }
+      return added;
+    } catch { return 0; }
+  };
+  const search = async (artist) => {
+    const parts = artist.name.split(/ b2b /i).map(s => s.trim());
+    let totalAdded = 0;
+    for (const part of parts) totalAdded += await searchOne(part);
+    if (totalAdded === 0) missed++;
   };
   // 6-wide concurrency to stay friendly to Spotify rate limits
   for (let i = 0; i < saved.length; i += 6) {
@@ -508,28 +511,35 @@ async function createHypePlaylist() {
 
   const uris = [];
   let missed = 0;
-  const search = async (artist) => {
+  const searchHypeOne = async (searchName) => {
     try {
       const ar = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(artist.name)}&type=artist&limit=5`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!ar.ok) { missed++; return; }
+      if (!ar.ok) return false;
       const aj = await ar.json();
-      const ln = artist.name.toLowerCase();
+      const ln = searchName.toLowerCase();
       const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
         || (aj.artists?.items || []).find(a =>
             a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
-      if (!found) { missed++; return; }
+      if (!found) return false;
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!tr.ok) { missed++; return; }
+      if (!tr.ok) return false;
       const tj = await tr.json();
       const first = (tj.tracks || []).find(t => t?.uri);
-      if (first) uris.push(first.uri); else missed++;
-    } catch { missed++; }
+      if (first) { uris.push(first.uri); return true; }
+      return false;
+    } catch { return false; }
+  };
+  const search = async (artist) => {
+    const parts = artist.name.split(/ b2b /i).map(s => s.trim());
+    let ok = false;
+    for (const part of parts) ok = await searchHypeOne(part) || ok;
+    if (!ok) missed++;
   };
   for (let i = 0; i < artists.length; i += 6) {
     await Promise.all(artists.slice(i, i + 6).map(search));
@@ -754,11 +764,10 @@ async function fetchPreviewUrl(artistName) {
 }
 
 // Match Spotify artist names against the EDC lineup.
-// B2B entries ("A b2b B") are split so each artist gets their own match row
-// — a user who has "Peggy Gou" in their library will see her highlighted in
-// "Peggy Gou b2b Ki/Ki" rather than just a cryptic compound name.
-// Virtual entries carry _realId (the original ARTISTS id for saves/nav) and
-// _b2bWith (the partner name for the sub-label).
+// B2B entries ("A b2b B") are kept as a single entry — the full compound
+// set shows in the matched list. Matching fires if ANY individual part of
+// the B2B name is found in the user's Spotify library, so "Peggy Gou b2b
+// Ki/Ki" surfaces if you follow Peggy Gou.
 function matchLineupArtists(spotifyArtists) {
   if (!spotifyArtists?.length) return [];
   const names = spotifyArtists.map(a => a.name.toLowerCase());
@@ -766,25 +775,12 @@ function matchLineupArtists(spotifyArtists) {
   const seen   = new Set();
 
   ARTISTS.forEach(a => {
-    const parts = a.name.split(/ b2b /i).map(s => s.trim());
-    parts.forEach((part, idx) => {
-      const pln = part.toLowerCase();
-      if (!names.some(n => pln.includes(n) || n.includes(pln))) return;
-      const key = `${a.id}_${idx}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      if (parts.length === 1) {
-        result.push(a);
-      } else {
-        result.push({
-          ...a,
-          id:      key,
-          _realId: a.id,
-          name:    part,
-          _b2bWith: parts.filter((_, i) => i !== idx).join(' b2b '),
-        });
-      }
-    });
+    if (seen.has(a.id)) return;
+    const parts = a.name.split(/ b2b /i).map(s => s.trim().toLowerCase());
+    const matches = parts.some(part => names.some(n => part.includes(n) || n.includes(part)));
+    if (!matches) return;
+    seen.add(a.id);
+    result.push(a);
   });
   return result;
 }
@@ -1215,7 +1211,6 @@ function SpotifyScreen({ state, setState }) {
                    onClick={() => setState({ ...state, tab: "home", artist: realId })}>
                 <div className="serif" style={{ fontSize: 18, lineHeight: 1.1 }}>{a.name}</div>
                 <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
-                  {a._b2bWith && <span style={{ color: stg.color }}>b2b {a._b2bWith} · </span>}
                   {stg.name} · DAY {a.day} · {a.start}
                 </div>
               </div>

@@ -1,5 +1,5 @@
-const CACHE   = 'vibestar-v55';
-const APP_VER = 'v55';
+const CACHE   = 'vibestar-v56';
+const APP_VER = 'v56';
 
 // Own-origin app files — versioned to match what index.html requests.
 // addAll is atomic so a missed own-origin file fails the install fast.
@@ -9,6 +9,9 @@ const LOCAL = [
   './manifest.json',
   './callback.html',
   './og.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
   `./ios-frame.jsx?v=${APP_VER}`,
   `./data.jsx?v=${APP_VER}`,
   `./supabase.jsx?v=${APP_VER}`,

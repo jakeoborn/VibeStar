@@ -354,10 +354,20 @@ function ArtistScreen({ state, setState }) {
   const a = ARTISTS.find(ar => ar.id === state.artist);
   if (!a) return null;
   const stage = STAGES.find(s => s.id === a.stage);
+
+  // B2B detection — "A b2b B" → split, show per-artist info tabs
+  const b2bParts  = a.name.split(/ b2b /i).map(s => s.trim());
+  const isB2B     = b2bParts.length > 1;
+  const [activeB2B, setActiveB2B] = React.useState(0);
+  React.useEffect(() => { setActiveB2B(0); }, [a.id]);
+  const activeName = isB2B ? b2bParts[activeB2B] : a.name;
+
   const artistImages = React.useMemo(() => {
     try { return JSON.parse(localStorage.getItem("artist_images_v1") || "{}"); } catch { return {}; }
   }, []);
-  const heroPhoto = artistImages[a.name.toLowerCase()];
+  // On-demand photo: use cached image or fetch from Spotify search
+  const [fetchedPhoto, setFetchedPhoto] = React.useState(null);
+  const heroPhoto = artistImages[activeName.toLowerCase()] || fetchedPhoto;
   const saved = state.saved.includes(a.id);
   const [note, setNote] = React.useState(() => _getArtistNotes()[a.id] || "");
   const handleNote = (text) => {
@@ -376,11 +386,38 @@ function ArtistScreen({ state, setState }) {
   const [tmEvents,  setTmEvents]  = React.useState(undefined);
   React.useEffect(() => {
     setYtPlaying(false);
-    fetchLastfm(a.name).then(setLfm);
-    fetchSetlists(a.name).then(setSetlists);
-    fetchYouTubeSet(a.name).then(setYtVideo);
-    fetchTicketmaster(a.name).then(setTmEvents);
-  }, [a.id]);
+    setLfm(undefined); setSetlists(undefined); setYtVideo(undefined); setTmEvents(undefined);
+    fetchLastfm(activeName).then(setLfm);
+    fetchSetlists(activeName).then(setSetlists);
+    fetchYouTubeSet(activeName).then(setYtVideo);
+    fetchTicketmaster(activeName).then(setTmEvents);
+  }, [a.id, activeB2B]);
+
+  // On-demand photo fetch — runs when cached photo is absent
+  React.useEffect(() => {
+    setFetchedPhoto(null);
+    if (artistImages[activeName.toLowerCase()]) return;
+    const token = localStorage.getItem("spotify_token");
+    const expires = localStorage.getItem("spotify_expires");
+    if (!token || !expires || Date.now() >= parseInt(expires)) return;
+    const ctrl = new AbortController();
+    fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(activeName)}&type=artist&limit=3`, {
+      headers: { Authorization: "Bearer " + token }, signal: ctrl.signal,
+    }).then(r => r.ok ? r.json() : null).then(d => {
+      const ln = activeName.toLowerCase();
+      const items = d?.artists?.items || [];
+      const match = items.find(x => x.name.toLowerCase() === ln) || items.find(x => ln.includes(x.name.toLowerCase())) || items[0];
+      const img = match?.images?.[0]?.url;
+      if (!img) return;
+      setFetchedPhoto(img);
+      try {
+        const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+        imgs[ln] = img;
+        localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+      } catch {}
+    }).catch(() => {});
+    return () => ctrl.abort();
+  }, [a.id, activeB2B]);
 
   // ── Preview player state ──────────────────────────────────
   const audioRef = React.useRef(null);
@@ -417,7 +454,7 @@ function ArtistScreen({ state, setState }) {
     // First tap — fetch the preview URL
     if (!preview) {
       setPreview("loading");
-      const result = await fetchPreviewUrl(a.name);
+      const result = await fetchPreviewUrl(activeName);
       if (!result) { setPreview("none"); return; }
       setPreview(result);
       audioRef.current = new Audio(result.url);
@@ -474,9 +511,27 @@ function ArtistScreen({ state, setState }) {
           <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, opacity: 0.85, marginBottom: 6 }}>
             {a.genre.toUpperCase()}
           </div>
-          <div className="serif" style={{ fontSize: 48, lineHeight: 0.9, letterSpacing: -1 }}>{a.name}</div>
+          <div className="serif" style={{ fontSize: isB2B ? 32 : 48, lineHeight: 0.9, letterSpacing: -1 }}>{a.name}</div>
         </div>
       </div>
+
+      {/* B2B artist tabs — one per individual artist */}
+      {isB2B && (
+        <div style={{ display: "flex", background: "var(--paper-2)", borderBottom: "1px solid var(--line)" }}>
+          {b2bParts.map((part, i) => (
+            <button key={i} onClick={() => setActiveB2B(i)} style={{
+              flex: 1, padding: "11px 8px",
+              background: "transparent", border: "none",
+              borderBottom: `2px solid ${activeB2B === i ? stage.color : "transparent"}`,
+              cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+              color: activeB2B === i ? stage.color : "var(--muted)",
+              fontWeight: activeB2B === i ? 700 : 400,
+              transition: "color 0.15s, border-color 0.15s",
+            }}>{part.toUpperCase()}</button>
+          ))}
+        </div>
+      )}
 
       <ScrollBody style={{ padding: "18px 20px 24px" }}>
         {/* Stage & time */}
@@ -590,7 +645,7 @@ function ArtistScreen({ state, setState }) {
 
         {/* ── YouTube live set ─────────────────────────────── */}
         {(() => {
-          const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(a.name + " live set EDC")}`;
+          const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(activeName + " live set EDC")}`;
           return (
             <div style={{ marginBottom: 18 }}>
               <div className="mono" style={{
@@ -680,7 +735,7 @@ function ArtistScreen({ state, setState }) {
                   <div>
                     <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Watch on YouTube</div>
                     <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
-                      {a.name.toUpperCase()} LIVE SET · EDC
+                      {activeName.toUpperCase()} LIVE SET · EDC
                     </div>
                   </div>
                   <div style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 14 }}>↗</div>
