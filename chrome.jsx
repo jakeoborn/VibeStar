@@ -303,15 +303,13 @@ function InstallBanner() {
   );
 }
 
-// ── Push notifications scaffolding ────────────────────────────
-// No backend yet — but the SW push handler is in place, so once a backend
-// (Supabase Edge Fn / Firebase / native app) wires up Web Push, this just
-// needs the subscribe endpoint and we're live.
-//
-// For now we use registration.showNotification directly to schedule
-// foreground reminders for saved sets (works while the tab/PWA is open).
-// Background reminders need either a server with VAPID + push subscription,
-// or the native app — both planned.
+// ── Push notifications ─────────────────────────────────────────
+// SW push handler (sw.js) is already live — a VAPID server send goes
+// straight to the device even when the app is closed. For in-browser
+// scheduling we use real UTC timestamps so reminders fire at the right
+// wall-clock time during the festival, and we persist them to
+// localStorage so they survive page reloads.
+
 function useNotifications() {
   const supported = typeof Notification !== "undefined";
   const [perm, setPerm] = React.useState(supported ? Notification.permission : "unsupported");
@@ -344,43 +342,95 @@ function useNotifications() {
   return { supported, perm, enable, showLocal };
 }
 
-// Schedules in-tab reminders for upcoming saved sets.
-// Uses NOW.time as the festival clock (demo mode); during the real festival
-// this would run off the wall clock with `new Date()`.
-const _SCHEDULED = new Map(); // setId → timeout handle
+// Convert an artist's set start to a real UTC timestamp (respects
+// post-midnight sets: hours < 6 are treated as the following calendar day).
+function _artistStartMs(artist) {
+  const dayConfig = FESTIVAL_CONFIG.dayDates[artist.day];
+  if (!dayConfig) return null;
+  const [h, m] = artist.start.split(":").map(Number);
+  const adjustH = h < 6 ? h + 24 : h;
+  return dayConfig.midnightUtc + adjustH * 3600000 + m * 60000;
+}
+
+const _REMINDERS_KEY = "reminders_v1";
+const _SCHEDULED = new Map(); // artistId → timeout handle
+
+// Schedule 15-min-before reminders for all upcoming saved sets using
+// real wall-clock time. Persists reminder list so a reload can re-register
+// any that haven't fired yet.
 function scheduleReminders(state, showLocal) {
-  // Clear stale handles
   _SCHEDULED.forEach(h => clearTimeout(h));
   _SCHEDULED.clear();
 
-  const nowMin = (typeof toNightMin !== "undefined" ? toNightMin(NOW.time) : 0);
-  const fests = state.saved
-    .map(id => ARTISTS.find(a => a.id === id))
-    .filter(a => a && a.day === NOW.day);
+  const now = Date.now();
+  const pending = [];
 
-  fests.forEach(a => {
-    const startMin = toNightMin(a.start);
-    const minsUntil15 = startMin - 15 - nowMin;
-    if (minsUntil15 <= 0 || minsUntil15 > 180) return; // only schedule if within 3hr
+  state.saved.forEach(id => {
+    const a = ARTISTS.find(x => x.id === id);
+    if (!a) return;
+    const startMs = _artistStartMs(a);
+    if (!startMs) return;
+    const fireMs = startMs - 15 * 60000;
+    const delayMs = fireMs - now;
+    if (delayMs <= 0 || delayMs > 24 * 3600000) return; // upcoming within 24 h only
     const stage = STAGES.find(s => s.id === a.stage);
     const handle = setTimeout(() => {
       showLocal(`${a.name} starts in 15 min`, {
-        body: `${stage.name} · ${a.start}`,
+        body: `${stage?.name || ""} · ${a.start}`,
         tag: `set-${a.id}`,
         data: { url: "/" },
       });
-    }, minsUntil15 * 60 * 1000);
+      _SCHEDULED.delete(a.id);
+    }, delayMs);
     _SCHEDULED.set(a.id, handle);
+    pending.push({ id: a.id, name: a.name, stageName: stage?.name || "", start: a.start, fireMs });
   });
+
+  try { localStorage.setItem(_REMINDERS_KEY, JSON.stringify(pending)); } catch {}
   return _SCHEDULED.size;
+}
+
+// On mount: reload any reminders that were persisted before the page
+// refreshed and haven't fired yet.
+function loadAndReschedule(showLocal) {
+  let count = 0;
+  try {
+    const saved = JSON.parse(localStorage.getItem(_REMINDERS_KEY) || "[]");
+    const now = Date.now();
+    const live = saved.filter(r => r.fireMs > now && r.fireMs - now <= 24 * 3600000);
+    live.forEach(r => {
+      if (_SCHEDULED.has(r.id)) return;
+      const handle = setTimeout(() => {
+        showLocal(`${r.name} starts in 15 min`, {
+          body: `${r.stageName} · ${r.start}`,
+          tag: `set-${r.id}`,
+          data: { url: "/" },
+        });
+        _SCHEDULED.delete(r.id);
+      }, r.fireMs - now);
+      _SCHEDULED.set(r.id, handle);
+      count++;
+    });
+    if (live.length !== saved.length)
+      localStorage.setItem(_REMINDERS_KEY, JSON.stringify(live));
+  } catch {}
+  return count;
 }
 
 function NotificationsCard({ state }) {
   const { supported, perm, enable, showLocal } = useNotifications();
   const [scheduled, setScheduled] = React.useState(0);
-  const [flash, setFlash] = React.useState(null); // 'enabled' | 'tested' | 'scheduled'
+  const [flash, setFlash] = React.useState(null); // 'enabled' | 'tested'
 
-  // When granted, auto-schedule on save list change
+  // On mount: restore reminders that survived a page reload
+  React.useEffect(() => {
+    if (perm === "granted") {
+      const n = loadAndReschedule(showLocal);
+      if (n > 0) setScheduled(n);
+    }
+  }, []);
+
+  // Re-schedule whenever the save list changes
   React.useEffect(() => {
     if (perm === "granted") setScheduled(scheduleReminders(state, showLocal));
   }, [perm, state.saved.join(",")]);
@@ -441,7 +491,9 @@ function NotificationsCard({ state }) {
       </div>
       <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: perm === "denied" ? 8 : 12 }}>
         {perm === "granted"
-          ? `${scheduled} reminder${scheduled === 1 ? "" : "s"} scheduled for tonight. Background pushes ship with the native app.`
+          ? scheduled > 0
+            ? `${scheduled} reminder${scheduled === 1 ? "" : "s"} set · alerts fire even when Plursky is in the background.`
+            : "No sets starting in the next 24 hours — reminders will activate automatically during the festival."
           : perm === "denied"
             ? "Notifications are blocked for this site."
             : "Get a notification 15 minutes before each saved set so you don't miss a thing."}
