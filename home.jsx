@@ -700,6 +700,8 @@ function LiveAcrossStrip({ strip, state, setState }) {
 
 function TonightsPlan({ plan, state, setState }) {
   const tightCount = plan.filter(p => p.tight || p.conflict).length;
+  const conflicts = plan.filter(p => p.conflict).map(p => [p.prev, p.artist]);
+  const [resolverOpen, setResolverOpen] = React.useState(false);
   return (
     <>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
@@ -727,13 +729,38 @@ function TonightsPlan({ plan, state, setState }) {
       ) : (
         <>
           {tightCount > 0 && (
-            <div className="mono" style={{
-              fontSize: 9.5, letterSpacing: 1.3, color: "var(--ember)",
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "6px 10px", marginBottom: 10,
               background: "rgba(232,93,46,0.07)", borderRadius: 8,
               border: "1px solid rgba(232,93,46,0.2)",
             }}>
-              ⚠ {tightCount} TIGHT TRANSITION{tightCount > 1 ? "S" : ""} · CHECK LEAVE-BY TIMES
+              <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "var(--ember)" }}>
+                ⚠ {tightCount} TIGHT TRANSITION{tightCount > 1 ? "S" : ""} · CHECK LEAVE-BY TIMES
+              </span>
+              {conflicts.length > 0 && (
+                <button onClick={() => setResolverOpen(r => !r)} style={{
+                  background: resolverOpen ? "transparent" : "var(--ember)",
+                  color: resolverOpen ? "var(--ember)" : "#fff",
+                  border: resolverOpen ? "1px solid var(--ember)" : "none",
+                  borderRadius: 6, padding: "4px 10px", cursor: "pointer",
+                  fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+                }}>
+                  {resolverOpen ? "CLOSE ×" : "RESOLVE →"}
+                </button>
+              )}
+            </div>
+          )}
+          {resolverOpen && conflicts.length > 0 && (
+            <div style={{ margin: "0 -4px 10px" }}>
+              <ConflictResolver
+                conflicts={conflicts}
+                onKeep={(keepId, dropId) => {
+                  setState({ ...state, saved: state.saved.filter(id => id !== dropId) });
+                  setResolverOpen(false);
+                }}
+                onSplit={() => setResolverOpen(false)}
+              />
             </div>
           )}
           {plan.map(p => <PlanRow key={p.artist.id} entry={p} state={state} setState={setState} />)}

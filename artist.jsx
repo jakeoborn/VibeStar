@@ -10,6 +10,10 @@ function ArtistScreen({ state, setState }) {
   const a = ARTISTS.find(ar => ar.id === state.artist);
   if (!a) return null;
   const stage = STAGES.find(s => s.id === a.stage);
+  const artistImages = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("artist_images_v1") || "{}"); } catch { return {}; }
+  }, []);
+  const heroPhoto = artistImages[a.name.toLowerCase()];
   const saved = state.saved.includes(a.id);
   const [note, setNote] = React.useState(() => _getArtistNotes()[a.id] || "");
   const handleNote = (text) => {
@@ -81,7 +85,10 @@ function ArtistScreen({ state, setState }) {
       {/* Hero */}
       <div style={{
         height: 260, position: "relative",
-        background: a.img,
+        background: heroPhoto ? "var(--ink)" : a.img,
+        backgroundImage: heroPhoto ? `url(${heroPhoto})` : undefined,
+        backgroundSize: "cover",
+        backgroundPosition: "center top",
         color: "#fff",
       }}>
         <div style={{

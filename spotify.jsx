@@ -404,6 +404,16 @@ async function fetchSpotifyTopArtists() {
     });
     const top = Array.from(byId.values()).sort((a, b) => b._score - a._score);
 
+    // Persist artist images keyed by lowercase name for ArtistScreen hero
+    try {
+      const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+      top.forEach(a => {
+        const url = a.images?.[0]?.url;
+        if (url && a.name) imgs[a.name.toLowerCase()] = url;
+      });
+      localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+    } catch {}
+
     // Also pull recently-played + Liked Songs so artists you've played even
     // once (but aren't in your top 50) get matched against the lineup.
     // Charlotte de Witte / one-off plays were invisible before this.
@@ -695,6 +705,36 @@ function SpotifyScreen({ state, setState }) {
             </button>
           </div>
         </div>
+
+        {/* ── Harmony score ──────────────────────────────── */}
+        {connected && spotifyArtists !== null && (
+          <div style={{
+            borderRadius: 16, padding: "14px 16px", marginBottom: 20,
+            background: "var(--paper-2)", border: "1px solid var(--line)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div>
+                <div className="serif" style={{ fontSize: 20, lineHeight: 1, letterSpacing: -0.3 }}>Harmony score</div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", marginTop: 3 }}>
+                  YOUR SPOTIFY VS THE LINEUP
+                </div>
+              </div>
+              <div className="serif" style={{ fontSize: 44, lineHeight: 1, letterSpacing: -1.5 }}>
+                {Math.round(matched.length / ARTISTS.length * 100)}<span style={{ fontSize: 22, opacity: 0.45 }}>%</span>
+              </div>
+            </div>
+            <div style={{ height: 6, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 8 }}>
+              <div style={{
+                width: `${Math.round(matched.length / ARTISTS.length * 100)}%`, height: "100%",
+                background: "linear-gradient(90deg, var(--ember), var(--horizon))",
+                borderRadius: 6, transition: "width 0.8s ease",
+              }} />
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
+              {matched.length} of {ARTISTS.length} EDC artists match your Spotify — scanned across top, recent, liked &amp; playlists.
+            </div>
+          </div>
+        )}
 
         {/* ── Genre DNA chart ────────────────────────────── */}
         {connected && topGenres.length > 0 && (
