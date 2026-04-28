@@ -1,5 +1,91 @@
 // Spotify / Music + Me screens
 
+// ── Apple Music ───────────────────────────────────────────────
+// Requires an Apple Developer account + MusicKit identifier.
+// 1. enroll.developer.apple.com → create a MusicKit key
+// 2. Sign a developer JWT (6-month expiry) — paste below.
+// Guide: https://developer.apple.com/documentation/musickit
+const APPLE_DEV_TOKEN = "";
+
+let _mkReady = false;
+let _mkLoadP  = null;
+function _loadMusicKit() {
+  if (_mkReady) return Promise.resolve();
+  if (_mkLoadP)  return _mkLoadP;
+  _mkLoadP = new Promise((res, rej) => {
+    const s   = document.createElement("script");
+    s.src     = "https://js-cdn.music.apple.com/musickit/v3/musickit.js";
+    s.onload  = () => { _mkReady = true; res(); };
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return _mkLoadP;
+}
+
+async function connectAppleMusic() {
+  if (!APPLE_DEV_TOKEN) return { error: "not_configured" };
+  try {
+    await _loadMusicKit();
+    await MusicKit.configure({
+      developerToken: APPLE_DEV_TOKEN,
+      app: { name: "Plursky", build: "1.0.0" },
+    });
+    const music = MusicKit.getInstance();
+    await music.authorize();
+    const ut = music.musicUserToken;
+    if (!ut) return { error: "No user token — authorization may have been denied." };
+    localStorage.setItem("am_user_token", ut);
+    return { ok: true };
+  } catch (e) {
+    return { error: e?.message || "Authorization failed" };
+  }
+}
+
+function disconnectAppleMusic() {
+  localStorage.removeItem("am_user_token");
+  if (typeof MusicKit !== "undefined") {
+    try { MusicKit.getInstance().unauthorize(); } catch {}
+  }
+}
+
+// Paginate through the user's entire Apple Music library and return
+// a flat array of {name} objects (one per unique artist).
+async function fetchAppleMusicArtists() {
+  const ut  = localStorage.getItem("am_user_token");
+  if (!ut || !APPLE_DEV_TOKEN) return null;
+  const headers = {
+    Authorization:    `Bearer ${APPLE_DEV_TOKEN}`,
+    "Music-User-Token": ut,
+  };
+  const seen    = new Set();
+  const artists = [];
+  let offset = 0;
+  try {
+    while (true) {
+      const res = await fetch(
+        `https://api.music.apple.com/v1/me/library/artists?limit=100&offset=${offset}`,
+        { headers }
+      );
+      if (!res.ok) {
+        if (res.status === 401) localStorage.removeItem("am_user_token");
+        break;
+      }
+      const json  = await res.json();
+      const items = json.data || [];
+      items.forEach(a => {
+        const name = a.attributes?.name;
+        if (name && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase());
+          artists.push({ name });
+        }
+      });
+      if (!json.next || items.length < 100) break;
+      offset += 100;
+    }
+    return artists;
+  } catch { return []; }
+}
+
 const SPOTIFY_CLIENT_ID = "2219c68606c54629a8799f467a996a81";
 const SPOTIFY_REDIRECT  = "https://plursky.com/callback";
 const SPOTIFY_SCOPES    = "user-top-read user-read-recently-played user-library-read user-read-private user-read-email playlist-read-private playlist-modify-public playlist-modify-private";
@@ -433,49 +519,63 @@ async function fetchSpotifyTopArtists() {
         });
       } catch {}
     };
+    // Pull recently-played (max 50) + first 3 pages of liked songs (150 tracks)
     await Promise.all([
       pull("https://api.spotify.com/v1/me/player/recently-played?limit=50", "recent", 60),
-      pull("https://api.spotify.com/v1/me/tracks?limit=50", "saved", 40),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=0",   "saved", 40),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=50",  "saved", 35),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=100", "saved", 30),
     ]);
 
-    // Walk OWNED playlists — any track-level artist who's playing EDC counts
-    // as a match too (e.g. one Charlotte de Witte track buried in a playlist
-    // would have been invisible without this).
+    // Walk ALL playlists (owned + followed) — paginate both the playlist list
+    // and each playlist's tracks so a 1000-song playlist is fully scanned.
     try {
-      const profile = await ensureSpotifyProfile();
-      const plRes = await fetch("https://api.spotify.com/v1/me/playlists?limit=50", {
-        headers: { Authorization: "Bearer " + token }
-      });
-      if (plRes.ok && profile) {
+      // Fetch every playlist the user has (paginate the list — max 50 per page)
+      const allPlaylists = [];
+      let plOffset = 0;
+      while (true) {
+        const plRes = await fetch(
+          `https://api.spotify.com/v1/me/playlists?limit=50&offset=${plOffset}`,
+          { headers: { Authorization: "Bearer " + token } }
+        );
+        if (!plRes.ok) break;
         const plData = await plRes.json();
-        const owned = (plData.items || [])
-          .filter(p => p?.owner?.id === profile.id);
-        const fetchPl = async (pl) => {
-          try {
-            let offset = 0;
-            while (true) {
-              const tr = await fetch(
-                `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&offset=${offset}&fields=items(track(artists(id,name))),next`,
-                { headers: { Authorization: "Bearer " + token } }
-              );
-              if (!tr.ok) break;
-              const td = await tr.json();
-              (td.items || []).forEach(item => {
-                (item.track?.artists || []).forEach(a => {
-                  if (!a?.id || seen.has(a.id)) return;
-                  seen.add(a.id);
-                  extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
-                });
+        const items = (plData.items || []).filter(p => p?.id);
+        allPlaylists.push(...items);
+        if (items.length < 50 || !plData.next) break;
+        plOffset += 50;
+      }
+
+      // Per-playlist: paginate every track page (100 tracks at a time)
+      // No `fields=` param — avoids comma encoding bugs that break `next`
+      const fetchPl = async (pl) => {
+        try {
+          let offset = 0;
+          while (true) {
+            const tr = await fetch(
+              `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&offset=${offset}`,
+              { headers: { Authorization: "Bearer " + token } }
+            );
+            if (!tr.ok) break;
+            const td = await tr.json();
+            const items = td.items || [];
+            items.forEach(item => {
+              (item.track?.artists || []).forEach(a => {
+                if (!a?.id || seen.has(a.id)) return;
+                seen.add(a.id);
+                extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
               });
-              if (!td.next || (td.items || []).length === 0) break;
-              offset += 100;
-            }
-          } catch {}
-        };
-        // 6-wide concurrency keeps us under Spotify's rate limit
-        for (let i = 0; i < owned.length; i += 6) {
-          await Promise.all(owned.slice(i, i + 6).map(fetchPl));
-        }
+            });
+            // Stop when we received fewer than a full page, or Spotify says no more
+            if (items.length < 100 || !td.next) break;
+            offset += 100;
+          }
+        } catch {}
+      };
+
+      // 6-wide concurrency keeps us under Spotify's rate limit
+      for (let i = 0; i < allPlaylists.length; i += 6) {
+        await Promise.all(allPlaylists.slice(i, i + 6).map(fetchPl));
       }
     } catch {}
 
@@ -608,6 +708,12 @@ function SpotifyScreen({ state, setState }) {
   const [tokenBad,  setTokenBad]  = React.useState(false);
   const [saveFlash, setSaveFlash] = React.useState(false);
 
+  // Apple Music state
+  const [amConnected, setAmConnected] = React.useState(() => !!localStorage.getItem("am_user_token"));
+  const [amArtists,   setAmArtists]   = React.useState(null);
+  const [amLoading,   setAmLoading]   = React.useState(false);
+  const [amError,     setAmError]     = React.useState("");
+
   React.useEffect(() => {
     if (!connected) { setSpotifyArtists([]); return; }
     fetchSpotifyTopArtists().then(artists => {
@@ -615,6 +721,31 @@ function SpotifyScreen({ state, setState }) {
       else setSpotifyArtists(artists);
     });
   }, [connected]);
+
+  React.useEffect(() => {
+    if (!amConnected) { setAmArtists(null); return; }
+    fetchAppleMusicArtists().then(artists => {
+      if (artists === null) { setAmConnected(false); }
+      else setAmArtists(artists);
+    });
+  }, [amConnected]);
+
+  const handleAmConnect = async () => {
+    if (!APPLE_DEV_TOKEN) return;
+    setAmLoading(true); setAmError("");
+    const result = await connectAppleMusic();
+    setAmLoading(false);
+    if (result.ok) { setAmConnected(true); }
+    else setAmError(result.error || "Connection failed");
+  };
+
+  const handleAmDisconnect = () => {
+    disconnectAppleMusic();
+    setAmConnected(false);
+    setAmArtists(null);
+  };
+
+  const amMatched = amArtists ? matchLineupArtists(amArtists) : [];
 
   const matched  = matchLineupArtists(spotifyArtists);
   const { topGenres, stageRecs } = spotifyArtists?.length
@@ -704,6 +835,83 @@ function SpotifyScreen({ state, setState }) {
               {connected ? "DISCONNECT" : "CONNECT ACCOUNT"}
             </button>
           </div>
+        </div>
+
+        {/* ── Apple Music card ──────────────────────────── */}
+        <div style={{
+          borderRadius: 20, padding: 20,
+          background: amConnected ? "#3a1a1a" : "var(--paper-2)",
+          border: `1px solid ${amConnected ? "rgba(252,60,60,0.25)" : "var(--line)"}`,
+          color: amConnected ? "var(--paper)" : "var(--ink)",
+          marginBottom: 14, position: "relative", overflow: "hidden",
+        }}>
+          {/* Apple Music logo */}
+          <svg width="36" height="36" viewBox="0 0 24 24" style={{ position: "absolute", top: 16, right: 16 }}>
+            <rect width="24" height="24" rx="6" fill="#fc3c44"/>
+            <path d="M16.5 7.5 L10 9 L10 15" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+            <circle cx="8.5" cy="15" r="1.5" fill="#fff"/>
+            <circle cx="15" cy="13" r="1.5" fill="#fff"/>
+          </svg>
+
+          <div className="mono" style={{ fontSize: 10, letterSpacing: 1.6, opacity: amConnected ? 0.65 : 0.5, marginBottom: 8 }}>
+            {amConnected ? "APPLE MUSIC CONNECTED" : "CONNECT APPLE MUSIC"}
+          </div>
+          <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 8, maxWidth: "78%" }}>
+            {amConnected
+              ? <>{amMatched.length} EDC <span style={{ fontStyle: "italic" }}>matches</span> found</>
+              : <>Don't use Spotify? <span style={{ fontStyle: "italic" }}>Link Apple Music</span></>}
+          </div>
+
+          {!APPLE_DEV_TOKEN && (
+            <div style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
+              Add your Apple MusicKit developer token to <span className="mono" style={{ fontSize: 10 }}>spotify.jsx</span> to enable.
+            </div>
+          )}
+
+          {APPLE_DEV_TOKEN && !amConnected && (
+            <>
+              <div style={{ fontSize: 12, opacity: 0.65, lineHeight: 1.5, marginBottom: 14, maxWidth: "88%" }}>
+                Scan your Apple Music library to find which EDC artists you already know and love.
+              </div>
+              {amError && (
+                <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8 }}>{amError}</div>
+              )}
+              <button onClick={handleAmConnect} disabled={amLoading} style={{
+                background: "#fc3c44", color: "#fff", border: "none",
+                borderRadius: 999, padding: "10px 18px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+              }}>
+                {amLoading ? "CONNECTING…" : "CONNECT APPLE MUSIC"}
+              </button>
+            </>
+          )}
+
+          {APPLE_DEV_TOKEN && amConnected && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {amMatched.length > 0 && (
+                <button onClick={() => {
+                  const newSaved = [...new Set([...state.saved, ...amMatched.map(a => a.id)])];
+                  setState({ ...state, saved: newSaved });
+                }} style={{
+                  background: "#fc3c44", color: "#fff", border: "none",
+                  borderRadius: 999, padding: "10px 16px", cursor: "pointer",
+                  fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+                }}>
+                  SAVE ALL {amMatched.length} ARTISTS
+                </button>
+              )}
+              <button onClick={handleAmDisconnect} style={{
+                background: "rgba(247,237,224,0.12)", color: "var(--paper)",
+                border: "1px solid rgba(247,237,224,0.28)",
+                borderRadius: 999, padding: "10px 16px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2,
+              }}>DISCONNECT</button>
+            </div>
+          )}
+
+          {amConnected && amArtists === null && (
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, opacity: 0.6 }}>LOADING LIBRARY…</div>
+          )}
         </div>
 
         {/* ── Harmony score ──────────────────────────────── */}
@@ -1212,6 +1420,9 @@ function MeScreen({ state, setState }) {
             }}>LOCATE</button>
           </div>
         ))}
+
+        {/* Cloud account / sync */}
+        <AccountCard state={state} setState={setState} />
 
         {/* Reminders / push notifications */}
         <NotificationsCard state={state} />

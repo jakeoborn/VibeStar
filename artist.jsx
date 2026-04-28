@@ -41,6 +41,142 @@ function _slIsEdc(sl) {
     (v.includes("las vegas") && c.includes("las vegas"));
 }
 
+// ── YouTube ────────────────────────────────────────────────────
+// Free API key (quota: 10 000 units/day) at https://console.cloud.google.com
+// Enable "YouTube Data API v3", create an API key, paste below.
+const YOUTUBE_KEY = "";
+const _YT_TTL = 24 * 3600000;
+
+async function fetchYouTubeSet(artistName) {
+  if (!YOUTUBE_KEY) return null;
+  const cacheKey = `yt_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _YT_TTL) return c.data;
+  } catch {}
+  try {
+    const q = encodeURIComponent(`${artistName} live set full`);
+    const res = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&q=${q}&key=${YOUTUBE_KEY}`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const items = (json.items || []).filter(i => i.id?.videoId);
+    if (!items.length) return null;
+    // Prefer results that mention EDC, festival, or live in the title
+    const scored = items.map(i => {
+      const t = (i.snippet?.title || "").toLowerCase();
+      return { i, score: (t.includes("edc") ? 3 : 0) + (t.includes("festival") ? 2 : 0) + (t.includes("live") ? 1 : 0) };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0].i;
+    const data = {
+      videoId: best.id.videoId,
+      title: best.snippet?.title || "",
+      thumbnail: best.snippet?.thumbnails?.high?.url || best.snippet?.thumbnails?.default?.url || "",
+    };
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
+    return data;
+  } catch { return null; }
+}
+
+// ── Last.fm ────────────────────────────────────────────────────
+// Free API key at https://www.last.fm/api/account/create
+const LASTFM_KEY = "";
+const _LFM_TTL = 24 * 3600000;
+
+async function fetchLastfm(artistName) {
+  if (!LASTFM_KEY) return null;
+  const cacheKey = `lfm_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _LFM_TTL) return c.data;
+  } catch {}
+  try {
+    const base = `https://ws.audioscrobbler.com/2.0/?format=json&api_key=${LASTFM_KEY}`;
+    const enc  = encodeURIComponent(artistName);
+    const [infoRes, simRes] = await Promise.all([
+      fetch(`${base}&method=artist.getinfo&artist=${enc}`),
+      fetch(`${base}&method=artist.getsimilar&artist=${enc}&limit=5`),
+    ]);
+    const infoJson = infoRes.ok ? await infoRes.json() : null;
+    const simJson  = simRes.ok  ? await simRes.json()  : null;
+
+    const info    = infoJson?.artist;
+    const similar = (simJson?.similarartists?.artist || []).slice(0, 5);
+
+    // Listeners / play count
+    const listeners  = parseInt(info?.stats?.listeners  || "0", 10);
+    const playcount  = parseInt(info?.stats?.playcount  || "0", 10);
+
+    // Top tags (skip generic ones)
+    const SKIP = new Set(["seen live","male vocalists","all","pop"]);
+    const tags = (info?.tags?.tag || [])
+      .map(t => t.name)
+      .filter(t => !SKIP.has(t.toLowerCase()))
+      .slice(0, 5);
+
+    // Bio summary — strip Last.fm attribution footer
+    const rawBio = info?.bio?.summary || "";
+    const bio = rawBio.replace(/<a[^>]*>.*?<\/a>/gi, "").replace(/<[^>]+>/g, "").trim().split("\n")[0].slice(0, 280);
+
+    const data = { listeners, playcount, tags, bio, similar, url: info?.url || null };
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
+    return data;
+  } catch { return null; }
+}
+
+function _fmtCount(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${Math.round(n / 1_000)}K`;
+  return String(n);
+}
+
+// ── Ticketmaster ───────────────────────────────────────────────
+// Free key (5 000 calls/day) at https://developer.ticketmaster.com
+const TICKETMASTER_KEY = "";
+const _TM_TTL = 6 * 3600000; // cache 6 h (events change more often)
+
+async function fetchTicketmaster(artistName) {
+  if (!TICKETMASTER_KEY) return null;
+  const cacheKey = `tm_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _TM_TTL) return c.data;
+  } catch {}
+  try {
+    const res = await fetch(
+      `https://app.ticketmaster.com/discovery/v2/events.json` +
+      `?keyword=${encodeURIComponent(artistName)}&classificationName=music` +
+      `&sort=date,asc&size=6&apikey=${TICKETMASTER_KEY}`
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    const events = (json._embedded?.events || []).map(ev => {
+      const venue = ev._embedded?.venues?.[0] || {};
+      const city  = venue.city?.name || "";
+      const state = venue.state?.stateCode || venue.country?.countryCode || "";
+      return {
+        name:     ev.name,
+        date:     ev.dates?.start?.localDate || "",
+        time:     ev.dates?.start?.localTime || "",
+        venueName: venue.name || "",
+        location: [city, state].filter(Boolean).join(", "),
+        url:      ev.url || null,
+      };
+    }).filter(ev => ev.date); // drop events with no date
+    const data = events.slice(0, 5);
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
+    return data;
+  } catch { return []; }
+}
+
+function _tmDate(d) {
+  // "2026-08-14" → "Aug 14, 2026"
+  const [y, m, day] = d.split("-");
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]} ${+day}, ${y}`;
+}
+
 const ARTIST_NOTES_KEY = "artist_notes_v1";
 function _getArtistNotes() {
   try { return JSON.parse(localStorage.getItem(ARTIST_NOTES_KEY) || "{}"); }
@@ -64,10 +200,20 @@ function ArtistScreen({ state, setState }) {
     try { localStorage.setItem(ARTIST_NOTES_KEY, JSON.stringify(notes)); } catch {}
   };
 
-  // ── Setlist.fm state ─────────────────────────────────────
-  const [setlists, setSetlists] = React.useState(undefined); // undefined=loading, null=no key, []=empty
+  // ── Last.fm + Setlist.fm + YouTube state ────────────────
+  const [lfm,      setLfm]      = React.useState(undefined); // undefined=loading, null=no key/err
+  const [setlists, setSetlists] = React.useState(undefined);
   const [slExpanded, setSlExpanded] = React.useState({});
-  React.useEffect(() => { fetchSetlists(a.name).then(setSetlists); }, [a.id]);
+  const [ytVideo,   setYtVideo]   = React.useState(undefined);
+  const [ytPlaying, setYtPlaying] = React.useState(false);
+  const [tmEvents,  setTmEvents]  = React.useState(undefined);
+  React.useEffect(() => {
+    setYtPlaying(false);
+    fetchLastfm(a.name).then(setLfm);
+    fetchSetlists(a.name).then(setSetlists);
+    fetchYouTubeSet(a.name).then(setYtVideo);
+    fetchTicketmaster(a.name).then(setTmEvents);
+  }, [a.id]);
 
   // ── Preview player state ──────────────────────────────────
   const audioRef = React.useRef(null);
@@ -192,6 +338,287 @@ function ArtistScreen({ state, setState }) {
         <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 18, textWrap: "pretty" }}>
           {a.bio}
         </div>
+
+        {/* ── Last.fm stats ─────────────────────────────────── */}
+        {LASTFM_KEY && lfm && (
+          <div style={{ marginBottom: 18 }}>
+            {/* Listener + play count row */}
+            {(lfm.listeners > 0 || lfm.playcount > 0) && (
+              <div style={{
+                display: "flex", gap: 10, marginBottom: 12,
+              }}>
+                {lfm.listeners > 0 && (
+                  <div style={{
+                    flex: 1, background: "var(--paper-2)", border: "1px solid var(--line)",
+                    borderRadius: 12, padding: "10px 14px",
+                  }}>
+                    <div className="serif" style={{ fontSize: 22, lineHeight: 1, letterSpacing: -0.5 }}>
+                      {_fmtCount(lfm.listeners)}
+                    </div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: 1.3, color: "var(--muted)", marginTop: 4 }}>
+                      MONTHLY LISTENERS
+                    </div>
+                  </div>
+                )}
+                {lfm.playcount > 0 && (
+                  <div style={{
+                    flex: 1, background: "var(--paper-2)", border: "1px solid var(--line)",
+                    borderRadius: 12, padding: "10px 14px",
+                  }}>
+                    <div className="serif" style={{ fontSize: 22, lineHeight: 1, letterSpacing: -0.5 }}>
+                      {_fmtCount(lfm.playcount)}
+                    </div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: 1.3, color: "var(--muted)", marginTop: 4 }}>
+                      TOTAL SCROBBLES
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Genre tags */}
+            {lfm.tags.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                {lfm.tags.map(tag => (
+                  <span key={tag} className="mono" style={{
+                    fontSize: 9, letterSpacing: 1.1,
+                    padding: "4px 10px",
+                    background: "var(--paper-2)",
+                    border: "1px solid var(--line-2)",
+                    borderRadius: 999,
+                    color: "var(--muted)",
+                  }}>{tag.toUpperCase()}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Bio supplement — only show if not a stub */}
+            {lfm.bio && lfm.bio.length > 40 && (
+              <div style={{
+                fontSize: 13, lineHeight: 1.55, color: "var(--muted)",
+                marginBottom: 12,
+              }}>
+                {lfm.bio}
+                {lfm.url && (
+                  <a href={lfm.url} target="_blank" rel="noopener noreferrer" style={{
+                    fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.1,
+                    color: "var(--ember)", textDecoration: "none", marginLeft: 8,
+                  }}>LAST.FM ↗</a>
+                )}
+              </div>
+            )}
+
+            {/* Fans also like */}
+            {lfm.similar.length > 0 && (() => {
+              const inLineup = lfm.similar.filter(s =>
+                ARTISTS.some(ar => ar.name.toLowerCase() === s.name.toLowerCase())
+              );
+              const notInLineup = lfm.similar.filter(s =>
+                !ARTISTS.some(ar => ar.name.toLowerCase() === s.name.toLowerCase())
+              );
+              const displayed = [...inLineup, ...notInLineup].slice(0, 5);
+              return (
+                <div>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 8 }}>
+                    FANS ALSO LIKE
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {displayed.map(s => {
+                      const lineupArtist = ARTISTS.find(ar => ar.name.toLowerCase() === s.name.toLowerCase());
+                      return (
+                        <button
+                          key={s.name}
+                          onClick={() => lineupArtist ? setState(st => ({ ...st, artist: lineupArtist.id })) : undefined}
+                          style={{
+                            background: lineupArtist ? "var(--ember)" : "var(--paper-2)",
+                            border: lineupArtist ? "none" : "1px solid var(--line-2)",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            fontSize: 12,
+                            color: lineupArtist ? "#fff" : "var(--ink)",
+                            cursor: lineupArtist ? "pointer" : "default",
+                            fontFamily: "Geist, sans-serif",
+                            transition: "opacity 0.15s",
+                          }}
+                        >
+                          {lineupArtist && <span style={{ marginRight: 4, fontSize: 10 }}>★</span>}
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {inLineup.length > 0 && (
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--muted)", marginTop: 6 }}>
+                      ★ ALSO AT EDC LAS VEGAS
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── YouTube live set ─────────────────────────────── */}
+        {(() => {
+          const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(a.name + " live set EDC")}`;
+          return (
+            <div style={{ marginBottom: 18 }}>
+              <div className="mono" style={{
+                fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 10,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                LIVE SET
+                <a href={ytSearchUrl} target="_blank" rel="noopener noreferrer" style={{
+                  fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.1,
+                  color: "var(--muted)", textDecoration: "none",
+                }}>SEARCH YOUTUBE ↗</a>
+              </div>
+
+              {/* Loading */}
+              {YOUTUBE_KEY && ytVideo === undefined && (
+                <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Loading…</div>
+              )}
+
+              {/* Thumbnail → tap to embed */}
+              {YOUTUBE_KEY && ytVideo && !ytPlaying && (
+                <div onClick={() => setYtPlaying(true)} style={{
+                  position: "relative", borderRadius: 14, overflow: "hidden",
+                  aspectRatio: "16/9", cursor: "pointer",
+                  background: "var(--ink)",
+                }}>
+                  {ytVideo.thumbnail && (
+                    <img src={ytVideo.thumbnail} alt={ytVideo.title} style={{
+                      width: "100%", height: "100%", objectFit: "cover", display: "block",
+                    }} />
+                  )}
+                  {/* Dark overlay */}
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    background: "rgba(0,0,0,0.3)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <div style={{
+                      width: 58, height: 58, borderRadius: 58,
+                      background: "rgba(255,0,0,0.9)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.45)",
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+                        <path d="M8 5 L19 12 L8 19 Z"/>
+                      </svg>
+                    </div>
+                  </div>
+                  {/* Title bar */}
+                  <div style={{
+                    position: "absolute", bottom: 0, left: 0, right: 0,
+                    background: "linear-gradient(0deg, rgba(0,0,0,0.75) 0%, transparent 100%)",
+                    padding: "28px 12px 10px",
+                  }}>
+                    <div style={{ fontSize: 12, color: "#fff", lineHeight: 1.3 }}>{ytVideo.title}</div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "rgba(255,255,255,0.6)", marginTop: 3 }}>
+                      TAP TO PLAY
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Inline iframe after tap */}
+              {YOUTUBE_KEY && ytVideo && ytPlaying && (
+                <div style={{ borderRadius: 14, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${ytVideo.videoId}?autoplay=1`}
+                    style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              )}
+
+              {/* No API key — just show the search link as a button */}
+              {!YOUTUBE_KEY && (
+                <a href={ytSearchUrl} target="_blank" rel="noopener noreferrer" style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: "var(--paper-2)", border: "1px solid var(--line)",
+                  borderRadius: 12, padding: "12px 14px", textDecoration: "none",
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 36, background: "#ff0000",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M8 5 L19 12 L8 19 Z"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Watch on YouTube</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                      {a.name.toUpperCase()} LIVE SET · EDC
+                    </div>
+                  </div>
+                  <div style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 14 }}>↗</div>
+                </a>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── Upcoming shows (Ticketmaster) ────────────────── */}
+        {TICKETMASTER_KEY && (
+          <div style={{ marginBottom: 18 }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              UPCOMING SHOWS
+              {tmEvents === undefined && <span style={{ fontSize: 8, opacity: 0.7 }}>LOADING…</span>}
+            </div>
+
+            {tmEvents !== undefined && tmEvents !== null && tmEvents.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>No upcoming shows found.</div>
+            )}
+
+            {Array.isArray(tmEvents) && tmEvents.map((ev, idx) => (
+              <div key={idx} style={{
+                background: "var(--paper-2)", border: "1px solid var(--line)",
+                borderRadius: 12, padding: "11px 14px", marginBottom: 8,
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                {/* Date block */}
+                <div style={{
+                  flexShrink: 0, textAlign: "center",
+                  background: "var(--ember)", borderRadius: 8,
+                  padding: "6px 10px", minWidth: 42,
+                }}>
+                  <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "rgba(255,255,255,0.75)" }}>
+                    {ev.date ? _tmDate(ev.date).split(" ")[0].toUpperCase() : ""}
+                  </div>
+                  <div className="serif" style={{ fontSize: 20, lineHeight: 1, color: "#fff", letterSpacing: -0.5 }}>
+                    {ev.date ? _tmDate(ev.date).split(" ")[1].replace(",","") : "—"}
+                  </div>
+                  <div className="mono" style={{ fontSize: 8, letterSpacing: 0.8, color: "rgba(255,255,255,0.7)" }}>
+                    {ev.date ? ev.date.split("-")[0] : ""}
+                  </div>
+                </div>
+
+                {/* Venue info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {ev.venueName}
+                  </div>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: 0.8, color: "var(--muted)", marginTop: 3 }}>
+                    {ev.location}{ev.time ? ` · ${ev.time.slice(0,5)}` : ""}
+                  </div>
+                </div>
+
+                {/* Ticket link */}
+                {ev.url && (
+                  <a href={ev.url} target="_blank" rel="noopener noreferrer" style={{
+                    flexShrink: 0,
+                    fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.1,
+                    color: "var(--ember)", textDecoration: "none",
+                    border: "1px solid var(--ember)", borderRadius: 999,
+                    padding: "5px 9px", whiteSpace: "nowrap",
+                  }}>TICKETS ↗</a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Setlist history ───────────────────────────────── */}
         {SETLISTFM_KEY && (
