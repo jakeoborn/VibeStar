@@ -284,13 +284,30 @@ function useTick(intervalMs) {
   }, [intervalMs]);
 }
 
-// 1 map unit ≈ 1.8 min walk; matches map.jsx
+// Walk-time lookup keyed by alphabetically-sorted stage-id pair.
+// Midpoints of the lo/hi bands from map.jsx WALK_PAIRS. Fallback for
+// any unlisted pair: ~0.4 min per SVG unit.
+const _WALK_MIN = {
+  "basspod,bionic":  13, "basspod,circuit": 8,  "basspod,cosmic":  11,
+  "basspod,kinetic": 8,  "basspod,neon":    12, "basspod,quantum": 12,
+  "basspod,stereo":  10, "basspod,waste":   8,  "bionic,circuit":  18,
+  "bionic,cosmic":   8,  "bionic,kinetic":  9,  "bionic,neon":     15,
+  "bionic,quantum":  12, "bionic,stereo":   6,  "bionic,waste":    9,
+  "circuit,cosmic":  15, "circuit,kinetic": 20, "circuit,neon":    7,
+  "circuit,quantum": 11, "circuit,stereo":  14, "circuit,waste":   12,
+  "cosmic,kinetic":  13, "cosmic,neon":     16, "cosmic,quantum":  16,
+  "cosmic,stereo":   8,  "cosmic,waste":    9,  "kinetic,neon":    12,
+  "kinetic,quantum": 7,  "kinetic,stereo":  10, "kinetic,waste":   8,
+  "neon,quantum":    9,  "neon,stereo":     12, "neon,waste":      15,
+  "quantum,stereo":  9,  "quantum,waste":   16, "stereo,waste":    9,
+};
 function stageWalkMinutes(fromId, toId) {
   if (fromId === toId) return 0;
+  const key = fromId < toId ? `${fromId},${toId}` : `${toId},${fromId}`;
+  if (_WALK_MIN[key] != null) return _WALK_MIN[key];
   const a = STAGES.find(s => s.id === fromId), b = STAGES.find(s => s.id === toId);
   if (!a || !b) return 0;
-  const d = Math.hypot(a.x - b.x, a.y - b.y);
-  return Math.max(2, Math.round(d * 1.8));
+  return Math.max(2, Math.round(Math.hypot(a.x - b.x, a.y - b.y) * 0.4));
 }
 
 // What's playing at every stage right now (uses current NOW.time)
