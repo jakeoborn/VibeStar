@@ -1023,6 +1023,7 @@ function MapScreen({ state, setState }) {
   const [chatFriend, setChatFriend] = React.useState(null);
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
+  const [showHeat,   setShowHeat]   = React.useState(false);
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
   const [myStatusStage, setMyStatusStage] = React.useState(() => getMyStatus()?.stage || null);
@@ -1235,6 +1236,14 @@ function MapScreen({ state, setState }) {
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
             cursor: "pointer",
           }}>LABELS</button>
+          <button onClick={() => setShowHeat(s => !s)} style={{
+            background: showHeat ? "var(--ember)" : "var(--paper)",
+            color: showHeat ? "#fff" : "var(--muted)",
+            border: showHeat ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, padding: "3px 8px",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+            cursor: "pointer",
+          }}>CROWD</button>
           <button onClick={() => {
             if (compass) { setCompass(false); setCompassStatus("off"); }
             else enableCompass();
@@ -1383,7 +1392,7 @@ function MapScreen({ state, setState }) {
         }}>🚗</button>
         <TopDownMap
           avatar={avatar} heading={heading} friends={friends} stages={STAGES}
-          saved={state.saved} showLabels={showLabels}
+          saved={state.saved} showLabels={showLabels} showHeat={showHeat}
           compass={compass && compassStatus === "live"}
           compassHeading={compassHeading}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
@@ -1678,8 +1687,34 @@ function StageIcon({ id, cx, cy, r, on, color }) {
   </g>);
 }
 
+// ---- CROWD HEATMAP ----
+// Estimated crowd density 0–1 at a stage for a given nowMin.
+// Tiers: headliner=3, prime=2, opener=1. Crowd fades out over 20 min after a set ends.
+function _crowdDensity(stageId, nowMin) {
+  const playing = ARTISTS.find(a =>
+    a.stage === stageId &&
+    toNightMin(a.start) <= nowMin &&
+    toNightMin(a.end)   >  nowMin
+  );
+  if (playing) return 0.25 + (playing.tier / 3) * 0.75;
+
+  // Find the most recently ended set at this stage (within 20 min)
+  let recent = null;
+  ARTISTS.forEach(a => {
+    if (a.stage !== stageId) return;
+    const endMin = toNightMin(a.end);
+    if (endMin > nowMin || endMin < nowMin - 20) return;
+    if (!recent || endMin > toNightMin(recent.end)) recent = a;
+  });
+  if (recent) {
+    const fade = 1 - (nowMin - toNightMin(recent.end)) / 20;
+    return (0.25 + (recent.tier / 3) * 0.75) * fade * 0.55;
+  }
+  return 0.04; // ambient
+}
+
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, showHeat = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], onPickStage, onClick }) {
   // Compass mode: rotate the entire map by -heading so the user's facing
   // direction is always "up" on screen. Readable text labels counter-rotate
   // back to upright so they stay legible at any heading.
@@ -1782,6 +1817,35 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
 
         {/* Infield warm wash */}
         <ellipse cx="50" cy="50" rx="38" ry="30" fill="url(#infieldGlow)"/>
+
+        {/* Crowd heatmap — estimated density per stage based on lineup tiers.
+            Gaussian-blurred circles shift amber→orange→red with crowd level. */}
+        {showHeat && (() => {
+          const nowMin = toNightMin(NOW.time);
+          return (
+            <g>
+              <defs>
+                <filter id="crowdBlur" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="4.5"/>
+                </filter>
+              </defs>
+              <g filter="url(#crowdBlur)">
+                {stages.map(s => {
+                  const d = _crowdDensity(s.id, nowMin);
+                  if (d < 0.06) return null;
+                  const r   = 5 + d * 11;
+                  const col = d > 0.72 ? "#ef4444"
+                            : d > 0.44 ? "#f97316"
+                            : "#fbbf24";
+                  return (
+                    <circle key={s.id} cx={s.x} cy={s.y} r={r}
+                      fill={col} opacity={0.28 + d * 0.38}/>
+                  );
+                })}
+              </g>
+            </g>
+          );
+        })()}
 
         {/* Pedestrian arteries — paper-friendly dashed ink with a subtle
             cream sidewalk halo so they read as walkways, not power lines. */}

@@ -223,6 +223,8 @@ async function _buildSpotifyAuthUrl() {
   // auth-domain redirect; the other usually survives.
   try { localStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
   try { sessionStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
+  // Record which scopes were granted so we can detect stale/partial tokens later.
+  try { localStorage.setItem("spotify_auth_scopes", SPOTIFY_SCOPES); } catch {}
   const params = new URLSearchParams({
     client_id:             SPOTIFY_CLIENT_ID,
     response_type:         "code",
@@ -605,12 +607,16 @@ async function fetchSpotifyTopArtists() {
         });
       } catch {}
     };
-    // Pull recently-played (max 50) + first 3 pages of liked songs (150 tracks)
+    // Pull recently-played (max 50) + first 6 pages of liked songs (300 tracks).
+    // More pages → more EDM artists who appear only a few times in the library.
     await Promise.all([
       pull("https://api.spotify.com/v1/me/player/recently-played?limit=50", "recent", 60),
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=0",   "saved", 40),
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=50",  "saved", 35),
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=100", "saved", 30),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=150", "saved", 25),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=200", "saved", 20),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=250", "saved", 15),
     ]);
 
     // Walk ALL playlists (owned + followed) — paginate both the playlist list
@@ -618,8 +624,13 @@ async function fetchSpotifyTopArtists() {
     // _playlistCount stays 0 if the scope or token blocks the list endpoint.
     // _playlistScanOk is true only if the endpoint responded with HTTP 2xx at
     // least once — distinguishes "0 playlists" from "API call failed".
+    // Scope pre-check: if the stored auth scopes (written by _buildSpotifyAuthUrl
+    // since v54) don't include playlist-read-private, surface the banner now
+    // rather than letting the scan silently return an empty playlist list.
+    const _storedScopes = (() => { try { return localStorage.getItem("spotify_auth_scopes") || ""; } catch { return ""; } })();
+    const _missingScopeRecord = _storedScopes !== "" && !_storedScopes.includes("playlist-read-private");
     let _playlistCount = 0;
-    let _playlistScanOk = false;
+    let _playlistScanOk = _missingScopeRecord ? false : false; // stays false until first HTTP 2xx
     try {
       // Fetch every playlist the user has (paginate the list — max 50 per page)
       const allPlaylists = [];
@@ -653,11 +664,29 @@ async function fetchSpotifyTopArtists() {
             const td = await tr.json();
             const items = td.items || [];
             items.forEach(item => {
+              // Primary track artists
               (item.track?.artists || []).forEach(a => {
                 if (!a?.id || seen.has(a.id)) return;
                 seen.add(a.id);
                 extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
               });
+              // Remix / edit credits buried in the track title:
+              // "Song (Layton Giordani Remix)" → extract "Layton Giordani".
+              // EDM labels often credit remixers only in the title, not as a
+              // track artist — this catches them.
+              const title = item.track?.name || "";
+              const rxMatch = title.match(/\(\s*([^)]+?)\s+(?:Remix|Edit|Mix|Rework|Bootleg)\s*\)/i)
+                           || title.match(/\[\s*([^\]]+?)\s+(?:Remix|Edit|Mix|Rework|Bootleg)\s*\]/i);
+              if (rxMatch) {
+                const remixerRaw = rxMatch[1].trim();
+                // A track can have a compound remixer credit like "A & B" — split on & / x / vs
+                remixerRaw.split(/\s*[&,]\s*|\s+(?:x|vs\.?)\s+/i).forEach(rName => {
+                  const n = rName.trim();
+                  if (!n || seen.has("remix_" + n.toLowerCase())) return;
+                  seen.add("remix_" + n.toLowerCase());
+                  extras.push({ id: "remix_" + n.toLowerCase(), name: n, genres: [], _score: 20, _source: "playlist" });
+                });
+              }
             });
             // Stop when we received fewer than a full page, or Spotify says no more
             if (items.length < 100 || !td.next) break;

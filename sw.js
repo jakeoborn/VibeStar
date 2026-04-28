@@ -1,112 +1,123 @@
-const CACHE = 'vibestar-v53';
-const PRECACHE = [
+const CACHE   = 'vibestar-v54';
+const APP_VER = 'v54';
+
+// Own-origin app files — versioned to match what index.html requests.
+// addAll is atomic so a missed own-origin file fails the install fast.
+const LOCAL = [
   './',
   './index.html',
   './manifest.json',
-  './app.jsx',
-  './chrome.jsx',
-  './data.jsx',
-  './home.jsx',
-  './map.jsx',
-  './lineup.jsx',
-  './artist.jsx',
-  './spotify.jsx',
-  './ios-frame.jsx',
+  './callback.html',
+  './og.svg',
+  `./ios-frame.jsx?v=${APP_VER}`,
+  `./data.jsx?v=${APP_VER}`,
+  `./supabase.jsx?v=${APP_VER}`,
+  `./chrome.jsx?v=${APP_VER}`,
+  `./home.jsx?v=${APP_VER}`,
+  `./map.jsx?v=${APP_VER}`,
+  `./lineup.jsx?v=${APP_VER}`,
+  `./artist.jsx?v=${APP_VER}`,
+  `./spotify.jsx?v=${APP_VER}`,
+  `./app.jsx?v=${APP_VER}`,
+];
+
+// Third-party CDN scripts — pinned exact versions, content is immutable.
+// Precached so the app boots with zero connectivity at the EDC venue.
+// Each is caught individually so a CDN hiccup doesn't abort SW install.
+const CDN = [
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
+  'https://unpkg.com/react@18.3.1/umd/react.development.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js',
+  'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js',
   'https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap',
 ];
 
-const LOCAL_EXTENSIONS = ['.html', '.jsx', '.js', '.json'];
+const CDN_HOSTS = ['cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
-function isLocalAsset(url, isNavigate) {
-  try {
-    const u = new URL(url);
-    if (u.origin !== self.location.origin) return false;
-    // Treat navigation requests and the bare root as local assets so they
-    // go through network-first. Otherwise the cached `/` would pin users to
-    // an old index.html forever (it doesn't end in a tracked extension).
-    if (isNavigate) return true;
-    if (u.pathname === '/' || u.pathname === '') return true;
-    return LOCAL_EXTENSIONS.some(ext => u.pathname.endsWith(ext));
-  } catch { return false; }
+// Never intercept live API calls — let them fail naturally when offline.
+function isPassThrough(url) {
+  return url.includes('accounts.spotify.com') ||
+         url.includes('api.spotify.com')       ||
+         url.includes('api.music.apple.com')   ||
+         url.includes('anthropic.com')          ||
+         url.includes('/v1/messages')           ||
+         url.includes('.supabase.co');
+}
+
+function isCDN(url) {
+  return CDN_HOSTS.some(h => url.includes(h));
 }
 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then(c =>
-      Promise.all(PRECACHE.map(u =>
-        c.add(u).catch(err => console.warn('[sw] precache miss', u, err))
-      ))
-    )
+    caches.open(CACHE).then(async c => {
+      // Own-origin critical path — atomic, fail-fast
+      await c.addAll(LOCAL.map(u => new Request(u, { cache: 'no-store' })))
+             .catch(err => console.warn('[sw] local precache fail', err));
+      // CDN — best-effort, each caught individually
+      await Promise.all(CDN.map(u =>
+        c.add(new Request(u, { mode: 'cors', credentials: 'omit' }))
+         .catch(err => console.warn('[sw] cdn precache miss', u, err))
+      ));
+    })
   );
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  if (req.url.includes('anthropic.com') || req.url.includes('/v1/messages')) return;
-  if (req.url.includes('accounts.spotify.com') || req.url.includes('api.spotify.com')) return;
+  if (isPassThrough(req.url)) return;
 
-  if (isLocalAsset(req.url, req.mode === 'navigate')) {
-    // Network-first with cache:'no-store' so the browser HTTP cache can't
-    // serve us a stale index.html or stale JSX after a deploy. Falls back
-    // to the SW cache if offline.
+  // CDN + fonts: cache-first (immutable pinned versions; woff2 cached on first use)
+  if (isCDN(req.url)) {
     e.respondWith(
-      fetch(req, { cache: 'no-store' }).then(resp => {
-        if (resp && resp.status === 200) {
-          caches.open(CACHE).then(c => c.put(req, resp.clone()));
-        }
-        return resp;
-      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
+      caches.match(req).then(cached => {
+        if (cached) return cached;
+        return fetch(req, { mode: 'cors', credentials: 'omit' }).then(resp => {
+          if (resp && resp.status === 200)
+            caches.open(CACHE).then(c => c.put(req, resp.clone()));
+          return resp;
+        });
+      })
     );
     return;
   }
 
-  // Stale-while-revalidate for fonts/CDN
+  // Own-origin: network-first so deploys propagate; SW cache fallback when offline.
+  // cache:'no-store' bypasses browser HTTP cache so GH-Pages max-age=600 can't pin
+  // users to stale index.html between SW updates.
   e.respondWith(
-    caches.match(req).then(cached => {
-      if (cached) {
-        fetch(req).then(fresh => {
-          if (fresh && fresh.status === 200)
-            caches.open(CACHE).then(c => c.put(req, fresh.clone()));
-        }).catch(() => {});
-        return cached;
-      }
-      return fetch(req).then(resp => {
-        if (resp && resp.status === 200 &&
-          (req.url.includes('fonts.g') || req.url.includes('cdnjs') ||
-           req.url.startsWith(self.location.origin))) {
-          caches.open(CACHE).then(c => c.put(req, resp.clone()));
-        }
-        return resp;
-      }).catch(() => caches.match('./index.html'));
-    })
+    fetch(req, { cache: 'no-store' }).then(resp => {
+      if (resp && resp.status === 200)
+        caches.open(CACHE).then(c => c.put(req, resp.clone()));
+      return resp;
+    }).catch(() =>
+      caches.match(req).then(c => c || caches.match('./index.html'))
+    )
   );
 });
 
-// ── Push (server-driven) ──
-// No backend wired yet, but the handler is ready: a Web Push send from any
-// future server (Supabase Edge Fn, Firebase, custom) will display via the
-// data envelope { title, body, tag, url, icon, badge }.
+// ── Push (server-driven) ──────────────────────────────────────
 self.addEventListener('push', e => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch {
     try { data = { title: 'Plursky', body: e.data ? e.data.text() : '' }; } catch {}
   }
   e.waitUntil(self.registration.showNotification(data.title || 'Plursky', {
-    body:  data.body  || '',
-    icon:  data.icon  || '/og.svg',
-    badge: data.badge || '/og.svg',
-    tag:   data.tag   || 'plursky',
-    data:  { url: data.url || '/' },
+    body:    data.body  || '',
+    icon:    data.icon  || '/og.svg',
+    badge:   data.badge || '/og.svg',
+    tag:     data.tag   || 'plursky',
+    data:    { url: data.url || '/' },
     vibrate: [80, 40, 80],
   }));
 });
@@ -124,7 +135,5 @@ self.addEventListener('notificationclick', e => {
 });
 
 self.addEventListener('sync', e => {
-  if (e.tag === 'flush-location-queue') {
-    e.waitUntil(Promise.resolve());
-  }
+  if (e.tag === 'flush-location-queue') e.waitUntil(Promise.resolve());
 });
