@@ -1371,6 +1371,7 @@ function MapScreen({ state, setState }) {
           onClose={() => setSelectedStage(null)}
           onCancelMeet={() => { setMeetMode(false); setMeetTarget(null); setMeetWith(null); }}
           onOpenArtist={(id) => setState({ ...state, tab: "home", artist: id })}
+          state={state} setState={setState}
         />
       )}
 
@@ -2061,7 +2062,7 @@ function GroundPeek({ stage, onClose }) {
 }
 
 // ---- BOTTOM SHEET ----
-function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, meetTarget, friends, meetWith, avatar, onClose, onCancelMeet, onOpenArtist }) {
+function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, meetTarget, friends, meetWith, avatar, onClose, onCancelMeet, onOpenArtist, state, setState }) {
   if (meetMode && meetTarget) {
     const f = friends.find(fr => fr.id === meetWith);
     const youDist = Math.sqrt((meetTarget.x-avatar.x)**2 + (meetTarget.y-avatar.y)**2);
@@ -2097,10 +2098,10 @@ function BottomSheet({ stage, nowAtStage, dist, walk, peek, setPeek, meetMode, m
     );
   }
   if (!stage) return null;
-  return <StageLineupSheet stage={stage} walk={walk} dist={dist} peek={peek} setPeek={setPeek} onClose={onClose} onOpenArtist={onOpenArtist} nowAtStage={nowAtStage}/>;
+  return <StageLineupSheet stage={stage} walk={walk} dist={dist} peek={peek} setPeek={setPeek} onClose={onClose} onOpenArtist={onOpenArtist} nowAtStage={nowAtStage} state={state} setState={setState}/>;
 }
 
-function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArtist, nowAtStage }) {
+function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArtist, nowAtStage, state, setState }) {
   const [day, setDay] = React.useState(NOW.day);
   const [expanded, setExpanded] = React.useState(false);
   const toSlot = t => { const h = parseInt(t.split(":")[0]); return h < 8 ? h + 24 : h; };
@@ -2233,6 +2234,15 @@ function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArt
         )}
         {sets.map(s => {
           const live = s.id === NOW.currentArtistId && day === NOW.day;
+          const isSaved = state?.saved?.includes(s.id);
+          const toggleSaveSet = (e) => {
+            e.stopPropagation();
+            if (!state || !setState) return;
+            const next = isSaved
+              ? state.saved.filter(id => id !== s.id)
+              : [...state.saved, s.id];
+            setState({ ...state, saved: next });
+          };
           return (
             <div key={s.id} onClick={() => onOpenArtist(s.id)} style={{
               display: "flex", alignItems: "center", gap: 10,
@@ -2258,7 +2268,15 @@ function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArt
                   padding: "2px 6px", borderRadius: 4,
                 }}>LIVE</span>
               )}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2"><path d="M9 6 L15 12 L9 18"/></svg>
+              <button onClick={toggleSaveSet} style={{
+                background: isSaved ? "var(--ember)" : "transparent",
+                border: `1px solid ${isSaved ? "var(--ember)" : "var(--line-2)"}`,
+                color: isSaved ? "#fff" : "var(--muted)",
+                borderRadius: 999, width: 28, height: 28,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", flexShrink: 0, fontSize: 13,
+                transition: "all .15s",
+              }}>{isSaved ? "✓" : "+"}</button>
             </div>
           );
         })}

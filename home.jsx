@@ -82,6 +82,23 @@ function useNwsForecast() {
   return result;
 }
 
+const _WEATHER_ALERT_RE = /thunderstorm|tornado|lightning|wind advisory|excessive heat|dust storm|flash flood|\bhail\b|severe weather/i;
+
+function useWeatherAlert() {
+  const [alert, setAlert] = React.useState(null);
+  React.useEffect(() => {
+    fetchEdcForecast().then(periods => {
+      if (!periods) return;
+      for (const p of periods) {
+        const text = (p.shortForecast || "") + " " + (p.detailedForecast || "");
+        const m = text.match(_WEATHER_ALERT_RE);
+        if (m) { setAlert({ shortForecast: p.shortForecast, keyword: m[0] }); return; }
+      }
+    });
+  }, []);
+  return alert;
+}
+
 // Pre-festival: pick the period named "Friday" (opening day) or the next
 // "Tonight". During-festival: use the upcoming period.
 function pickRelevantPeriod(periods) {
@@ -319,6 +336,8 @@ function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
   const [firstTimerOpen, setFirstTimerOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
+  const [weatherAlertDismissed, setWeatherAlertDismissed] = React.useState(false);
+  const weatherAlert = useWeatherAlert();
   const unread = (state.alerts || ALERTS).filter(a => a.unread).length;
   // Pre-event newcomers haven't seen the first-timer guide yet — show a
   // prominent CTA card until they open it once. After that the small badge
@@ -444,6 +463,29 @@ function HomeScreen({ state, setState }) {
       )}
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
+        {/* Weather alert banner */}
+        {weatherAlert && !weatherAlertDismissed && (
+          <div style={{
+            display: "flex", alignItems: "flex-start", gap: 10,
+            background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.4)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 14,
+          }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "#fbbf24", fontWeight: 700, marginBottom: 3 }}>
+                NWS WEATHER ALERT
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.4 }}>
+                {weatherAlert.shortForecast} — check the weather card below for details.
+              </div>
+            </div>
+            <button onClick={() => setWeatherAlertDismissed(true)} style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              color: "var(--muted)", fontSize: 18, lineHeight: 1, padding: "0 2px", flexShrink: 0,
+            }}>×</button>
+          </div>
+        )}
+
         {/* Live festival sections — hidden pre-event */}
         {!countdown && (
           <>

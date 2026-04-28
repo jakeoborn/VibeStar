@@ -1,10 +1,23 @@
 // Artist detail — shown as a modal-style pane when state.artist is set
 
+const ARTIST_NOTES_KEY = "artist_notes_v1";
+function _getArtistNotes() {
+  try { return JSON.parse(localStorage.getItem(ARTIST_NOTES_KEY) || "{}"); }
+  catch { return {}; }
+}
+
 function ArtistScreen({ state, setState }) {
   const a = ARTISTS.find(ar => ar.id === state.artist);
   if (!a) return null;
   const stage = STAGES.find(s => s.id === a.stage);
   const saved = state.saved.includes(a.id);
+  const [note, setNote] = React.useState(() => _getArtistNotes()[a.id] || "");
+  const handleNote = (text) => {
+    setNote(text);
+    const notes = _getArtistNotes();
+    if (text.trim()) notes[a.id] = text; else delete notes[a.id];
+    try { localStorage.setItem(ARTIST_NOTES_KEY, JSON.stringify(notes)); } catch {}
+  };
 
   // ── Preview player state ──────────────────────────────────
   const audioRef = React.useRef(null);
@@ -125,6 +138,27 @@ function ArtistScreen({ state, setState }) {
         {/* Bio */}
         <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 18, textWrap: "pretty" }}>
           {a.bio}
+        </div>
+
+        {/* Personal note */}
+        <div style={{ marginBottom: 16 }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            MY NOTE
+            {note.trim() && <span style={{ width: 5, height: 5, borderRadius: 5, background: "var(--ember)" }} />}
+          </div>
+          <textarea
+            value={note}
+            onChange={e => handleNote(e.target.value)}
+            placeholder="heard at Ultra 2024 · Alex recommended · must see"
+            rows={2}
+            style={{
+              width: "100%", padding: "10px 12px", boxSizing: "border-box",
+              background: "var(--paper-2)", border: "1px solid var(--line-2)",
+              borderRadius: 12, resize: "none",
+              fontFamily: "Geist, sans-serif", fontSize: 14, lineHeight: 1.4,
+              color: "var(--ink)", outline: "none",
+            }}
+          />
         </div>
 
         {/* ── Preview player ────────────────────────────────── */}
