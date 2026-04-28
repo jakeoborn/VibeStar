@@ -238,6 +238,11 @@ function LineupScreen({ state, setState }) {
   const [tierFilter, setTierFilter] = React.useState("all"); // all | head | prime | open | legend
   const [wizardOpen, setWizardOpen] = React.useState(false);
 
+  const spotifyMatchedIds = React.useMemo(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('spotify_matched_ids_v1') || '[]')); }
+    catch { return new Set(); }
+  }, []);
+
   const dayArtists = ARTISTS
     .filter(a => a.day === day)
     .filter(a => filter === "all" || state.saved.includes(a.id))
@@ -514,6 +519,14 @@ function LineupScreen({ state, setState }) {
                       padding: "1px 6px", borderRadius: 999,
                       border: "0.5px solid rgba(251,191,36,0.6)",
                     }}>★ DON'T MISS</span>
+                  )}
+                  {spotifyMatchedIds.has(a.id) && (
+                    <span className="mono" style={{
+                      fontSize: 8, letterSpacing: 1.2, fontWeight: 700,
+                      color: "#1DB954", background: "rgba(29,185,84,0.12)",
+                      padding: "1px 6px", borderRadius: 999,
+                      border: "0.5px solid rgba(29,185,84,0.5)",
+                    }}>♫</span>
                   )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>

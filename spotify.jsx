@@ -1032,6 +1032,10 @@ function SpotifyScreen({ state, setState }) {
         setSpotifyArtists(artists);
         setPlaylistCount(artists._playlistCount ?? null);
         setPlaylistScanFailed(artists._playlistScanOk === false);
+        try {
+          const ids = matchLineupArtists(artists).map(a => a._realId || a.id);
+          localStorage.setItem('spotify_matched_ids_v1', JSON.stringify(ids));
+        } catch {}
       }
     });
   }, [connected]);

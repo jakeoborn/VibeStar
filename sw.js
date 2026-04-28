@@ -1,5 +1,5 @@
-const CACHE   = 'vibestar-v60';
-const APP_VER = 'v60';
+const CACHE   = 'vibestar-v61';
+const APP_VER = 'v61';
 
 // Own-origin app files — versioned to match what index.html requests.
 // addAll is atomic so a missed own-origin file fails the install fast.

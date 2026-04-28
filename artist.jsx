@@ -432,11 +432,23 @@ function ArtistScreen({ state, setState }) {
           } catch {}
         }
       }
-      // Stats
+      // Stats + top track names (for setlist highlighting)
+      let topTrackNames = [];
+      try {
+        const tr = await fetch(
+          `https://api.spotify.com/v1/artists/${match.id}/top-tracks?market=US`,
+          { headers: { Authorization: "Bearer " + token }, signal: ctrl.signal }
+        );
+        if (tr.ok) {
+          const tj = await tr.json();
+          topTrackNames = (tj.tracks || []).map(t => t.name.toLowerCase());
+        }
+      } catch {}
       const stats = {
-        popularity: match.popularity || 0,
-        followers:  match.followers?.total || 0,
-        genres:     match.genres || [],
+        popularity:    match.popularity || 0,
+        followers:     match.followers?.total || 0,
+        genres:        match.genres || [],
+        topTrackNames,
       };
       setSpotifyStats(stats);
       try {
@@ -587,8 +599,24 @@ function ArtistScreen({ state, setState }) {
         </div>
 
         {/* Bio */}
-        <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 18, textWrap: "pretty" }}>
+        <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 14, textWrap: "pretty" }}>
           {a.bio}
+        </div>
+
+        {/* Social search links */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
+          {[
+            { label: "SPOTIFY", url: `https://open.spotify.com/search/${encodeURIComponent(activeName)}/artists` },
+            { label: "SOUNDCLOUD", url: `https://soundcloud.com/search?q=${encodeURIComponent(activeName)}` },
+            { label: "RA", url: `https://ra.co/search?query=${encodeURIComponent(activeName)}` },
+          ].map(({ label, url }) => (
+            <a key={label} href={url} target="_blank" rel="noopener noreferrer" style={{
+              fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.2, fontWeight: 700,
+              padding: "5px 10px", borderRadius: 999,
+              background: "var(--paper-2)", border: "1px solid var(--line-2)",
+              color: "var(--muted)", textDecoration: "none",
+            }}>{label} ↗</a>
+          ))}
         </div>
 
         {/* ── Spotify stats ─────────────────────────────────── */}
@@ -928,13 +956,17 @@ function ArtistScreen({ state, setState }) {
                   </div>
 
                   <div style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}>
-                    {displaySongs.map((song, si) => (
-                      <div key={si} style={{ display: "flex", alignItems: "center", gap: 10, padding: "3px 0" }}>
-                        <span className="mono" style={{ fontSize: 9, color: "var(--muted)", width: 18, textAlign: "right", flexShrink: 0 }}>{si + 1}</span>
-                        <span style={{ fontSize: 13, color: "var(--ink)", flex: 1 }}>{song.name}</span>
-                        {song.tape && <span className="mono" style={{ fontSize: 8, color: "var(--muted)", letterSpacing: 1 }}>TAPE</span>}
-                      </div>
-                    ))}
+                    {displaySongs.map((song, si) => {
+                      const isBanger = spotifyStats?.topTrackNames?.includes(song.name?.toLowerCase());
+                      return (
+                        <div key={si} style={{ display: "flex", alignItems: "center", gap: 10, padding: "3px 0" }}>
+                          <span className="mono" style={{ fontSize: 9, color: "var(--muted)", width: 18, textAlign: "right", flexShrink: 0 }}>{si + 1}</span>
+                          <span style={{ fontSize: 13, color: isBanger ? stage.color : "var(--ink)", fontWeight: isBanger ? 600 : 400, flex: 1 }}>{song.name}</span>
+                          {isBanger && <span className="mono" style={{ fontSize: 7, letterSpacing: 1, color: stage.color, fontWeight: 700 }}>BANGER</span>}
+                          {song.tape && <span className="mono" style={{ fontSize: 8, color: "var(--muted)", letterSpacing: 1 }}>TAPE</span>}
+                        </div>
+                      );
+                    })}
                     {songs.length > 5 && (
                       <button onClick={() => setSlExpanded(e => ({ ...e, [idx]: !e[idx] }))} style={{
                         background: "transparent", border: "none", cursor: "pointer",
