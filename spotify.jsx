@@ -423,12 +423,12 @@ async function createEdcPlaylist(state, day = null) {
   }
   const playlist = await plRes.json();
 
-  // 2) Top tracks per saved artist — in schedule order, tier-aware depth, globally deduped.
-  //    B2B sets are split so each artist contributes tracks individually.
+  // 2) Top tracks per saved artist — tagged with day for energy-arc sorting.
+  //    B2B sets split so each artist contributes; collab track searched too.
   const seenUris = new Set();
-  const uris = [];
+  const uriEntries = []; // {uri, day} — day tag enables per-night energy sorting
   let missed = 0;
-  const savedSpotifyIds = []; // collected for discovery step below
+  const savedSpotifyIds = [];
 
   const searchOne = async (searchName, limit) => {
     try {
@@ -436,33 +436,32 @@ async function createEdcPlaylist(state, day = null) {
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!ar.ok) return { added: 0, id: null };
+      if (!ar.ok) return { uris: [], id: null };
       const aj = await ar.json();
       const ln = searchName.toLowerCase();
       const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
         || (aj.artists?.items || []).find(a =>
             a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
-      if (!found) return { added: 0, id: null };
+      if (!found) return { uris: [], id: null };
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!tr.ok) return { added: 0, id: found.id };
+      if (!tr.ok) return { uris: [], id: found.id };
       const tj = await tr.json();
-      let added = 0;
+      const collected = [];
       for (const t of (tj.tracks || [])) {
-        if (!t?.uri || seenUris.has(t.uri) || added >= limit) continue;
-        seenUris.add(t.uri); uris.push(t.uri); added++;
+        if (!t?.uri || seenUris.has(t.uri) || collected.length >= limit) continue;
+        seenUris.add(t.uri); collected.push(t.uri);
       }
-      return { added, id: found.id };
-    } catch { return { added: 0, id: null }; }
+      return { uris: collected, id: found.id };
+    } catch { return { uris: [], id: null }; }
   };
-  // For B2B sets, also search Spotify for actual collab tracks featuring both artists
-  const searchB2BCollab = async (parts) => {
+
+  const searchB2BCollab = async (parts, artistDay) => {
     try {
-      const q = parts.join(" ");
       const res = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=10`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(parts.join(" "))}&type=track&limit=10`,
         { headers: { Authorization: "Bearer " + token } }
       );
       if (!res.ok) return;
@@ -470,12 +469,9 @@ async function createEdcPlaylist(state, day = null) {
       const lparts = parts.map(p => p.toLowerCase());
       for (const t of (rj.tracks?.items || [])) {
         if (seenUris.has(t.uri)) continue;
-        // Only add if the track's artist list contains at least one of the B2B parts
-        const trackArtists = (t.artists || []).map(a => a.name.toLowerCase());
-        const match = lparts.some(p => trackArtists.some(ta => ta.includes(p) || p.includes(ta)));
-        if (!match) continue;
-        seenUris.add(t.uri); uris.push(t.uri);
-        break; // 1 collab track per B2B set
+        const artists = (t.artists || []).map(a => a.name.toLowerCase());
+        if (!lparts.some(p => artists.some(ta => ta.includes(p) || p.includes(ta)))) continue;
+        seenUris.add(t.uri); uriEntries.push({ uri: t.uri, day: artistDay }); break;
       }
     } catch {}
   };
@@ -485,25 +481,24 @@ async function createEdcPlaylist(state, day = null) {
     const limit = trackLimit(artist.tier);
     let totalAdded = 0;
     for (const part of parts) {
-      const { added, id } = await searchOne(part, limit);
-      totalAdded += added;
+      const { uris: partUris, id } = await searchOne(part, limit);
+      for (const uri of partUris) uriEntries.push({ uri, day: artist.day });
+      totalAdded += partUris.length;
       if (id) savedSpotifyIds.push({ name: part, id });
     }
-    // For B2B sets, attempt to surface 1 actual collab track
-    if (parts.length > 1) await searchB2BCollab(parts);
+    if (parts.length > 1) await searchB2BCollab(parts, artist.day);
     if (totalAdded === 0) missed++;
   };
-  // Process in schedule order, 6-wide concurrency
   for (let i = 0; i < sorted.length; i += 6) {
     await Promise.all(sorted.slice(i, i + 6).map(search));
   }
 
-  // 3) Discovery: Spotify related-artists → surface EDC acts you haven't saved.
-  //    Adds 1 non-duplicate track per discovered act, appended after your picks.
+  // 3) Discovery via Spotify recommendations — far more accurate than related-artists.
+  //    Seed with batches of 5 saved artist IDs; filter results to unsaved EDC acts.
   const savedNames = new Set(
     saved.flatMap(a => a.name.split(/ b2b /i).map(s => s.trim().toLowerCase()))
   );
-  const unsavedEdcLookup = {}; // edcKey → display name
+  const unsavedEdcLookup = {};
   ARTISTS.forEach(a => {
     a.name.split(/ b2b /i).forEach(part => {
       const k = part.trim().toLowerCase();
@@ -512,44 +507,64 @@ async function createEdcPlaylist(state, day = null) {
   });
   const edcKeys = Object.keys(unsavedEdcLookup);
 
-  const discoveredSpotifyIds = new Set();
   const discoveredUris = [];
   const discoveredNames = [];
 
-  const discoverRelated = async ({ id: spotifyId }) => {
+  const seedIds = savedSpotifyIds.map(s => s.id).slice(0, 25);
+  const seedChunks = [];
+  for (let i = 0; i < seedIds.length; i += 5) seedChunks.push(seedIds.slice(i, i + 5));
+  await Promise.all(seedChunks.map(async chunk => {
     try {
       const rr = await fetch(
-        `https://api.spotify.com/v1/artists/${spotifyId}/related-artists`,
+        `https://api.spotify.com/v1/recommendations?seed_artists=${chunk.join(',')}&limit=100&market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
       if (!rr.ok) return;
       const rj = await rr.json();
-      for (const rel of (rj.artists || [])) {
-        if (discoveredSpotifyIds.has(rel.id)) continue;
-        const rln = rel.name.toLowerCase();
-        const matched = edcKeys.find(k => k === rln || k.includes(rln) || rln.includes(k));
-        if (!matched) continue;
-        discoveredSpotifyIds.add(rel.id);
-        const tr = await fetch(
-          `https://api.spotify.com/v1/artists/${rel.id}/top-tracks?market=US`,
-          { headers: { Authorization: "Bearer " + token } }
-        );
-        if (!tr.ok) continue;
-        const tj = await tr.json();
-        const t = (tj.tracks || []).find(t => t?.uri && !seenUris.has(t.uri));
-        if (!t) continue;
-        seenUris.add(t.uri);
-        discoveredUris.push(t.uri);
-        discoveredNames.push(unsavedEdcLookup[matched] || rel.name);
+      for (const track of (rj.tracks || [])) {
+        if (!track?.uri || seenUris.has(track.uri)) continue;
+        for (const artist of (track.artists || [])) {
+          const aln = artist.name.toLowerCase();
+          const matched = edcKeys.find(k => k === aln || k.includes(aln) || aln.includes(k));
+          if (!matched) continue;
+          seenUris.add(track.uri);
+          discoveredUris.push(track.uri);
+          discoveredNames.push(unsavedEdcLookup[matched] || artist.name);
+          break;
+        }
       }
     } catch {}
-  };
-  for (let i = 0; i < savedSpotifyIds.length; i += 4) {
-    await Promise.all(savedSpotifyIds.slice(i, i + 4).map(discoverRelated));
+  }));
+
+  // 4) Energy-arc sort: fetch audio features and sort each night opener→headliner energy
+  const allMainUris = uriEntries.map(e => e.uri);
+  const featMap = {};
+  for (let i = 0; i < allMainUris.length; i += 100) {
+    try {
+      const ids = allMainUris.slice(i, i + 100).map(u => u.replace('spotify:track:', ''));
+      const fr = await fetch(
+        `https://api.spotify.com/v1/audio-features?ids=${ids.join(',')}`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (fr.ok) {
+        const fj = await fr.json();
+        (fj.audio_features || []).forEach((f, idx) => {
+          if (f?.energy != null) featMap[allMainUris[i + idx]] = f.energy;
+        });
+      }
+    } catch {}
+  }
+  const byDay = { 1: [], 2: [], 3: [] };
+  for (const e of uriEntries) (byDay[e.day] || []).push(e);
+  const sortedUris = [];
+  for (const d of [1, 2, 3]) {
+    const entries = byDay[d] || [];
+    entries.sort((a, b) => (featMap[a.uri] ?? 0.5) - (featMap[b.uri] ?? 0.5));
+    entries.forEach(e => sortedUris.push(e.uri));
   }
 
-  // 4) Add all tracks — saved acts in schedule order, discoveries at the tail
-  const allUris = [...uris, ...discoveredUris];
+  // 5) Add tracks: energy-sorted nights first, discoveries appended at tail
+  const allUris = [...sortedUris, ...discoveredUris];
   for (let i = 0; i < allUris.length; i += 100) {
     await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
       method: "POST",
@@ -558,7 +573,7 @@ async function createEdcPlaylist(state, day = null) {
     });
   }
 
-  // 5) Update description to name the discovered artists (best-effort)
+  // 6) Update description with discovered names (best-effort)
   const uniqueDiscovered = [...new Set(discoveredNames)];
   if (uniqueDiscovered.length > 0) {
     await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}`, {
@@ -572,7 +587,7 @@ async function createEdcPlaylist(state, day = null) {
 
   return {
     ok: true,
-    added:           uris.length,
+    added:           sortedUris.length,
     total:           sorted.length,
     missed,
     discovered:      discoveredUris.length,
