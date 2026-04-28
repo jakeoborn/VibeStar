@@ -44,7 +44,7 @@ function _slIsEdc(sl) {
 // ── YouTube ────────────────────────────────────────────────────
 // Free API key (quota: 10 000 units/day) at https://console.cloud.google.com
 // Enable "YouTube Data API v3", create an API key, paste below.
-const YOUTUBE_KEY = "";
+const YOUTUBE_KEY = "AIzaSyDl2DjwIVG-cTN-KBaJkMNmtFRKVLvPLOo";
 const _YT_TTL = 24 * 3600000;
 
 async function fetchYouTubeSet(artistName) {
@@ -134,7 +134,7 @@ function _fmtCount(n) {
 
 // ── Ticketmaster ───────────────────────────────────────────────
 // Free key (5 000 calls/day) at https://developer.ticketmaster.com
-const TICKETMASTER_KEY = "";
+const TICKETMASTER_KEY = "GKAPS1SP4GIKOCNfR5iTDyzqR0G2yuxE";
 const _TM_TTL = 6 * 3600000; // cache 6 h (events change more often)
 
 async function fetchTicketmaster(artistName) {
