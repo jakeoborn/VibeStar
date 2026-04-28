@@ -183,6 +183,140 @@ function _getArtistNotes() {
   catch { return {}; }
 }
 
+// ── Spider web — radial similar-artist visualization ──────────
+// Pure SVG geometry (no D3, no physics). Dark card so stage colors
+// pop. EDC-matched nodes are tappable and open that artist's card.
+function SpiderWeb({ currentArtist, currentStage, similar, onSelectArtist }) {
+  const W = 300, H = 272;
+  const cx = W / 2, cy = 122;
+  const R = 98;
+
+  const nodes = similar.slice(0, 6).map((s, i, arr) => {
+    const angle = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
+    const sn = s.name.toLowerCase().trim();
+    const edcArtist = ARTISTS.find(ar => {
+      const an = ar.name.toLowerCase().trim();
+      return an === sn || an.includes(sn) || sn.includes(an);
+    });
+    const edcStage = edcArtist ? STAGES.find(st => st.id === edcArtist.stage) : null;
+    return {
+      name: s.name,
+      x: cx + Math.cos(angle) * R,
+      y: cy + Math.sin(angle) * R,
+      edcArtist, edcStage,
+    };
+  });
+
+  const edcCount = nodes.filter(n => n.edcArtist).length;
+  const truncate = (str, max) => str.length > max ? str.slice(0, max) + "…" : str;
+
+  return (
+    <div style={{
+      background: "var(--ink)", borderRadius: 16,
+      padding: "12px 12px 8px", marginBottom: 18,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 6, padding: "0 2px",
+      }}>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.5, color: "rgba(247,237,224,0.45)", fontWeight: 700 }}>
+          SIMILAR ARTISTS
+        </span>
+        {edcCount > 0 && (
+          <span className="mono" style={{ fontSize: 8, letterSpacing: 1, color: currentStage.color, fontWeight: 700 }}>
+            {edcCount} ALSO AT EDC — TAP TO EXPLORE
+          </span>
+        )}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+        <defs>
+          {nodes.filter(n => n.edcStage).map((n, i) => (
+            <radialGradient key={`rg${i}`} id={`spkGrad${i}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={n.edcStage.color} stopOpacity="0.28"/>
+              <stop offset="100%" stopColor={n.edcStage.color} stopOpacity="0"/>
+            </radialGradient>
+          ))}
+        </defs>
+
+        {/* Connection lines */}
+        {nodes.map((n, i) => (
+          <line key={`l${i}`} x1={cx} y1={cy} x2={n.x} y2={n.y}
+            stroke={n.edcStage ? n.edcStage.color : "rgba(247,237,224,0.07)"}
+            strokeWidth={n.edcStage ? 1.4 : 0.8}
+            opacity={n.edcStage ? 0.5 : 1}
+            strokeDasharray={n.edcStage ? undefined : "2.5 4"}
+          />
+        ))}
+
+        {/* Soft glow halos on EDC nodes */}
+        {nodes.map((n, i) => n.edcStage && (
+          <circle key={`h${i}`} cx={n.x} cy={n.y} r={34}
+            fill={`url(#spkGrad${nodes.filter(x => x.edcStage).indexOf(n)})`}
+          />
+        ))}
+
+        {/* Center node */}
+        <circle cx={cx} cy={cy} r={28} fill={currentStage.color}/>
+        <circle cx={cx} cy={cy} r={33} fill="none" stroke={currentStage.color} strokeWidth={1} opacity={0.3}/>
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+          fill="#fff" fontSize={currentArtist.name.length > 10 ? 7 : 8.5}
+          fontFamily="Geist Mono, monospace" fontWeight="700">
+          {truncate(currentArtist.name, 11)}
+        </text>
+
+        {/* Peripheral nodes */}
+        {nodes.map((n, i) => {
+          const r = n.edcArtist ? 21 : 14;
+          const labelY = n.y + r + 13;
+          const dayLabel = n.edcArtist ? ["FRI","SAT","SUN"][n.edcArtist.day - 1] : null;
+          return (
+            <g key={`n${i}`}
+              onClick={() => n.edcArtist && onSelectArtist(n.edcArtist.id)}
+              style={{ cursor: n.edcArtist ? "pointer" : "default" }}
+            >
+              {/* Invisible tap target */}
+              {n.edcArtist && <circle cx={n.x} cy={n.y} r={38} fill="transparent"/>}
+
+              {/* Node */}
+              <circle cx={n.x} cy={n.y} r={r}
+                fill={n.edcStage ? n.edcStage.color : "rgba(247,237,224,0.07)"}
+                stroke={n.edcStage ? "none" : "rgba(247,237,224,0.22)"}
+                strokeWidth={1}
+              />
+              {/* Outer ring on EDC nodes */}
+              {n.edcStage && (
+                <circle cx={n.x} cy={n.y} r={r + 6}
+                  fill="none" stroke={n.edcStage.color} strokeWidth={0.9} opacity={0.35}
+                />
+              )}
+
+              {/* Artist name */}
+              <text x={n.x} y={labelY} textAnchor="middle"
+                fill={n.edcStage ? "rgba(247,237,224,0.9)" : "rgba(247,237,224,0.32)"}
+                fontSize={7.5} fontFamily="Geist Mono, monospace"
+                fontWeight={n.edcStage ? "600" : "400"}
+              >
+                {truncate(n.name, 13)}
+              </text>
+
+              {/* Stage · Day under EDC matches */}
+              {n.edcStage && dayLabel && (
+                <text x={n.x} y={labelY + 11} textAnchor="middle"
+                  fill={n.edcStage.color} fontSize={7}
+                  fontFamily="Geist Mono, monospace" fontWeight="700"
+                >
+                  {n.edcStage.short} · {dayLabel}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function ArtistScreen({ state, setState }) {
   const a = ARTISTS.find(ar => ar.id === state.artist);
   if (!a) return null;
@@ -408,53 +542,15 @@ function ArtistScreen({ state, setState }) {
               </div>
             )}
 
-            {/* Fans also like */}
-            {lfm.similar.length > 0 && (() => {
-              const inLineup = lfm.similar.filter(s =>
-                ARTISTS.some(ar => ar.name.toLowerCase() === s.name.toLowerCase())
-              );
-              const notInLineup = lfm.similar.filter(s =>
-                !ARTISTS.some(ar => ar.name.toLowerCase() === s.name.toLowerCase())
-              );
-              const displayed = [...inLineup, ...notInLineup].slice(0, 5);
-              return (
-                <div>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 8 }}>
-                    FANS ALSO LIKE
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {displayed.map(s => {
-                      const lineupArtist = ARTISTS.find(ar => ar.name.toLowerCase() === s.name.toLowerCase());
-                      return (
-                        <button
-                          key={s.name}
-                          onClick={() => lineupArtist ? setState(st => ({ ...st, artist: lineupArtist.id })) : undefined}
-                          style={{
-                            background: lineupArtist ? "var(--ember)" : "var(--paper-2)",
-                            border: lineupArtist ? "none" : "1px solid var(--line-2)",
-                            borderRadius: 999,
-                            padding: "6px 12px",
-                            fontSize: 12,
-                            color: lineupArtist ? "#fff" : "var(--ink)",
-                            cursor: lineupArtist ? "pointer" : "default",
-                            fontFamily: "Geist, sans-serif",
-                            transition: "opacity 0.15s",
-                          }}
-                        >
-                          {lineupArtist && <span style={{ marginRight: 4, fontSize: 10 }}>★</span>}
-                          {s.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {inLineup.length > 0 && (
-                    <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--muted)", marginTop: 6 }}>
-                      ★ ALSO AT EDC LAS VEGAS
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Fans also like — spider web */}
+            {lfm.similar.length > 0 && (
+              <SpiderWeb
+                currentArtist={a}
+                currentStage={stage}
+                similar={lfm.similar}
+                onSelectArtist={(id) => setState(st => ({ ...st, artist: id }))}
+              />
+            )}
           </div>
         )}
 

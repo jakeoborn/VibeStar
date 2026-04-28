@@ -18,8 +18,8 @@ create policy "own rows only" on user_data for all
   with check (auth.uid() = user_id);
 ─────────────────────────────────────────────────────────────────── */
 
-const SUPABASE_URL  = "";
-const SUPABASE_ANON = "";
+const SUPABASE_URL  = "https://pzoijbqsbbwyuyjinjtj.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2lqYnFzYmJ3eXV5amluanRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY4OTYsImV4cCI6MjA5MjkzMjg5Nn0.193dyHNHbc_zsm6l6UfQnpz4jXqRoPFBC4TWylyFPfA";
 
 const _sb = (SUPABASE_URL && SUPABASE_ANON)
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON)
