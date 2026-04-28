@@ -753,14 +753,40 @@ async function fetchPreviewUrl(artistName) {
   }
 }
 
-// Match Spotify artist names against the EDC lineup
+// Match Spotify artist names against the EDC lineup.
+// B2B entries ("A b2b B") are split so each artist gets their own match row
+// — a user who has "Peggy Gou" in their library will see her highlighted in
+// "Peggy Gou b2b Ki/Ki" rather than just a cryptic compound name.
+// Virtual entries carry _realId (the original ARTISTS id for saves/nav) and
+// _b2bWith (the partner name for the sub-label).
 function matchLineupArtists(spotifyArtists) {
   if (!spotifyArtists?.length) return [];
   const names = spotifyArtists.map(a => a.name.toLowerCase());
-  return ARTISTS.filter(a => {
-    const ln = a.name.toLowerCase();
-    return names.some(n => ln.includes(n) || n.includes(ln));
+  const result = [];
+  const seen   = new Set();
+
+  ARTISTS.forEach(a => {
+    const parts = a.name.split(/ b2b /i).map(s => s.trim());
+    parts.forEach((part, idx) => {
+      const pln = part.toLowerCase();
+      if (!names.some(n => pln.includes(n) || n.includes(pln))) return;
+      const key = `${a.id}_${idx}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (parts.length === 1) {
+        result.push(a);
+      } else {
+        result.push({
+          ...a,
+          id:      key,
+          _realId: a.id,
+          name:    part,
+          _b2bWith: parts.filter((_, i) => i !== idx).join(' b2b '),
+        });
+      }
+    });
   });
+  return result;
 }
 
 // Count genre frequencies and score each EDC stage
@@ -801,7 +827,9 @@ function analyzeGenres(spotifyArtists) {
 // Scored by stage affinity (your genre profile → stage weights) + tier bonus.
 function getDiscoveries(spotifyArtists, matched, savedIds, max = 8) {
   if (!spotifyArtists?.length) return [];
-  const matchedIds = new Set((matched || []).map(a => a.id));
+  // Use real IDs (strip B2B virtual suffix) so matched B2B halves don't leak
+  // into the discovery list under the original compound entry ID.
+  const matchedIds = new Set((matched || []).map(a => a._realId || a.id));
   const savedSet   = new Set(savedIds || []);
   // Stage profile: count how many of your top artist genres map to each EDC stage.
   const stageProfile = {};
@@ -890,8 +918,12 @@ function SpotifyScreen({ state, setState }) {
   const fallback    = ARTISTS.filter(a => a.tier === 3).slice(0, 8);
   const recs        = matched.length ? matched : fallback;
 
+  // Check if this connection was made after scope-recording was introduced (v54).
+  // Old connections have no record → private playlists may have been silently skipped.
+  const noScopeRecord = (() => { try { return !localStorage.getItem("spotify_auth_scopes"); } catch { return false; } })();
+
   const handleSaveAll = () => {
-    const newSaved = [...new Set([...state.saved, ...matched.map(a => a.id)])];
+    const newSaved = [...new Set([...state.saved, ...matched.map(a => a._realId || a.id)])];
     setState({ ...state, saved: newSaved });
     setSaveFlash(true);
     setTimeout(() => setSaveFlash(false), 2200);
@@ -927,7 +959,7 @@ function SpotifyScreen({ state, setState }) {
               ? <>Your lineup is <span style={{ fontStyle: "italic" }}>personalised</span></>
               : <>Build your <span style={{ fontStyle: "italic" }}>perfect</span> EDC night</>}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: connected && spotifyArtists !== null && playlistScanFailed ? 8 : 16, maxWidth: "88%" }}>
+          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: connected && spotifyArtists !== null && (playlistScanFailed || noScopeRecord) ? 8 : 16, maxWidth: "88%" }}>
             {connected
               ? matched.length
                 ? `${matched.length} EDC artists match · scanned top, recent, liked songs${playlistCount > 0 ? ` + ${playlistCount} playlist${playlistCount === 1 ? "" : "s"}` : ""}.`
@@ -935,7 +967,7 @@ function SpotifyScreen({ state, setState }) {
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
 
-          {connected && spotifyArtists !== null && playlistScanFailed && (
+          {connected && spotifyArtists !== null && (playlistScanFailed || noScopeRecord) && (
             <button
               onClick={() => { disconnectSpotify(setState, state); startSpotifyAuth(); }}
               style={{
@@ -945,7 +977,9 @@ function SpotifyScreen({ state, setState }) {
                 borderRadius: 8, padding: "8px 10px", color: "#fde68a",
                 cursor: "pointer", fontFamily: "inherit",
               }}>
-              ↻ Your playlists weren't scanned. Tap here to reconnect Spotify with full access — this fixes missing artists like those in private playlists.
+              {noScopeRecord && !playlistScanFailed
+                ? "↻ Reconnect Spotify to unlock full playlist scanning — artists in private playlists (like SOFI TUKKER) may be missing."
+                : "↻ Your playlists weren't scanned. Tap to reconnect Spotify with full access — this fixes missing artists like those in private playlists."}
             </button>
           )}
 
@@ -1168,8 +1202,9 @@ function SpotifyScreen({ state, setState }) {
         </div>
 
         {recs.map(a => {
-          const stg   = STAGES.find(s => s.id === a.stage);
-          const isSaved = state.saved.includes(a.id);
+          const realId  = a._realId || a.id;
+          const stg     = STAGES.find(s => s.id === a.stage);
+          const isSaved = state.saved.includes(realId);
           return (
             <div key={a.id} style={{
               display: "flex", alignItems: "center", gap: 12,
@@ -1177,13 +1212,14 @@ function SpotifyScreen({ state, setState }) {
             }}>
               <ArtistSwatch artist={a} size={48} />
               <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                   onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
+                   onClick={() => setState({ ...state, tab: "home", artist: realId })}>
                 <div className="serif" style={{ fontSize: 18, lineHeight: 1.1 }}>{a.name}</div>
                 <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
+                  {a._b2bWith && <span style={{ color: stg.color }}>b2b {a._b2bWith} · </span>}
                   {stg.name} · DAY {a.day} · {a.start}
                 </div>
               </div>
-              <button onClick={() => toggleSave(state, setState, a.id)} style={{
+              <button onClick={() => toggleSave(state, setState, realId)} style={{
                 width: 34, height: 34, borderRadius: 34,
                 background: isSaved ? "var(--ember)" : "transparent",
                 color: isSaved ? "#fff" : "var(--ink)",
