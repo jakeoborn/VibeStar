@@ -389,24 +389,28 @@ async function createEdcPlaylist(state) {
     .filter(Boolean);
   if (saved.length === 0) return { ok: false, reason: "empty" };
 
+  // Sort by night (day 1→2→3) then by set start time with after-midnight wrap
+  const timeKey = hhmm => { const h = parseInt(hhmm); return h < 6 ? h + 24 : h; };
+  const sorted = [...saved].sort((a, b) =>
+    a.day !== b.day ? a.day - b.day : timeKey(a.start) - timeKey(b.start)
+  );
+
+  // Track depth by tier: headliners (tier 3) = 5, prime time (tier 2) = 4, openers (tier 1) = 3
+  const trackLimit = tier => tier === 3 ? 5 : tier === 2 ? 4 : 3;
+
   // 1) Create empty playlist on user's account
   const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
     method: "POST",
-    headers: {
-      Authorization: "Bearer " + token,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({
       name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
-      description: `${saved.length} saved sets · up to 2 top tracks each · Plursky · ${dateStr}`,
+      description: `${sorted.length} acts · FRI→SAT→SUN by set time · headliners 5 tracks · built with Plursky · ${dateStr}`,
       public: false,
     }),
   });
   if (!plRes.ok) {
     const err = await plRes.json().catch(() => ({}));
-    // 401/403 usually means the stored token was issued before we added a
-    // scope (e.g. playlist-modify-private). Clear it so the user reconnects.
     if (plRes.status === 401 || plRes.status === 403) {
       ["spotify_token","spotify_expires"].forEach(k => localStorage.removeItem(k));
       return { ok: false, reason: "reconnect", status: plRes.status, message: err.error?.message || "Reconnect required" };
@@ -415,64 +419,137 @@ async function createEdcPlaylist(state) {
   }
   const playlist = await plRes.json();
 
-  // 2) Find up to 2 top tracks per artist via artist-ID lookup + top-tracks endpoint.
-  //    B2B sets ("A b2b B") are searched per-individual so both halves contribute tracks.
+  // 2) Top tracks per saved artist — in schedule order, tier-aware depth, globally deduped.
+  //    B2B sets are split so each artist contributes tracks individually.
+  const seenUris = new Set();
   const uris = [];
   let missed = 0;
-  const searchOne = async (searchName) => {
+  const savedSpotifyIds = []; // collected for discovery step below
+
+  const searchOne = async (searchName, limit) => {
     try {
       const ar = await fetch(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!ar.ok) return 0;
+      if (!ar.ok) return { added: 0, id: null };
       const aj = await ar.json();
       const ln = searchName.toLowerCase();
       const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
         || (aj.artists?.items || []).find(a =>
             a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
-      if (!found) return 0;
+      if (!found) return { added: 0, id: null };
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!tr.ok) return 0;
+      if (!tr.ok) return { added: 0, id: found.id };
       const tj = await tr.json();
       let added = 0;
-      (tj.tracks || []).forEach(t => { if (t?.uri && added < 2) { uris.push(t.uri); added++; } });
-      return added;
-    } catch { return 0; }
+      for (const t of (tj.tracks || [])) {
+        if (!t?.uri || seenUris.has(t.uri) || added >= limit) continue;
+        seenUris.add(t.uri); uris.push(t.uri); added++;
+      }
+      return { added, id: found.id };
+    } catch { return { added: 0, id: null }; }
   };
   const search = async (artist) => {
     const parts = artist.name.split(/ b2b /i).map(s => s.trim());
+    const limit = trackLimit(artist.tier);
     let totalAdded = 0;
-    for (const part of parts) totalAdded += await searchOne(part);
+    for (const part of parts) {
+      const { added, id } = await searchOne(part, limit);
+      totalAdded += added;
+      if (id) savedSpotifyIds.push({ name: part, id });
+    }
     if (totalAdded === 0) missed++;
   };
-  // 6-wide concurrency to stay friendly to Spotify rate limits
-  for (let i = 0; i < saved.length; i += 6) {
-    await Promise.all(saved.slice(i, i + 6).map(search));
+  // Process in schedule order, 6-wide concurrency
+  for (let i = 0; i < sorted.length; i += 6) {
+    await Promise.all(sorted.slice(i, i + 6).map(search));
   }
 
-  // 3) Add tracks (Spotify caps at 100 URIs per request)
-  for (let i = 0; i < uris.length; i += 100) {
+  // 3) Discovery: Spotify related-artists → surface EDC acts you haven't saved.
+  //    Adds 1 non-duplicate track per discovered act, appended after your picks.
+  const savedNames = new Set(
+    saved.flatMap(a => a.name.split(/ b2b /i).map(s => s.trim().toLowerCase()))
+  );
+  const unsavedEdcLookup = {}; // edcKey → display name
+  ARTISTS.forEach(a => {
+    a.name.split(/ b2b /i).forEach(part => {
+      const k = part.trim().toLowerCase();
+      if (!savedNames.has(k)) unsavedEdcLookup[k] = a.name;
+    });
+  });
+  const edcKeys = Object.keys(unsavedEdcLookup);
+
+  const discoveredSpotifyIds = new Set();
+  const discoveredUris = [];
+  const discoveredNames = [];
+
+  const discoverRelated = async ({ id: spotifyId }) => {
+    try {
+      const rr = await fetch(
+        `https://api.spotify.com/v1/artists/${spotifyId}/related-artists`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!rr.ok) return;
+      const rj = await rr.json();
+      for (const rel of (rj.artists || [])) {
+        if (discoveredSpotifyIds.has(rel.id)) continue;
+        const rln = rel.name.toLowerCase();
+        const matched = edcKeys.find(k => k === rln || k.includes(rln) || rln.includes(k));
+        if (!matched) continue;
+        discoveredSpotifyIds.add(rel.id);
+        const tr = await fetch(
+          `https://api.spotify.com/v1/artists/${rel.id}/top-tracks?market=US`,
+          { headers: { Authorization: "Bearer " + token } }
+        );
+        if (!tr.ok) continue;
+        const tj = await tr.json();
+        const t = (tj.tracks || []).find(t => t?.uri && !seenUris.has(t.uri));
+        if (!t) continue;
+        seenUris.add(t.uri);
+        discoveredUris.push(t.uri);
+        discoveredNames.push(unsavedEdcLookup[matched] || rel.name);
+      }
+    } catch {}
+  };
+  for (let i = 0; i < savedSpotifyIds.length; i += 4) {
+    await Promise.all(savedSpotifyIds.slice(i, i + 4).map(discoverRelated));
+  }
+
+  // 4) Add all tracks — saved acts in schedule order, discoveries at the tail
+  const allUris = [...uris, ...discoveredUris];
+  for (let i = 0; i < allUris.length; i += 100) {
     await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
       method: "POST",
-      headers: {
-        Authorization: "Bearer " + token,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: uris.slice(i, i + 100) }),
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ uris: allUris.slice(i, i + 100) }),
     });
+  }
+
+  // 5) Update description to name the discovered artists (best-effort)
+  const uniqueDiscovered = [...new Set(discoveredNames)];
+  if (uniqueDiscovered.length > 0) {
+    await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description: `${sorted.length} acts · FRI→SAT→SUN · discoveries: ${uniqueDiscovered.slice(0, 8).join(", ")} · Plursky · ${dateStr}`,
+      }),
+    }).catch(() => {});
   }
 
   return {
     ok: true,
-    added:    uris.length,
-    total:    saved.length,
+    added:           uris.length,
+    total:           sorted.length,
     missed,
-    url:      playlist.external_urls?.spotify,
-    id:       playlist.id,
+    discovered:      discoveredUris.length,
+    discoveredNames: uniqueDiscovered,
+    url:             playlist.external_urls?.spotify,
+    id:              playlist.id,
   };
 }
 
@@ -1680,7 +1757,9 @@ function BuildPlaylistButton({ state }) {
   let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
   if (status === "working") label = "BUILDING…";
   else if (status === "done") {
-    label = `✓ ${result?.added}/${result?.total} TRACKS — OPEN ↗`;
+    label = result?.discovered > 0
+      ? `✓ ${result?.added} TRACKS + ${result?.discovered} NEW FINDS — OPEN ↗`
+      : `✓ ${result?.added}/${result?.total} TRACKS — OPEN ↗`;
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
     if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT SPOTIFY";
@@ -1695,13 +1774,24 @@ function BuildPlaylistButton({ state }) {
   }
 
   return (
-    <button onClick={onClick} disabled={status === "working"} style={{
-      background: bg, color, border,
-      borderRadius: 999, padding: "10px 16px",
-      cursor: status === "working" ? "wait" : "pointer",
-      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-      transition: "all .2s",
-    }}>{label}</button>
+    <React.Fragment>
+      <button onClick={onClick} disabled={status === "working"} style={{
+        background: bg, color, border,
+        borderRadius: 999, padding: "10px 16px",
+        cursor: status === "working" ? "wait" : "pointer",
+        fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+        transition: "all .2s",
+      }}>{label}</button>
+      {status === "done" && result?.discoveredNames?.length > 0 && (
+        <div style={{
+          marginTop: 8, fontSize: 9.5, fontFamily: "Geist Mono, monospace",
+          letterSpacing: 0.8, color: "var(--muted)", lineHeight: 1.5,
+        }}>
+          <span style={{ color: "#1DB954", marginRight: 4 }}>✦ ALSO DISCOVERED</span>
+          {result.discoveredNames.slice(0, 8).join(" · ")}
+        </div>
+      )}
+    </React.Fragment>
   );
 }
 
