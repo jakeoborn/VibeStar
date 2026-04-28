@@ -1592,21 +1592,20 @@ function BuildPlaylistButton({ state }) {
 
   const onClick = async () => {
     if (status === "working") return;
-    // If we surfaced a reconnect prompt last run, clicking restarts auth.
-    if (status === "err" && result?.reason === "reconnect") {
-      startSpotifyAuth();
-      return;
+    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) {
+      startSpotifyAuth(); return;
+    }
+    // When done, clicking opens the playlist (user-initiated — not blocked)
+    if (status === "done" && result?.url) {
+      window.open(result.url, "_blank", "noopener"); return;
     }
     setStatus("working");
     const r = await createEdcPlaylist(state);
     setResult(r);
     if (r.ok) {
-      setStatus("done");
-      if (r.url) setTimeout(() => window.open(r.url, "_blank", "noopener"), 800);
-      setTimeout(() => setStatus("idle"), 4000);
+      setStatus("done"); // stays until user taps "OPEN"
     } else {
       setStatus("err");
-      // Reconnect prompts stay sticky (no auto-reset) so user can tap them.
       if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
     }
   };
@@ -1614,21 +1613,15 @@ function BuildPlaylistButton({ state }) {
   let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
   if (status === "working") label = "BUILDING…";
   else if (status === "done") {
-    label = `✓ ADDED ${result?.added}/${result?.total}`;
+    label = `✓ ${result?.added}/${result?.total} TRACKS — OPEN ↗`;
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
-    if (result?.reason === "reconnect") {
-      label = "↻ RECONNECT SPOTIFY";
-    } else if (result?.reason === "empty") {
-      label = "SAVE SETS FIRST";
-    } else if (result?.reason === "create_fail") {
+    if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT SPOTIFY";
+    else if (result?.reason === "empty") label = "SAVE SETS FIRST";
+    else if (result?.reason === "create_fail") {
       const msg = (result?.message || "").slice(0, 22);
       label = msg ? `✕ ${result?.status} · ${msg}` : `✕ FAILED · ${result?.status || "?"}`;
-    } else if (result?.reason === "not_connected") {
-      label = "↻ RECONNECT SPOTIFY";
-    } else {
-      label = "✕ TRY AGAIN";
-    }
+    } else label = "✕ TRY AGAIN";
     bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
   } else {
     label = "BUILD MY PLAYLIST";
@@ -1651,14 +1644,13 @@ function HypePlaylistButton() {
 
   const onClick = async () => {
     if (status === "working") return;
-    if (status === "err" && result?.reason === "reconnect") { startSpotifyAuth(); return; }
+    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) { startSpotifyAuth(); return; }
+    if (status === "done" && result?.url) { window.open(result.url, "_blank", "noopener"); return; }
     setStatus("working");
     const r = await createHypePlaylist();
     setResult(r);
     if (r.ok) {
-      setStatus("done");
-      if (r.url) setTimeout(() => window.open(r.url, "_blank", "noopener"), 800);
-      setTimeout(() => setStatus("idle"), 4000);
+      setStatus("done"); // stays until user taps "OPEN"
     } else {
       setStatus("err");
       if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
@@ -1667,7 +1659,7 @@ function HypePlaylistButton() {
 
   let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
   if (status === "working") label = "BUILDING…";
-  else if (status === "done") { label = `✓ ${result?.added} TRACKS`; bg = "#1DB954"; color = "#000"; border = "none"; }
+  else if (status === "done") { label = `✓ ${result?.added} TRACKS — OPEN ↗`; bg = "#1DB954"; color = "#000"; border = "none"; }
   else if (status === "err") {
     if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT";
     else label = "✕ TRY AGAIN";

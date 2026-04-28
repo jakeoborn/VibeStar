@@ -10,12 +10,22 @@ create table if not exists user_data (
   user_id     uuid references auth.users primary key,
   artist_ids  text[]   not null default '{}',
   notes       jsonb    not null default '{}',
+  meta        jsonb    not null default '{}',
   updated_at  timestamptz default now()
 );
 alter table user_data enable row level security;
 create policy "own rows only" on user_data for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- If you already ran the above, add the meta column:
+-- alter table user_data add column if not exists meta jsonb not null default '{}';
+
+-- To enable "Sign in with Spotify" (one-tap login):
+--  1. Supabase Dashboard → Authentication → Providers → Spotify → Enable
+--  2. Paste your Spotify Client ID + Secret (from developer.spotify.com)
+--  3. Copy the Supabase callback URL shown there
+--  4. In Spotify developer dashboard → your app → Redirect URIs → add that URL
 ─────────────────────────────────────────────────────────────────── */
 
 const SUPABASE_URL  = "https://pzoijbqsbbwyuyjinjtj.supabase.co";
@@ -35,6 +45,20 @@ async function sbSignIn(email) {
   return { error: error?.message || null };
 }
 
+// Sign in with Spotify via Supabase OAuth — requires Spotify enabled in
+// Supabase Dashboard → Auth → Providers. See SQL comment above for setup.
+async function sbSignInWithSpotify() {
+  if (!_sb) return { error: "Supabase not configured" };
+  const { error } = await _sb.auth.signInWithOAuth({
+    provider: "spotify",
+    options: {
+      scopes: "user-top-read user-read-recently-played user-library-read user-read-private user-read-email playlist-read-private playlist-modify-public playlist-modify-private",
+      redirectTo: window.location.origin,
+    },
+  });
+  return { error: error?.message || null };
+}
+
 async function sbSignOut() {
   if (!_sb) return;
   await _sb.auth.signOut();
@@ -46,11 +70,32 @@ async function sbGetUser() {
   return data?.user || null;
 }
 
-// Subscribe to auth changes — returns unsubscribe fn
+// Subscribe to auth changes — cb receives (event, user, session).
+// On Spotify OAuth sign-in: provider_token is automatically stored as the
+// Spotify access token so the Music tab works without a separate connect.
 function sbOnAuthChange(cb) {
   if (!_sb) return () => {};
   const { data } = _sb.auth.onAuthStateChange((event, session) => {
-    cb(event, session?.user || null);
+    cb(event, session?.user || null, session);
+    if (event === "SIGNED_IN" && session?.provider_token) {
+      try {
+        localStorage.setItem("spotify_token",   session.provider_token);
+        localStorage.setItem("spotify_expires", String(Date.now() + 3600000));
+        if (session.provider_refresh_token)
+          localStorage.setItem("spotify_refresh_token", session.provider_refresh_token);
+        // Fetch + cache Spotify profile
+        fetch("https://api.spotify.com/v1/me", {
+          headers: { Authorization: "Bearer " + session.provider_token },
+        }).then(r => r.ok ? r.json() : null).then(p => {
+          if (!p) return;
+          localStorage.setItem("spotify_profile", JSON.stringify({
+            id: p.id, name: p.display_name || p.id,
+            email: p.email || null, image: p.images?.[0]?.url || null,
+            country: p.country || null, product: p.product || null,
+          }));
+        }).catch(() => {});
+      } catch {}
+    }
   });
   return () => data.subscription.unsubscribe();
 }
@@ -60,12 +105,18 @@ async function sbPush(artistIds, notes) {
   if (!_sb) return;
   const user = await sbGetUser();
   if (!user) return;
-  await _sb.from("user_data").upsert({
+  const row = {
     user_id:    user.id,
     artist_ids: artistIds,
     notes:      notes,
     updated_at: new Date().toISOString(),
-  });
+  };
+  // Attach Spotify profile snapshot so it persists to cloud
+  try {
+    const raw = localStorage.getItem("spotify_profile");
+    if (raw) row.meta = { spotify: JSON.parse(raw) };
+  } catch {}
+  await _sb.from("user_data").upsert(row);
 }
 
 async function sbPull() {
@@ -74,7 +125,7 @@ async function sbPull() {
   if (!user) return null;
   const { data } = await _sb
     .from("user_data")
-    .select("artist_ids, notes")
+    .select("artist_ids, notes, meta")
     .eq("user_id", user.id)
     .single();
   return data || null;
@@ -94,16 +145,18 @@ function AccountCard({ state, setState }) {
   React.useEffect(() => {
     if (!configured) return;
     sbGetUser().then(setSbUser);
-    return sbOnAuthChange((event, user) => {
+    return sbOnAuthChange((event, user, session) => {
       setSbUser(user);
+      // If this was a Spotify OAuth sign-in, mark Spotify as connected in app state
+      if (event === "SIGNED_IN" && session?.provider_token) {
+        setState(st => ({ ...st, spotifyConnected: true }));
+      }
       // On sign-in, pull cloud data and merge into local state
       if (event === "SIGNED_IN" && user) {
         sbPull().then(cloud => {
           if (!cloud) return;
           setState(st => {
-            // Merge cloud artist_ids with local saved (union)
             const merged = [...new Set([...st.saved, ...(cloud.artist_ids || [])])];
-            // Merge notes (cloud wins for non-empty entries)
             let localNotes = {};
             try { localNotes = JSON.parse(localStorage.getItem("artist_notes_v1") || "{}"); } catch {}
             const mergedNotes = { ...localNotes, ...cloud.notes };
@@ -171,51 +224,87 @@ function AccountCard({ state, setState }) {
         </div>
       )}
 
-      {configured && sbUser && (
-        <>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 12px", background: "var(--paper-2)",
-            borderRadius: 10, marginBottom: 12,
-          }}>
+      {configured && sbUser && (() => {
+        const sp = (() => { try { return JSON.parse(localStorage.getItem("spotify_profile") || "null"); } catch { return null; } })();
+        const avatar = sp?.image || null;
+        const displayName = sp?.name || sbUser.email || "?";
+        const initial = (sp?.name || sbUser.email || "?")[0].toUpperCase();
+        return (
+          <>
             <div style={{
-              width: 30, height: 30, borderRadius: 30,
-              background: "linear-gradient(135deg, var(--ember), var(--horizon))",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#fff", fontFamily: "Instrument Serif, serif", fontSize: 15, flexShrink: 0,
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", background: "var(--paper-2)",
+              borderRadius: 10, marginBottom: 12,
             }}>
-              {(sbUser.email || "?")[0].toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {sbUser.email}
+              <div style={{
+                width: 32, height: 32, borderRadius: 32, flexShrink: 0, overflow: "hidden",
+                background: "linear-gradient(135deg, var(--ember), var(--horizon))",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontFamily: "Instrument Serif, serif", fontSize: 15,
+              }}>
+                {avatar
+                  ? <img src={avatar} alt={displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : initial}
               </div>
-              <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--success)", marginTop: 2 }}>● SIGNED IN</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {displayName}
+                </div>
+                <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--success)", marginTop: 2 }}>● SIGNED IN{sp ? " · SPOTIFY LINKED" : ""}</div>
+              </div>
             </div>
-          </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={handleSync} disabled={syncing} style={{
-              flex: 1,
-              background: syncMsg ? "var(--success)" : "var(--ink)",
-              color: "var(--paper)", border: "none",
-              borderRadius: 10, padding: "10px 14px", cursor: "pointer",
-              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
-              transition: "background 0.3s",
-            }}>
-              {syncing ? "SYNCING…" : syncMsg || `↑ PUSH ${state.saved.length} SETS TO CLOUD`}
-            </button>
-            <button onClick={handleSignOut} style={{
-              background: "transparent", border: "1px solid var(--line-2)",
-              borderRadius: 10, padding: "10px 14px", cursor: "pointer",
-              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, color: "var(--muted)",
-            }}>SIGN OUT</button>
-          </div>
-        </>
-      )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={handleSync} disabled={syncing} style={{
+                flex: 1,
+                background: syncMsg ? "var(--success)" : "var(--ink)",
+                color: "var(--paper)", border: "none",
+                borderRadius: 10, padding: "10px 14px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 600,
+                transition: "background 0.3s",
+              }}>
+                {syncing ? "SYNCING…" : syncMsg || `↑ PUSH ${state.saved.length} SETS TO CLOUD`}
+              </button>
+              <button onClick={handleSignOut} style={{
+                background: "transparent", border: "1px solid var(--line-2)",
+                borderRadius: 10, padding: "10px 14px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, color: "var(--muted)",
+              }}>SIGN OUT</button>
+            </div>
+          </>
+        );
+      })()}
 
       {configured && !sbUser && (
         <>
+          {/* Primary: sign in with Spotify (one tap — requires Spotify enabled in Supabase Dashboard) */}
+          <button
+            onClick={() => sbSignInWithSpotify()}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+              width: "100%", padding: "11px 14px", marginBottom: 10,
+              background: "#1DB954", color: "#000", border: "none",
+              borderRadius: 10, cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.3, fontWeight: 700,
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="12" fill="#000" fillOpacity="0.15"/>
+              <path d="M6 10 Q12 8 18 11" stroke="#000" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+              <path d="M7 13 Q12 11.5 17 14" stroke="#000" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+              <path d="M8 15.8 Q12 14.5 16 16.5" stroke="#000" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+            </svg>
+            SIGN IN WITH SPOTIFY
+          </button>
+
+          {/* Divider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 10px" }}>
+            <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+            <span className="mono" style={{ fontSize: 8, letterSpacing: 1.2, color: "var(--muted)" }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+          </div>
+
+          {/* Fallback: email magic link */}
           {phase === "sent" ? (
             <div style={{
               padding: "12px 14px", background: "rgba(45,122,85,0.1)",
@@ -227,16 +316,13 @@ function AccountCard({ state, setState }) {
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>
-                Enter your email to get a magic sign-in link. No password needed.
-              </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
                   type="email"
                   value={email}
                   onChange={e => { setEmail(e.target.value); setPhase("idle"); }}
                   onKeyDown={e => e.key === "Enter" && handleSignIn()}
-                  placeholder="you@example.com"
+                  placeholder="email magic link…"
                   style={{
                     flex: 1,
                     background: "var(--paper-2)", border: `1px solid ${phase === "error" ? "#f87171" : "var(--line-2)"}`,
@@ -611,7 +697,7 @@ function _FriendRows({ friends, state, setState }) {
 }
 
 Object.assign(window, {
-  AccountCard, sbSignIn, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
+  AccountCard, sbSignIn, sbSignInWithSpotify, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap,
   FriendsCard,
