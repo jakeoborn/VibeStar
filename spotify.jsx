@@ -229,6 +229,34 @@ function disconnectSpotify(setState, state) {
   setState({ ...state, spotifyConnected: false, spotifyProfile: null });
 }
 
+// Returns a valid access token, silently refreshing via the refresh token if expired.
+// Returns null if no token and no refresh token (user must reconnect).
+async function getValidToken() {
+  const token = localStorage.getItem("spotify_token");
+  const expires = localStorage.getItem("spotify_expires");
+  if (token && expires && Date.now() < parseInt(expires) - 60000) return token;
+  const refreshToken = localStorage.getItem("spotify_refresh_token");
+  if (!refreshToken) return null;
+  try {
+    const res = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type:    "refresh_token",
+        refresh_token: refreshToken,
+        client_id:     SPOTIFY_CLIENT_ID,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token) return null;
+    localStorage.setItem("spotify_token",   data.access_token);
+    localStorage.setItem("spotify_expires", Date.now() + data.expires_in * 1000);
+    if (data.refresh_token) localStorage.setItem("spotify_refresh_token", data.refresh_token);
+    return data.access_token;
+  } catch { return null; }
+}
+
 // Read the cached Spotify profile (set by callback.html on first connect).
 // Falls back to fetching /me if missing — runs lazily on demand.
 function getSpotifyProfileSync() {
@@ -240,7 +268,7 @@ function getSpotifyProfileSync() {
 async function ensureSpotifyProfile() {
   const cached = getSpotifyProfileSync();
   if (cached) return cached;
-  const token = localStorage.getItem("spotify_token");
+  const token = await getValidToken();
   if (!token) return null;
   try {
     const res = await fetch("https://api.spotify.com/v1/me", {
@@ -264,7 +292,7 @@ async function ensureSpotifyProfile() {
 // #12 Build my playlist — push the user's saved EDC sets into a
 // Spotify playlist on their account. Skips artists Spotify can't find.
 async function createEdcPlaylist(state) {
-  const token   = localStorage.getItem("spotify_token");
+  const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
   if (!token || !profile) return { ok: false, reason: "not_connected" };
 
@@ -346,7 +374,7 @@ async function createEdcPlaylist(state) {
 // each tagged with a `_score` weighting recent listens 3×, 6mo 2×, all-time 1×).
 // Returns null on token expiry, [] on error.
 async function fetchSpotifyTopArtists() {
-  const token = localStorage.getItem("spotify_token");
+  const token = await getValidToken();
   if (!token) return [];
   const ranges = [
     { range: "short_term",  weight: 3 },  // last 4 weeks
@@ -411,23 +439,27 @@ async function fetchSpotifyTopArtists() {
       if (plRes.ok && profile) {
         const plData = await plRes.json();
         const owned = (plData.items || [])
-          .filter(p => p?.owner?.id === profile.id)
-          .slice(0, 30);
+          .filter(p => p?.owner?.id === profile.id);
         const fetchPl = async (pl) => {
           try {
-            const tr = await fetch(
-              `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&fields=items(track(artists(id,name)))`,
-              { headers: { Authorization: "Bearer " + token } }
-            );
-            if (!tr.ok) return;
-            const td = await tr.json();
-            (td.items || []).forEach(item => {
-              (item.track?.artists || []).forEach(a => {
-                if (!a?.id || seen.has(a.id)) return;
-                seen.add(a.id);
-                extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
+            let offset = 0;
+            while (true) {
+              const tr = await fetch(
+                `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&offset=${offset}&fields=items(track(artists(id,name))),next`,
+                { headers: { Authorization: "Bearer " + token } }
+              );
+              if (!tr.ok) break;
+              const td = await tr.json();
+              (td.items || []).forEach(item => {
+                (item.track?.artists || []).forEach(a => {
+                  if (!a?.id || seen.has(a.id)) return;
+                  seen.add(a.id);
+                  extras.push({ id: a.id, name: a.name, genres: [], _score: 25, _source: "playlist" });
+                });
               });
-            });
+              if (!td.next || (td.items || []).length === 0) break;
+              offset += 100;
+            }
           } catch {}
         };
         // 6-wide concurrency keeps us under Spotify's rate limit
@@ -924,44 +956,108 @@ function PackListCard() {
     try { return JSON.parse(localStorage.getItem("pack_list_v1") || "{}"); }
     catch { return {}; }
   });
-  const toggle = (id) => {
-    const next = { ...checked, [id]: !checked[id] };
+  const [custom, setCustom] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem("pack_custom_v1") || "[]"); }
+    catch { return []; }
+  });
+  const [draft, setDraft] = React.useState("");
+
+  const saveChecked = (next) => {
     setChecked(next);
     try { localStorage.setItem("pack_list_v1", JSON.stringify(next)); } catch {}
   };
-  const done = PACK_ITEMS.filter(i => checked[i.id]).length;
+  const saveCustom = (next) => {
+    setCustom(next);
+    try { localStorage.setItem("pack_custom_v1", JSON.stringify(next)); } catch {}
+  };
+
+  const toggle = (id) => saveChecked({ ...checked, [id]: !checked[id] });
+
+  const addItem = () => {
+    const label = draft.trim();
+    if (!label) return;
+    const id = "c_" + Date.now();
+    saveCustom([...custom, { id, label, emoji: "📝" }]);
+    setDraft("");
+  };
+  const removeCustom = (id) => {
+    saveCustom(custom.filter(it => it.id !== id));
+    const next = { ...checked };
+    delete next[id];
+    saveChecked(next);
+  };
+
+  const allItems = [...PACK_ITEMS, ...custom];
+  const done = allItems.filter(i => checked[i.id]).length;
+
+  const itemRow = (it, isLast, isCustom) => (
+    <div key={it.id} style={{
+      display: "flex", alignItems: "center", gap: 12,
+      padding: "11px 4px",
+      borderBottom: isLast ? "none" : "1px solid var(--line)",
+    }}>
+      <button onClick={() => toggle(it.id)} style={{
+        display: "flex", alignItems: "center", gap: 12, flex: 1,
+        background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0,
+      }}>
+        <span style={{
+          width: 20, height: 20, borderRadius: 6,
+          background: checked[it.id] ? "var(--ember)" : "transparent",
+          border: `1.5px solid ${checked[it.id] ? "var(--ember)" : "var(--line-2)"}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontSize: 12, fontWeight: 700,
+          flexShrink: 0, transition: "all .15s",
+        }}>{checked[it.id] ? "✓" : ""}</span>
+        <span style={{ fontSize: 15, opacity: 0.7, width: 22, textAlign: "center" }}>{it.emoji}</span>
+        <span style={{
+          flex: 1, fontFamily: "Geist, sans-serif", fontSize: 14,
+          color: checked[it.id] ? "var(--muted)" : "var(--ink)",
+          textDecoration: checked[it.id] ? "line-through" : "none",
+          transition: "color .15s",
+        }}>{it.label}</span>
+      </button>
+      {isCustom && (
+        <button onClick={() => removeCustom(it.id)} style={{
+          background: "transparent", border: "none", cursor: "pointer",
+          color: "var(--muted)", fontSize: 16, lineHeight: 1, padding: "0 2px", flexShrink: 0,
+        }}>×</button>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ marginTop: 20, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 16, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
         <div className="serif" style={{ fontSize: 22 }}>Pack list</div>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: done === PACK_ITEMS.length ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
-          {done}/{PACK_ITEMS.length} {done === PACK_ITEMS.length && "✓"}
+        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: done === allItems.length ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+          {done}/{allItems.length} {done === allItems.length && "✓"}
         </div>
       </div>
-      {PACK_ITEMS.map((it, i) => (
-        <button key={it.id} onClick={() => toggle(it.id)} style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 12,
-          padding: "11px 4px", background: "transparent",
-          border: "none", borderBottom: i < PACK_ITEMS.length - 1 ? "1px solid var(--line)" : "none",
-          cursor: "pointer", textAlign: "left",
-        }}>
-          <span style={{
-            width: 20, height: 20, borderRadius: 6,
-            background: checked[it.id] ? "var(--ember)" : "transparent",
-            border: `1.5px solid ${checked[it.id] ? "var(--ember)" : "var(--line-2)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: 12, fontWeight: 700,
-            flexShrink: 0, transition: "all .15s",
-          }}>{checked[it.id] ? "✓" : ""}</span>
-          <span style={{ fontSize: 15, opacity: 0.7, width: 22, textAlign: "center" }}>{it.emoji}</span>
-          <span style={{
-            flex: 1, fontFamily: "Geist, sans-serif", fontSize: 14,
-            color: checked[it.id] ? "var(--muted)" : "var(--ink)",
-            textDecoration: checked[it.id] ? "line-through" : "none",
-            transition: "color .15s",
-          }}>{it.label}</span>
-        </button>
-      ))}
+      {PACK_ITEMS.map((it, i) => itemRow(it, i === allItems.length - 1 && custom.length === 0, false))}
+      {custom.map((it, i) => itemRow(it, i === custom.length - 1, true))}
+      {/* Add custom item */}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+        <input
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && addItem()}
+          placeholder="Add an item…"
+          style={{
+            flex: 1, background: "var(--paper-2)", border: "1px solid var(--line-2)",
+            borderRadius: 10, padding: "9px 12px",
+            fontFamily: "Geist, sans-serif", fontSize: 14, color: "var(--ink)", outline: "none",
+          }}
+        />
+        <button onClick={addItem} style={{
+          background: draft.trim() ? "var(--ember)" : "var(--paper-2)",
+          color: draft.trim() ? "#fff" : "var(--muted)",
+          border: "none", borderRadius: 10, padding: "9px 14px",
+          cursor: draft.trim() ? "pointer" : "default",
+          fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1, fontWeight: 700,
+          transition: "all .15s",
+        }}>ADD</button>
+      </div>
     </div>
   );
 }

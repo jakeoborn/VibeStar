@@ -3,7 +3,9 @@
 function spotifyTokenValid() {
   const token = localStorage.getItem("spotify_token");
   const expires = localStorage.getItem("spotify_expires");
-  return !!(token && expires && Date.now() < parseInt(expires));
+  if (token && expires && Date.now() < parseInt(expires)) return true;
+  // Expired but has a refresh token — getValidToken() will renew silently on next API call
+  return !!localStorage.getItem("spotify_refresh_token");
 }
 
 const ONBOARD_VERSION = "v1";

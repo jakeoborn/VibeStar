@@ -439,13 +439,32 @@ function NotificationsCard({ state }) {
       <div className="serif" style={{ fontSize: 19, lineHeight: 1.1, marginBottom: 4 }}>
         15-min head-up before each set
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: perm === "denied" ? 8 : 12 }}>
         {perm === "granted"
           ? `${scheduled} reminder${scheduled === 1 ? "" : "s"} scheduled for tonight. Background pushes ship with the native app.`
           : perm === "denied"
-            ? "Notifications blocked in browser settings. Re-enable there to use reminders."
+            ? "Notifications are blocked for this site."
             : "Get a notification 15 minutes before each saved set so you don't miss a thing."}
       </div>
+      {perm === "denied" && (
+        <div style={{
+          background: "var(--paper-2)", border: "1px solid var(--line-2)",
+          borderRadius: 10, padding: "10px 12px", marginBottom: 12,
+        }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>
+            HOW TO RE-ENABLE
+          </div>
+          {/iPhone|iPad|iPod/.test(navigator.userAgent) ? (
+            <div style={{ fontSize: 11, color: "var(--ink)", lineHeight: 1.55 }}>
+              iPhone: <strong>Settings</strong> → <strong>Apps</strong> → <strong>Safari</strong> → <strong>Notifications</strong> → find <em>plursky.com</em> → Allow
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: "var(--ink)", lineHeight: 1.55 }}>
+              Tap the <strong>lock icon</strong> (or <strong>ⓘ</strong>) in your browser's address bar → <strong>Site settings</strong> → <strong>Notifications</strong> → set to <strong>Allow</strong>, then reload.
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {perm !== "granted" && perm !== "denied" && (
           <button onClick={onEnable} style={{
@@ -475,25 +494,30 @@ function NotificationsCard({ state }) {
 // a roadmap preview but not selectable.
 function FestivalChip({ compact = false, accent = "var(--ink)" }) {
   const [open, setOpen] = React.useState(false);
+  const canSwitch = FESTIVALS_REGISTRY.filter(f => f.available).length > 1;
+  const entry = FESTIVALS_REGISTRY.find(f => f.config.id === FESTIVAL_CONFIG.id);
   return (
     <>
-      <button onClick={() => setOpen(true)} style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        background: "var(--paper-2)", border: "1px solid var(--line-2)",
-        color: accent,
-        borderRadius: 999, padding: compact ? "3px 8px 3px 7px" : "4px 10px 4px 8px",
-        fontFamily: "Geist Mono, monospace",
-        fontSize: compact ? 9 : 9.5, letterSpacing: 1.2, fontWeight: 700,
-        cursor: "pointer", whiteSpace: "nowrap",
-      }}>
-        <span style={{ fontSize: compact ? 11 : 12 }}>
-          {FESTIVALS_REGISTRY.find(f => f.config.id === FESTIVAL_CONFIG.id)?.emoji || "🎪"}
-        </span>
+      <div
+        onClick={canSwitch ? () => setOpen(true) : undefined}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: "var(--paper-2)", border: "1px solid var(--line-2)",
+          color: accent,
+          borderRadius: 999, padding: compact ? "3px 8px 3px 7px" : "4px 10px 4px 8px",
+          fontFamily: "Geist Mono, monospace",
+          fontSize: compact ? 9 : 9.5, letterSpacing: 1.2, fontWeight: 700,
+          cursor: canSwitch ? "pointer" : "default", whiteSpace: "nowrap",
+          userSelect: "none",
+        }}>
+        <span style={{ fontSize: compact ? 11 : 12 }}>{entry?.emoji || "🎪"}</span>
         <span>{FESTIVAL_CONFIG.shortName.toUpperCase()}</span>
-        <svg width={compact ? 8 : 9} height={compact ? 8 : 9} viewBox="0 0 12 12" fill="none">
-          <path d="M3 4.5 L6 7.5 L9 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button>
+        {canSwitch && (
+          <svg width={compact ? 8 : 9} height={compact ? 8 : 9} viewBox="0 0 12 12" fill="none">
+            <path d="M3 4.5 L6 7.5 L9 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </div>
       {open && <FestivalSwitcher onClose={() => setOpen(false)} />}
     </>
   );

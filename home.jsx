@@ -53,13 +53,33 @@ async function fetchEdcForecast() {
 }
 
 function useNwsForecast() {
-  const [periods, setPeriods] = React.useState(null);
+  const [result, setResult] = React.useState({ periods: null, fromCache: false, fetchedAt: null });
   React.useEffect(() => {
     let alive = true;
-    fetchEdcForecast().then(p => { if (alive) setPeriods(p); });
+    // Check cache before fetching so we can surface the age
+    const cacheKey = `forecast_${FESTIVAL_CONFIG.id}`;
+    let fromCache = false, fetchedAt = null;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const c = JSON.parse(raw);
+        if (Date.now() - c.fetchedAt < 3600000) { fromCache = true; fetchedAt = c.fetchedAt; }
+      }
+    } catch {}
+    fetchEdcForecast().then(p => {
+      if (!alive) return;
+      // After fetch, re-read timestamp (may have been refreshed)
+      if (!fromCache) {
+        try {
+          const raw = localStorage.getItem(cacheKey);
+          if (raw) fetchedAt = JSON.parse(raw).fetchedAt;
+        } catch {}
+      }
+      setResult({ periods: p, fromCache, fetchedAt });
+    });
     return () => { alive = false; };
   }, []);
-  return periods;
+  return result;
 }
 
 // Pre-festival: pick the period named "Friday" (opening day) or the next
@@ -76,8 +96,14 @@ function pickRelevantPeriod(periods) {
 // Visible pre-festival (focused on opening day) and during-festival
 // (focused on tonight).
 function TonightCard({ state, setState }) {
-  const periods = useNwsForecast();
+  const { periods, fromCache, fetchedAt } = useNwsForecast();
   const period = pickRelevantPeriod(periods);
+  const cacheAgeLabel = (() => {
+    if (!fromCache || !fetchedAt) return null;
+    const mins = Math.round((Date.now() - fetchedAt) / 60000);
+    if (mins < 2) return null;
+    return mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+  })();
   const day = NOW.day; // 1, 2, or 3 during festival
   const sunTimes = FESTIVAL_CONFIG.sunTimes;
   const sun = sunTimes[day];
@@ -150,8 +176,16 @@ function TonightCard({ state, setState }) {
             {isPreEvent ? "OPENING NIGHT" : `TONIGHT · DAY ${day}`}
           </div>
           {period && (
-            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.5)" }}>
+            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.5)", display: "flex", alignItems: "center", gap: 5 }}>
               NWS · {period.name.toUpperCase()}
+              {cacheAgeLabel && (
+                <span style={{
+                  background: "rgba(247,237,224,0.1)", border: "1px solid rgba(247,237,224,0.18)",
+                  borderRadius: 4, padding: "1px 5px", fontSize: 7.5, letterSpacing: 1,
+                }}>
+                  CACHED · {cacheAgeLabel}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -410,101 +444,106 @@ function HomeScreen({ state, setState }) {
       )}
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
-        {/* NOW PLAYING hero card */}
-        <div style={{
-          background: current.img,
-          borderRadius: 22,
-          padding: 18,
-          color: "#fff",
-          position: "relative",
-          overflow: "hidden",
-          marginBottom: 14,
-        }}>
-          {/* Grain / vignette */}
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.18), transparent 60%), linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.35) 100%)",
-            pointerEvents: "none",
-          }} />
-          <div style={{ position: "relative" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: 7, background: "#fff",
-                boxShadow: "0 0 0 4px rgba(255,255,255,0.25)",
-                animation: "pulse 1.6s ease-in-out infinite",
+        {/* Live festival sections — hidden pre-event */}
+        {!countdown && (
+          <>
+            {/* NOW PLAYING hero card */}
+            <div style={{
+              background: current.img,
+              borderRadius: 22,
+              padding: 18,
+              color: "#fff",
+              position: "relative",
+              overflow: "hidden",
+              marginBottom: 14,
+            }}>
+              {/* Grain / vignette */}
+              <div style={{
+                position: "absolute", inset: 0,
+                background: "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.18), transparent 60%), linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.35) 100%)",
+                pointerEvents: "none",
               }} />
-              <span className="mono" style={{ fontSize: 10, letterSpacing: 2, fontWeight: 600 }}>
-                NOW PLAYING · {stageOf(current.stage).name.toUpperCase()}
-              </span>
+              <div style={{ position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: 7, background: "#fff",
+                    boxShadow: "0 0 0 4px rgba(255,255,255,0.25)",
+                    animation: "pulse 1.6s ease-in-out infinite",
+                  }} />
+                  <span className="mono" style={{ fontSize: 10, letterSpacing: 2, fontWeight: 600 }}>
+                    NOW PLAYING · {stageOf(current.stage).name.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="serif" style={{ fontSize: 38, lineHeight: 0.96, letterSpacing: -0.5, marginBottom: 4 }}>
+                  {current.name}
+                </div>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: 1.4, opacity: 0.85, marginBottom: 22 }}>
+                  {current.genre.toUpperCase()} · {current.start}–{current.end}
+                </div>
+
+                {/* Progress */}
+                <div style={{ height: 3, background: "rgba(255,255,255,0.25)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: `${progress * 100}%`, height: "100%", background: "#fff" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, opacity: 0.8 }}>
+                    {NOW.elapsedMin} MIN IN
+                  </span>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, opacity: 0.8 }}>
+                    {minsLeft} MIN LEFT
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                  <button onClick={() => setState({ ...state, tab: "map", focusStage: current.stage })}
+                    style={homeBtn("solid")}>
+                    Navigate to stage
+                  </button>
+                  <button onClick={() => setState({ ...state, tab: "home", artist: current.id })}
+                    style={homeBtn("ghost")}>
+                    Details
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="serif" style={{ fontSize: 38, lineHeight: 0.96, letterSpacing: -0.5, marginBottom: 4 }}>
-              {current.name}
-            </div>
-            <div className="mono" style={{ fontSize: 11, letterSpacing: 1.4, opacity: 0.85, marginBottom: 22 }}>
-              {current.genre.toUpperCase()} · {current.start}–{current.end}
+            {/* UP NEXT strip */}
+            <div style={{
+              background: "var(--paper-2)",
+              border: "1px solid var(--line)",
+              borderRadius: 16,
+              padding: 14,
+              marginBottom: 18,
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <ArtistSwatch artist={next} size={48} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "var(--muted)" }}>
+                  UP NEXT · {upNextMin > 0 ? `IN ${upNextMin} MIN` : "STARTING"}
+                </div>
+                <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, marginTop: 2 }}>
+                  {next.name}
+                </div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                  {stageOf(next.stage).name.toUpperCase()} · {next.start}
+                </div>
+              </div>
+              <button onClick={() => setState({ ...state, tab: "home", artist: next.id })} style={{
+                background: "var(--ink)", color: "var(--paper)", border: "none",
+                borderRadius: 999, padding: "8px 12px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 500,
+              }}>OPEN</button>
             </div>
 
-            {/* Progress */}
-            <div style={{ height: 3, background: "rgba(255,255,255,0.25)", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${progress * 100}%`, height: "100%", background: "#fff" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, opacity: 0.8 }}>
-                {NOW.elapsedMin} MIN IN
-              </span>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, opacity: 0.8 }}>
-                {minsLeft} MIN LEFT
-              </span>
-            </div>
+            {/* LIVE ACROSS STAGES — what's on right now at every stage */}
+            <LiveAcrossStrip strip={liveStrip} setState={setState} state={state} />
 
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button onClick={() => setState({ ...state, tab: "map", focusStage: current.stage })}
-                style={homeBtn("solid")}>
-                Navigate to stage
-              </button>
-              <button onClick={() => setState({ ...state, tab: "home", artist: current.id })}
-                style={homeBtn("ghost")}>
-                Details
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* UP NEXT strip */}
-        <div style={{
-          background: "var(--paper-2)",
-          border: "1px solid var(--line)",
-          borderRadius: 16,
-          padding: 14,
-          marginBottom: 18,
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <ArtistSwatch artist={next} size={48} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "var(--muted)" }}>
-              UP NEXT · {upNextMin > 0 ? `IN ${upNextMin} MIN` : "STARTING"}
-            </div>
-            <div className="serif" style={{ fontSize: 22, lineHeight: 1.05, marginTop: 2 }}>
-              {next.name}
-            </div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
-              {stageOf(next.stage).name.toUpperCase()} · {next.start}
-            </div>
-          </div>
-          <button onClick={() => setState({ ...state, tab: "home", artist: next.id })} style={{
-            background: "var(--ink)", color: "var(--paper)", border: "none",
-            borderRadius: 999, padding: "8px 12px", cursor: "pointer",
-            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 500,
-          }}>OPEN</button>
-        </div>
-
-        {/* LIVE ACROSS STAGES — what's on right now at every stage */}
-        <LiveAcrossStrip strip={liveStrip} setState={setState} state={state} />
-
-        {/* TONIGHT'S PLAN — chronological saved sets with walking ETAs + leave-by */}
-        <TonightsPlan plan={tonight} setState={setState} state={state} />
+            {/* TONIGHT'S PLAN — chronological saved sets with walking ETAs + leave-by */}
+            <TonightsPlan plan={tonight} setState={setState} state={state} />
+          </>
+        )}
 
         {/* Tonight: sunrise/sunset · weather · last-shuttle countdown */}
         <TonightCard state={state} setState={setState} />
