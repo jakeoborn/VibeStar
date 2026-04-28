@@ -75,6 +75,20 @@ function friendStatus(friendId) {
   } catch {}
   return _SEED_STATUSES[friendId] || null;
 }
+function getMyStatus() {
+  try { return JSON.parse(localStorage.getItem("status_me") || "null"); } catch { return null; }
+}
+function persistMyStatus(stageId) {
+  try { localStorage.setItem("status_me", JSON.stringify({ stage: stageId, ts: Date.now() })); } catch {}
+}
+function broadcastMyLocation(stageId) {
+  const stage = STAGES.find(s => s.id === stageId);
+  if (!stage) return;
+  const msg = `I'm at ${stage.name} 👋 come through`;
+  FRIENDS.forEach(f => {
+    saveThread(f.id, [...loadThread(f.id), { from: "me", text: msg, ts: Date.now(), status: "sent" }]);
+  });
+}
 
 
 // ── Wellness state ── persists across sessions in localStorage
@@ -569,6 +583,104 @@ function PingSheet({ onClose, onDropPin, friends }) {
   );
 }
 
+function IAmAtSheet({ onClose, initialStage, onStatusSet }) {
+  const [selected, setSelected] = React.useState(initialStage || null);
+  const [sent, setSent] = React.useState(false);
+
+  const stage = STAGES.find(s => s.id === selected);
+
+  const shareLink = async () => {
+    if (!stage) return;
+    persistMyStatus(selected);
+    onStatusSet(selected);
+    const text = `I'm at ${stage.name} at EDC LV 2026 🎧 come find me — plursky.com`;
+    if (navigator.share) {
+      try { await navigator.share({ text, title: "Where I'm at" }); } catch {}
+    } else {
+      try { await navigator.clipboard.writeText(text); } catch {}
+    }
+    onClose();
+  };
+
+  const tellCrew = () => {
+    if (!stage) return;
+    persistMyStatus(selected);
+    onStatusSet(selected);
+    broadcastMyLocation(selected);
+    setSent(true);
+    setTimeout(onClose, 900);
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(13,10,8,0.55)",
+      zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460,
+        background: "var(--paper)", color: "var(--ink)",
+        borderRadius: "16px 16px 0 0",
+        padding: "16px 18px 28px",
+        boxShadow: "0 -8px 32px rgba(0,0,0,0.35)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: 1.5, fontWeight: 800 }}>WHERE ARE YOU?</span>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "none", color: "var(--muted)",
+            fontSize: 18, cursor: "pointer", lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 14 }}>
+          {STAGES.map(s => {
+            const on = selected === s.id;
+            return (
+              <button key={s.id} onClick={() => setSelected(s.id)} style={{
+                padding: "8px 6px", borderRadius: 10,
+                background: on ? s.color : "var(--paper-2)",
+                color: on ? "#fff" : "var(--ink)",
+                border: on ? "none" : "1px solid var(--line-2)",
+                cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: 8, background: on ? "rgba(255,255,255,0.7)" : s.color }} />
+                <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.8, fontWeight: on ? 700 : 500, textAlign: "center", lineHeight: 1.2 }}>{s.short}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {stage && (
+          <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: `${stage.color}18`, borderLeft: `3px solid ${stage.color}` }}>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: stage.color, fontWeight: 700 }}>
+              {stage.vibe?.toUpperCase()}
+            </span>
+            <span className="serif" style={{ fontSize: 14, marginLeft: 8 }}>{stage.name}</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={tellCrew} disabled={!stage} style={{
+            flex: 1, padding: "10px 12px", borderRadius: 999,
+            background: sent ? "var(--success)" : (stage ? "var(--ink)" : "var(--paper-2)"),
+            color: stage ? "var(--paper)" : "var(--muted)",
+            border: "none", cursor: stage ? "pointer" : "default",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
+            transition: "background .2s",
+          }}>{sent ? "✓ CREW NOTIFIED" : "TELL MY CREW"}</button>
+          <button onClick={shareLink} disabled={!stage} style={{
+            flex: 1, padding: "10px 12px", borderRadius: 999,
+            background: stage ? "var(--ember)" : "var(--paper-2)",
+            color: stage ? "#fff" : "var(--muted)",
+            border: "none", cursor: stage ? "pointer" : "default",
+            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
+          }}>SHARE LINK ↗</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Saved-set reminders ──────────────────────────────────────
 // 15-min-before reminder hook. Fires a Web Notification when a saved set
 // is about to start. Two layers:
@@ -912,6 +1024,8 @@ function MapScreen({ state, setState }) {
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
   const [pingOpen, setPingOpen] = React.useState(false);
+  const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
+  const [myStatusStage, setMyStatusStage] = React.useState(() => getMyStatus()?.stage || null);
   // Push-style reminders for saved sets — see useSavedSetReminders below.
   const [notifyEnabled, setNotifyEnabled] = React.useState(readNotifyEnabled);
   useSavedSetReminders(state.saved, notifyEnabled);
@@ -935,17 +1049,32 @@ function MapScreen({ state, setState }) {
     setCompass(true);
   }, []);
 
+  const _compassRef = React.useRef({ smoothed: 0, absEverSeen: false });
   React.useEffect(() => {
     if (!compass) return;
+    const ref = _compassRef.current;
+    ref.absEverSeen = false;
     const handler = (e) => {
       let h = null;
-      // iOS Safari exposes calibrated true-north heading directly
-      if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
-      // Android Chrome / others: alpha is rotation around Z, with absolute=true
-      else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;
-      else if (e.alpha != null) h = (360 - e.alpha) % 360; // best effort
+      // iOS: webkitCompassHeading is calibrated true-north (preferred)
+      if (e.webkitCompassHeading != null) {
+        h = e.webkitCompassHeading;
+      // Android Chrome: deviceorientationabsolute always has absolute=true
+      } else if (e.absolute && e.alpha != null) {
+        h = (360 - e.alpha) % 360;
+        ref.absEverSeen = true;
+      // Relative alpha only if no absolute source has fired (last resort)
+      } else if (e.alpha != null && !ref.absEverSeen) {
+        h = (360 - e.alpha) % 360;
+      }
       if (h != null) {
-        setCompassHeading(h);
+        // Circular exponential smoothing (handles 359→1 wraparound)
+        let delta = h - ref.smoothed;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        ref.smoothed = ((ref.smoothed + delta * 0.18) + 360) % 360;
+        // Only push to state when change is visible (> 0.5°) to cut re-renders
+        if (Math.abs(delta) > 0.5) setCompassHeading(Math.round(ref.smoothed * 2) / 2);
         setCompassStatus("live");
       }
     };
@@ -1317,6 +1446,23 @@ function MapScreen({ state, setState }) {
             cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
             display: "flex", alignItems: "center", gap: 4,
           }}><span style={{ fontSize: 11 }}>◉</span>PING</button>
+          {(() => {
+            const ms = myStatusStage ? STAGES.find(s => s.id === myStatusStage) : null;
+            return (
+              <button onClick={() => setIAmAtOpen(true)} title="Broadcast your stage to friends" style={{
+                background: ms ? ms.color : "var(--paper-2)",
+                color: ms ? "#fff" : "var(--ink)",
+                border: ms ? "none" : "1px solid var(--line-2)",
+                borderRadius: 999, padding: "7px 10px",
+                fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+                cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <span style={{ fontSize: 11 }}>📍</span>
+                {ms ? ms.short : "I'M AT"}
+              </button>
+            );
+          })()}
           <div className="no-scrollbar" style={{ display: "flex", gap: 5, overflowX: "auto", flex: 1, scrollbarWidth: "none" }}>
             {friends.map(f => {
               const d = Math.round(Math.sqrt((f.x-avatar.x)**2 + (f.y-avatar.y)**2) * 1.8);
@@ -1396,6 +1542,14 @@ function MapScreen({ state, setState }) {
             setMeetMode(true);
             setMeetTarget(target);
           }}
+        />
+      )}
+
+      {iAmAtOpen && (
+        <IAmAtSheet
+          initialStage={myStatusStage}
+          onClose={() => setIAmAtOpen(false)}
+          onStatusSet={(stageId) => setMyStatusStage(stageId)}
         />
       )}
     </Screen>
