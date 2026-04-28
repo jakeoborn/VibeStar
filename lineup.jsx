@@ -14,11 +14,229 @@ function isLegendary(a) {
   return false;
 }
 
+// ── Build My Night wizard ─────────────────────────────────────
+function NightWizard({ state, setState, onClose }) {
+  const [activeDay, setActiveDay] = React.useState(() => {
+    const best = DAYS.map(d => ({
+      n: d.n,
+      count: ARTISTS.filter(a => a.day === d.n && state.saved.includes(a.id)).length,
+    })).reduce((b, d) => d.count > b.count ? d : b, { n: 1, count: 0 });
+    return best.n;
+  });
+
+  const [local, setLocal] = React.useState(() => new Set(state.saved));
+
+  const dayStats = DAYS.map(d => {
+    const sets = ARTISTS.filter(a => a.day === d.n && local.has(a.id));
+    let clashes = 0;
+    for (let i = 0; i < sets.length; i++)
+      for (let j = i + 1; j < sets.length; j++)
+        if (overlaps(sets[i], sets[j])) clashes++;
+    return { ...d, count: sets.length, clashes };
+  });
+
+  const sorted = ARTISTS
+    .filter(a => a.day === activeDay && local.has(a.id))
+    .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
+
+  const conflictIds = new Set();
+  for (let i = 0; i < sorted.length; i++)
+    for (let j = i + 1; j < sorted.length; j++)
+      if (overlaps(sorted[i], sorted[j])) { conflictIds.add(sorted[i].id); conflictIds.add(sorted[j].id); }
+
+  // Build interleaved timeline: sets + gap items
+  const items = [];
+  for (let i = 0; i < sorted.length; i++) {
+    items.push({ type: "set", artist: sorted[i] });
+    if (i < sorted.length - 1) {
+      const gS = toNightMin(sorted[i].end), gE = toNightMin(sorted[i + 1].start);
+      if (gE > gS + 5) {
+        const gapMin = gE - gS;
+        const fits = ARTISTS.filter(a =>
+          a.day === activeDay && !local.has(a.id) &&
+          toNightMin(a.start) >= gS && toNightMin(a.start) < gE - 14
+        ).sort((a, b) => b.tier - a.tier).slice(0, 3);
+        items.push({ type: "gap", gapMin, endOf: sorted[i].end, startOf: sorted[i + 1].start, fits });
+      }
+    }
+  }
+
+  const drop = id => setLocal(p => { const n = new Set(p); n.delete(id); return n; });
+  const add  = id => setLocal(p => new Set([...p, id]));
+
+  const handleSave = () => {
+    setState(st => ({ ...st, saved: Array.from(local) }));
+    onClose();
+  };
+
+  const sunrise = FESTIVAL_CONFIG.sunTimes[activeDay]?.rise;
+  const fmtGap = m => m >= 60 ? `${Math.floor(m / 60)}H ${m % 60}M` : `${m}M`;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 90, background: "var(--paper)", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "16px 18px 12px",
+        paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
+        borderBottom: "1px solid var(--line)",
+      }}>
+        <button onClick={onClose} style={{
+          width: 36, height: 36, borderRadius: 36, background: "var(--paper-2)",
+          border: "1px solid var(--line-2)", fontSize: 18, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>←</button>
+        <div>
+          <div className="mono" style={{ fontSize: 10, letterSpacing: 1.8, fontWeight: 700, textAlign: "center" }}>BUILD MY NIGHT</div>
+          <div className="mono" style={{ fontSize: 8, letterSpacing: 1.2, color: "var(--muted)", textAlign: "center", marginTop: 2 }}>
+            {Array.from(local).length} SETS SAVED
+          </div>
+        </div>
+        <button onClick={handleSave} style={{
+          background: "var(--ember)", color: "#fff", border: "none",
+          borderRadius: 999, padding: "8px 16px", cursor: "pointer",
+          fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+        }}>SAVE ✓</button>
+      </div>
+
+      {/* Day tabs */}
+      <div style={{ display: "flex", gap: 6, padding: "10px 16px 10px", borderBottom: "1px solid var(--line)" }}>
+        {dayStats.map(d => {
+          const on = d.n === activeDay;
+          return (
+            <button key={d.n} onClick={() => setActiveDay(d.n)} style={{
+              flex: 1, padding: "8px 6px", borderRadius: 12, cursor: "pointer", textAlign: "center",
+              background: on ? "var(--ink)" : "var(--paper-2)",
+              border: on ? "none" : "1px solid var(--line)",
+              transition: "all .15s",
+            }}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: on ? "rgba(247,237,224,0.55)" : "var(--muted)" }}>{d.short}</div>
+              <div className="mono" style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, color: on ? "var(--paper)" : "var(--ink)", lineHeight: 1.15 }}>{d.count}</div>
+              {d.clashes > 0
+                ? <div className="mono" style={{ fontSize: 8, color: "var(--ember)", letterSpacing: 0.8, marginTop: 1 }}>⚠ {d.clashes} CLASH</div>
+                : d.count > 0
+                  ? <div className="mono" style={{ fontSize: 8, color: on ? "rgba(247,237,224,0.4)" : "var(--muted)", letterSpacing: 0.8, marginTop: 1 }}>● CLEAN</div>
+                  : <div style={{ height: 12 }} />
+              }
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Timeline */}
+      <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "14px 16px 40px" }}>
+        {sorted.length === 0 ? (
+          <div style={{ textAlign: "center", paddingTop: 60 }}>
+            <div className="serif" style={{ fontSize: 24, fontStyle: "italic", color: "var(--muted)" }}>Nothing saved</div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.3, color: "var(--muted)", marginTop: 8 }}>
+              SAVE SETS IN LINEUP FIRST
+            </div>
+          </div>
+        ) : (
+          <>
+            {items.map((item, idx) => {
+              if (item.type === "set") {
+                const a = item.artist;
+                const stage = STAGES.find(s => s.id === a.stage);
+                const clash = conflictIds.has(a.id);
+                return (
+                  <div key={a.id} style={{ display: "flex", gap: 10, marginBottom: 7, alignItems: "flex-start" }}>
+                    {/* Time */}
+                    <div className="mono" style={{ width: 36, flexShrink: 0, fontSize: 9, letterSpacing: 0.5, color: "var(--muted)", textAlign: "right", paddingTop: 11 }}>
+                      {a.start}
+                    </div>
+                    {/* Block */}
+                    <div style={{
+                      flex: 1,
+                      background: clash ? "var(--ink)" : "var(--paper-2)",
+                      border: `1px solid ${clash ? "var(--ember)" : "var(--line)"}`,
+                      borderLeft: `4px solid ${stage.color}`,
+                      borderRadius: 12, padding: "9px 12px",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: clash ? "var(--paper)" : "var(--ink)", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {a.name}
+                          </div>
+                          <div className="mono" style={{ fontSize: 8.5, letterSpacing: 0.9, color: clash ? "rgba(247,237,224,0.5)" : "var(--muted)", marginTop: 3 }}>
+                            {stage.short} · {a.start}–{a.end}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          {clash && <span className="mono" style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ember)", fontWeight: 700 }}>⚠ CLASH</span>}
+                          <button onClick={() => drop(a.id)} style={{
+                            background: "rgba(232,93,46,0.12)", border: "1px solid rgba(232,93,46,0.25)",
+                            borderRadius: 999, padding: "3px 9px", cursor: "pointer",
+                            fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1, color: "var(--ember)",
+                          }}>DROP</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (item.type === "gap") {
+                return (
+                  <div key={`gap-${idx}`} style={{ display: "flex", gap: 10, marginBottom: 7, alignItems: "flex-start" }}>
+                    <div style={{ width: 36, flexShrink: 0, paddingTop: 7 }}>
+                      <div className="mono" style={{ fontSize: 8, color: "var(--muted)", textAlign: "right", letterSpacing: 0.5 }}>{item.endOf}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+                        <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+                        <span className="mono" style={{ fontSize: 8, letterSpacing: 1.2, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                          FREE · {fmtGap(item.gapMin)}
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+                      </div>
+                      {item.fits.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingBottom: 4 }}>
+                          {item.fits.map(f => {
+                            const fs = STAGES.find(s => s.id === f.stage);
+                            return (
+                              <button key={f.id} onClick={() => add(f.id)} style={{
+                                background: `${fs.color}12`, border: `1px dashed ${fs.color}`,
+                                borderRadius: 999, padding: "4px 10px", cursor: "pointer",
+                                fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 0.8,
+                                color: "var(--ink)",
+                              }}>
+                                + {f.name} {f.start} {fs.short}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })}
+
+            {/* Sunrise */}
+            {sunrise && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 6 }}>
+                <div className="mono" style={{ width: 36, flexShrink: 0, fontSize: 8.5, color: "var(--flare)", textAlign: "right", letterSpacing: 0.5 }}>{sunrise}</div>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, var(--flare), transparent)` }} />
+                  <span className="mono" style={{ fontSize: 8, letterSpacing: 1.4, color: "var(--flare)", fontWeight: 700 }}>☀ SUNRISE</span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LineupScreen({ state, setState }) {
   const [day, setDay] = React.useState(state.lineupDay || NOW.day);
   const [filter, setFilter] = React.useState("all"); // all | saved
   const [stageFilter, setStageFilter] = React.useState("all"); // all | stage id
   const [tierFilter, setTierFilter] = React.useState("all"); // all | head | prime | open | legend
+  const [wizardOpen, setWizardOpen] = React.useState(false);
 
   const dayArtists = ARTISTS
     .filter(a => a.day === day)
@@ -179,6 +397,17 @@ function LineupScreen({ state, setState }) {
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {totalSaved >= 2 && (
+            <button onClick={() => setWizardOpen(true)} style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: dayStats.some(d => d.clashes > 0) ? "var(--ember)" : "var(--ink)",
+              color: "var(--paper)", border: "none",
+              borderRadius: 999, padding: "5px 12px", cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+            }}>
+              {dayStats.some(d => d.clashes > 0) ? "⚠" : "✦"} MY NIGHT
+            </button>
+          )}
           {state.saved.length > 0 && (
             <ShareLineupButton state={state} />
           )}
@@ -187,6 +416,10 @@ function LineupScreen({ state, setState }) {
           </div>
         </div>
       </div>
+
+      {wizardOpen && (
+        <NightWizard state={state} setState={setState} onClose={() => setWizardOpen(false)} />
+      )}
 
       {conflicts.length > 0 && filter !== "all" && (
         <ConflictResolver
@@ -867,4 +1100,4 @@ async function shareLineupImage(state) {
   });
 }
 
-Object.assign(window, { LineupScreen, toggleSave, toNightMin, overlaps, shareLineupImage });
+Object.assign(window, { LineupScreen, NightWizard, toggleSave, toNightMin, overlaps, shareLineupImage });
