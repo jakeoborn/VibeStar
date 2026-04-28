@@ -616,7 +616,10 @@ async function fetchSpotifyTopArtists() {
     // Walk ALL playlists (owned + followed) — paginate both the playlist list
     // and each playlist's tracks so a 1000-song playlist is fully scanned.
     // _playlistCount stays 0 if the scope or token blocks the list endpoint.
+    // _playlistScanOk is true only if the endpoint responded with HTTP 2xx at
+    // least once — distinguishes "0 playlists" from "API call failed".
     let _playlistCount = 0;
+    let _playlistScanOk = false;
     try {
       // Fetch every playlist the user has (paginate the list — max 50 per page)
       const allPlaylists = [];
@@ -627,6 +630,7 @@ async function fetchSpotifyTopArtists() {
           { headers: { Authorization: "Bearer " + token } }
         );
         if (!plRes.ok) break;
+        _playlistScanOk = true;
         const plData = await plRes.json();
         const items = (plData.items || []).filter(p => p?.id);
         allPlaylists.push(...items);
@@ -670,6 +674,7 @@ async function fetchSpotifyTopArtists() {
 
     const result = [...top, ...extras];
     result._playlistCount = _playlistCount;
+    result._playlistScanOk = _playlistScanOk;
     return result;
   } catch {
     return [];
@@ -797,8 +802,9 @@ function SpotifyScreen({ state, setState }) {
   const connected = state.spotifyConnected;
   const [spotifyArtists,  setSpotifyArtists]  = React.useState(null);
   const [tokenBad,        setTokenBad]        = React.useState(false);
-  const [saveFlash,       setSaveFlash]       = React.useState(false);
-  const [playlistCount,   setPlaylistCount]   = React.useState(null);
+  const [saveFlash,         setSaveFlash]         = React.useState(false);
+  const [playlistCount,     setPlaylistCount]     = React.useState(null);
+  const [playlistScanFailed, setPlaylistScanFailed] = React.useState(false);
   const [showAllArtists,  setShowAllArtists]  = React.useState(false);
 
   // Apple Music state
@@ -808,12 +814,13 @@ function SpotifyScreen({ state, setState }) {
   const [amError,     setAmError]     = React.useState("");
 
   React.useEffect(() => {
-    if (!connected) { setSpotifyArtists([]); setPlaylistCount(null); return; }
+    if (!connected) { setSpotifyArtists([]); setPlaylistCount(null); setPlaylistScanFailed(false); return; }
     fetchSpotifyTopArtists().then(artists => {
       if (artists === null) { setTokenBad(true); setState({ ...state, spotifyConnected: false }); }
       else {
         setSpotifyArtists(artists);
         setPlaylistCount(artists._playlistCount ?? null);
+        setPlaylistScanFailed(artists._playlistScanOk === false);
       }
     });
   }, [connected]);
@@ -891,7 +898,7 @@ function SpotifyScreen({ state, setState }) {
               ? <>Your lineup is <span style={{ fontStyle: "italic" }}>personalised</span></>
               : <>Build your <span style={{ fontStyle: "italic" }}>perfect</span> EDC night</>}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: connected && spotifyArtists !== null && playlistCount === 0 ? 8 : 16, maxWidth: "88%" }}>
+          <div style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.55, marginBottom: connected && spotifyArtists !== null && playlistScanFailed ? 8 : 16, maxWidth: "88%" }}>
             {connected
               ? matched.length
                 ? `${matched.length} EDC artists match · scanned top, recent, liked songs${playlistCount > 0 ? ` + ${playlistCount} playlist${playlistCount === 1 ? "" : "s"}` : ""}.`
@@ -899,7 +906,7 @@ function SpotifyScreen({ state, setState }) {
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
 
-          {connected && spotifyArtists !== null && playlistCount === 0 && (
+          {connected && spotifyArtists !== null && playlistScanFailed && (
             <button
               onClick={() => { disconnectSpotify(setState, state); startSpotifyAuth(); }}
               style={{

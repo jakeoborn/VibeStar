@@ -277,34 +277,7 @@ function AccountCard({ state, setState }) {
 
       {configured && !sbUser && (
         <>
-          {/* Primary: sign in with Spotify (one tap — requires Spotify enabled in Supabase Dashboard) */}
-          <button
-            onClick={() => sbSignInWithSpotify()}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-              width: "100%", padding: "11px 14px", marginBottom: 10,
-              background: "#1DB954", color: "#000", border: "none",
-              borderRadius: 10, cursor: "pointer",
-              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.3, fontWeight: 700,
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="12" fill="#000" fillOpacity="0.15"/>
-              <path d="M6 10 Q12 8 18 11" stroke="#000" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
-              <path d="M7 13 Q12 11.5 17 14" stroke="#000" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
-              <path d="M8 15.8 Q12 14.5 16 16.5" stroke="#000" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
-            </svg>
-            SIGN IN WITH SPOTIFY
-          </button>
-
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 10px" }}>
-            <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-            <span className="mono" style={{ fontSize: 8, letterSpacing: 1.2, color: "var(--muted)" }}>OR</span>
-            <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-          </div>
-
-          {/* Fallback: email magic link */}
+          {/* Email magic link — Spotify is connected separately on the Music tab */}
           {phase === "sent" ? (
             <div style={{
               padding: "12px 14px", background: "rgba(45,122,85,0.1)",
