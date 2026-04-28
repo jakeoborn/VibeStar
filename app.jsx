@@ -300,13 +300,30 @@ function App() {
       const raw = localStorage.getItem(_SAVED_KEY);
       saved = raw ? JSON.parse(raw) : null;
     } catch {}
+
+    // Parse deep-link params: ?artist=ID, ?tab=map, ?stage=kinetic, ?day=1
+    const params = new URLSearchParams(window.location.search);
+    const dlArtist = params.get("artist");
+    const dlTab    = params.get("tab");
+    const dlStage  = params.get("stage");
+    const dlDay    = params.get("day");
+    const validArtist = dlArtist && ARTISTS.find(a => a.id === dlArtist) ? dlArtist : null;
+    const validTab    = ["home","map","lineup","spotify","me"].includes(dlTab) ? dlTab : null;
+    const validStage  = dlStage && STAGES.find(s => s.id === dlStage || s.short.toLowerCase() === dlStage.toLowerCase()) ? dlStage : null;
+    const validDay    = dlDay && [1,2,3].includes(+dlDay) ? +dlDay : null;
+
+    // Clean the URL without reloading (so back button / sharing still works)
+    if (dlArtist || dlTab || dlStage || dlDay) {
+      try { history.replaceState(null, "", window.location.pathname); } catch {}
+    }
+
     return {
-      tab: "home",
-      saved: saved ?? ["k9", "k11", "k4", "c5", "w1"],
+      tab:             (validStage ? "lineup" : validTab) || "home",
+      saved:           saved ?? ["k9", "k11", "k4", "c5", "w1"],
       spotifyConnected: spotifyTokenValid(),
-      artist: null,
-      focusStage: null,
-      lineupDay: NOW.day,
+      artist:          validArtist,
+      focusStage:      validStage || null,
+      lineupDay:       validDay || NOW.day,
     };
   });
 

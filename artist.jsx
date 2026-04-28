@@ -317,6 +317,39 @@ function SpiderWeb({ currentArtist, currentStage, similar, onSelectArtist }) {
   );
 }
 
+function ShareArtistButton({ artist }) {
+  const [copied, setCopied] = React.useState(false);
+  const handleShare = () => {
+    const url = `${window.location.origin}${window.location.pathname}?artist=${artist.id}`;
+    if (navigator.share) {
+      navigator.share({ title: artist.name + " @ EDC Las Vegas 2026", url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      }).catch(() => {});
+    }
+  };
+  return (
+    <button onClick={handleShare} style={{
+      width: 32, height: 32, borderRadius: 32,
+      background: copied ? "rgba(45,122,85,0.85)" : "rgba(255,255,255,0.15)",
+      backdropFilter: "blur(8px)",
+      border: "1px solid rgba(255,255,255,0.3)",
+      color: "#fff", cursor: "pointer", fontSize: 14,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      transition: "background 0.2s",
+    }}>
+      {copied ? "✓" : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <path d="M8.59 13.51 L15.42 17.49"/><path d="M15.41 6.51 L8.59 10.49"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function ArtistScreen({ state, setState }) {
   const a = ARTISTS.find(ar => ar.id === state.artist);
   if (!a) return null;
@@ -430,10 +463,11 @@ function ArtistScreen({ state, setState }) {
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>←</button>
 
-        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 6 }}>
+        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 6, alignItems: "center" }}>
           <Pill tone="outline" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(8px)", borderColor: "rgba(255,255,255,0.3)" }}>
             DAY {a.day} · {a.start}
           </Pill>
+          <ShareArtistButton artist={a} />
         </div>
 
         <div style={{ position: "absolute", bottom: 14, left: 18, right: 18 }}>
