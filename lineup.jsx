@@ -14,6 +14,57 @@ function isLegendary(a) {
   return false;
 }
 
+// ── ICS calendar export ──────────────────────────────────────
+function _msToIcsDate(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
+}
+
+function _artistMs(artist, hhmm) {
+  const day = FESTIVAL_CONFIG.dayDates[artist.day];
+  if (!day) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  return day.midnightUtc + (h < 8 ? 86400000 : 0) + h * 3600000 + m * 60000;
+}
+
+function exportSavedSetsICS(savedIds) {
+  const artists = ARTISTS.filter(a => savedIds.includes(a.id))
+    .sort((a, b) => (a.day - b.day) || (a.start < b.start ? -1 : 1));
+  if (!artists.length) return;
+
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0",
+    `PRODID:-//Plursky//${FESTIVAL_CONFIG.name}//EN`,
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+
+  artists.forEach(a => {
+    const stage = STAGES.find(s => s.id === a.stage);
+    const startMs = _artistMs(a, a.start);
+    const endMs   = _artistMs(a, a.end);
+    if (!startMs || !endMs) return;
+    lines.push(
+      "BEGIN:VEVENT",
+      `DTSTART:${_msToIcsDate(startMs)}`,
+      `DTEND:${_msToIcsDate(endMs)}`,
+      `SUMMARY:${a.name}${stage ? " @ " + stage.name : ""}`,
+      `DESCRIPTION:${FESTIVAL_CONFIG.name}`,
+      `LOCATION:${FESTIVAL_CONFIG.location}`,
+      `UID:plursky-${a.id}@plursky.app`,
+      "END:VEVENT"
+    );
+  });
+  lines.push("END:VCALENDAR");
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), {
+    href: url, download: `${FESTIVAL_CONFIG.id}-plursky.ics`,
+  });
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+
 // ── Build My Night wizard ─────────────────────────────────────
 function NightWizard({ state, setState, onClose }) {
   const [activeDay, setActiveDay] = React.useState(() => {
@@ -92,11 +143,28 @@ function NightWizard({ state, setState, onClose }) {
             {Array.from(local).length} SETS SAVED
           </div>
         </div>
-        <button onClick={handleSave} style={{
-          background: "var(--ember)", color: "#fff", border: "none",
-          borderRadius: 999, padding: "8px 16px", cursor: "pointer",
-          fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-        }}>SAVE ✓</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          {Array.from(local).length > 0 && (
+            <button
+              onClick={() => exportSavedSetsICS(Array.from(local))}
+              title="Export to calendar"
+              style={{
+                width: 36, height: 36, borderRadius: 36,
+                background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+                <path d="M8 14h2v2H8z" fill="var(--ink)" stroke="none"/>
+              </svg>
+            </button>
+          )}
+          <button onClick={handleSave} style={{
+            background: "var(--ember)", color: "#fff", border: "none",
+            borderRadius: 999, padding: "8px 16px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+          }}>SAVE ✓</button>
+        </div>
       </div>
 
       {/* Day tabs */}
