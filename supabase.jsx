@@ -71,6 +71,17 @@ async function sbSignInWithSpotify() {
   return { error: error?.message || null };
 }
 
+// Sign in with Apple via Supabase OAuth — requires Apple enabled in
+// Supabase Dashboard → Auth → Providers with Apple Service ID + private key.
+async function sbSignInWithApple() {
+  if (!_sb) return { error: "Supabase not configured" };
+  const { error } = await _sb.auth.signInWithOAuth({
+    provider: "apple",
+    options: { redirectTo: window.location.origin },
+  });
+  return { error: error?.message || null };
+}
+
 async function sbSignOut() {
   if (!_sb) return;
   await _sb.auth.signOut();
@@ -106,6 +117,14 @@ function sbOnAuthChange(cb) {
             country: p.country || null, product: p.product || null,
           }));
         }).catch(() => {});
+      } catch {}
+    }
+    // Apple only sends full_name on the very first sign-in — cache it immediately
+    if (event === "SIGNED_IN") {
+      try {
+        const meta = session?.user?.user_metadata;
+        const name = meta?.full_name || meta?.name;
+        if (name) localStorage.setItem("plursky_apple_name", name);
       } catch {}
     }
   });
@@ -267,9 +286,11 @@ function AccountCard({ state, setState }) {
 
       {configured && sbUser && (() => {
         const sp = (() => { try { return JSON.parse(localStorage.getItem("spotify_profile") || "null"); } catch { return null; } })();
+        const appleName = (() => { try { return localStorage.getItem("plursky_apple_name"); } catch { return null; } })();
+        const isApple = sbUser.app_metadata?.provider === "apple";
         const avatar = sp?.image || null;
-        const displayName = sp?.name || sbUser.email || "?";
-        const initial = (sp?.name || sbUser.email || "?")[0].toUpperCase();
+        const displayName = sp?.name || appleName || sbUser.user_metadata?.full_name || sbUser.email || "?";
+        const initial = displayName[0].toUpperCase();
         return (
           <>
             <div style={{
@@ -291,7 +312,7 @@ function AccountCard({ state, setState }) {
                 <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {displayName}
                 </div>
-                <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--success)", marginTop: 2 }}>● SIGNED IN{sp ? " · SPOTIFY LINKED" : ""}</div>
+                <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--success)", marginTop: 2 }}>● SIGNED IN{sp ? " · SPOTIFY LINKED" : isApple ? " · APPLE" : ""}</div>
               </div>
             </div>
 
@@ -330,6 +351,23 @@ function AccountCard({ state, setState }) {
             </div>
           ) : (
             <>
+              <button onClick={() => sbSignInWithApple()} style={{
+                width: "100%", marginBottom: 10,
+                background: "#000", color: "#fff",
+                border: "none", borderRadius: 10, padding: "11px 14px",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                fontFamily: "Geist, sans-serif", fontSize: 14, fontWeight: 500,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 814 1000" fill="white">
+                  <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663.1 0 541.8c0-207.5 133.4-317.1 264.5-317.1 70.4 0 128.9 45.5 173 45.5 42.9 0 109.9-48.1 190.5-48.1C500.1 222.2 620.9 240.3 788.1 340.9zM530.4 220.5c-20.1-29.7-47.1-66.8-97.3-66.8-12.1 0-24.2 2.3-35.7 5.1-7.1 1.8-14.1 3.9-21.3 3.9-1.9 0-3.8-.1-5.7-.3 11.4-57.7 56.4-143.4 122.3-180.5 27.9-15.7 59-26.2 91.9-26.2 2.9 0 5.8.1 8.7.3-1 56.1-23.8 117.3-63 164.5z"/>
+                </svg>
+                Sign in with Apple
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1, height: 1, background: "var(--line-2)" }}/>
+                <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)" }}>OR</span>
+                <div style={{ flex: 1, height: 1, background: "var(--line-2)" }}/>
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
                   type="email"
@@ -711,7 +749,7 @@ function _FriendRows({ friends, state, setState }) {
 }
 
 Object.assign(window, {
-  AccountCard, sbSignIn, sbSignInWithSpotify, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
+  AccountCard, sbSignIn, sbSignInWithSpotify, sbSignInWithApple, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbGetArtistSaveCounts,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap,
