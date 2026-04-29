@@ -539,19 +539,29 @@ function LineupScreen({ state, setState }) {
                   </span>
                 </div>
                 {stage.vibe && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
-                    <span className="mono" style={{
-                      fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
-                      color: stage.color,
-                      padding: "1px 6px", borderRadius: 999,
-                      background: `${stage.color}1a`,
-                      border: `0.5px solid ${stage.color}55`,
-                      textTransform: "uppercase",
-                    }}>{stage.vibe}</span>
-                    {stage.peak && (
-                      <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)" }}>
-                        PEAKS {stage.peak}
-                      </span>
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span className="mono" style={{
+                        fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
+                        color: stage.color,
+                        padding: "1px 6px", borderRadius: 999,
+                        background: `${stage.color}1a`,
+                        border: `0.5px solid ${stage.color}55`,
+                        textTransform: "uppercase",
+                      }}>{stage.vibe}</span>
+                      {stage.peak && (
+                        <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)" }}>
+                          PEAKS {stage.peak}
+                        </span>
+                      )}
+                    </div>
+                    {stage.vibeNote && (
+                      <div style={{
+                        fontSize: 10, lineHeight: 1.3, color: "var(--muted)", fontStyle: "italic",
+                        marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {stage.vibeNote}
+                      </div>
                     )}
                   </div>
                 )}

@@ -565,12 +565,16 @@ async function createEdcPlaylist(state, day = null) {
 
   // 5) Add tracks: energy-sorted nights first, discoveries appended at tail
   const allUris = [...sortedUris, ...discoveredUris];
+  let addedCount = 0;
   for (let i = 0; i < allUris.length; i += 100) {
-    await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({ uris: allUris.slice(i, i + 100) }),
-    });
+    try {
+      const ar = await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ uris: allUris.slice(i, i + 100) }),
+      });
+      if (ar.ok) addedCount += Math.min(100, allUris.length - i);
+    } catch {}
   }
 
   // 6) Update description with discovered names (best-effort)
@@ -587,7 +591,7 @@ async function createEdcPlaylist(state, day = null) {
 
   return {
     ok: true,
-    added:           sortedUris.length,
+    added:           addedCount || sortedUris.length,
     total:           sorted.length,
     missed,
     discovered:      discoveredUris.length,
@@ -1904,13 +1908,19 @@ function BuildPlaylistButton({ state }) {
       window.open(result.url, "_blank", "noopener"); return;
     }
     setStatus("working");
-    const r = await createEdcPlaylist(state);
-    setResult(r);
-    if (r.ok) {
-      setStatus("done"); // stays until user taps "OPEN"
-    } else {
+    try {
+      const r = await createEdcPlaylist(state);
+      setResult(r);
+      if (r.ok) {
+        setStatus("done");
+      } else {
+        setStatus("err");
+        if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+      }
+    } catch (e) {
+      setResult({ ok: false, reason: "create_fail", message: String(e?.message || e) });
       setStatus("err");
-      if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+      setTimeout(() => setStatus("idle"), 4500);
     }
   };
 
@@ -1968,10 +1978,16 @@ function DayPlaylistButton({ state, day }) {
     if (status === "done" && result?.url) { window.open(result.url, "_blank", "noopener"); return; }
     if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) { startSpotifyAuth(); return; }
     setStatus("working");
-    const r = await createEdcPlaylist(state, day);
-    setResult(r);
-    setStatus(r.ok ? "done" : "err");
-    if (!r.ok && r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+    try {
+      const r = await createEdcPlaylist(state, day);
+      setResult(r);
+      setStatus(r.ok ? "done" : "err");
+      if (!r.ok && r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+    } catch (e) {
+      setResult({ ok: false, reason: "create_fail", message: String(e?.message || e) });
+      setStatus("err");
+      setTimeout(() => setStatus("idle"), 4500);
+    }
   };
 
   let label, bg, color, border;

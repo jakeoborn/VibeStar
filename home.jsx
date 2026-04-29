@@ -349,13 +349,52 @@ function buildTonightsPlan(state) {
   });
 }
 
+// Compute live alerts from the user's saved sets for the current festival day.
+// Returns upcoming-set reminders (≤30 min away) and overlap conflicts.
+// Falls back to the static ALERTS demo when nothing is saved or pre-event.
+function computeAlerts(savedIds, day, timeStr) {
+  if (!savedIds?.length) return [];
+  const nowMin = toNightMin(timeStr);
+  const todaySaved = ARTISTS
+    .filter(a => a.day === day && savedIds.includes(a.id))
+    .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
+  const out = [];
+
+  for (const a of todaySaved) {
+    const s = toNightMin(a.start);
+    const minsAway = s - nowMin;
+    if (minsAway > 0 && minsAway <= 30) {
+      const stage = STAGES.find(st => st.id === a.stage);
+      out.push({
+        id: `remind_${a.id}`, kind: "reminder",
+        title: `${a.name} in ${minsAway} min`,
+        body: `${stage?.name || a.stage} · ${a.start}`,
+        time: timeStr, unread: true,
+      });
+    }
+  }
+
+  for (let i = 0; i < todaySaved.length - 1; i++) {
+    const a = todaySaved[i], b = todaySaved[i + 1];
+    if (overlaps(a, b)) {
+      out.push({
+        id: `conflict_${a.id}_${b.id}`, kind: "conflict",
+        title: "Schedule conflict",
+        body: `${a.name} and ${b.name} overlap at ${b.start}.`,
+        time: timeStr, unread: true,
+      });
+    }
+  }
+
+  return out;
+}
+
 function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
   const [firstTimerOpen, setFirstTimerOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
   const [weatherAlertDismissed, setWeatherAlertDismissed] = React.useState(false);
   const weatherAlert = useWeatherAlert();
-  const unread = (state.alerts || ALERTS).filter(a => a.unread).length;
   // Pre-event newcomers haven't seen the first-timer guide yet — show a
   // prominent CTA card until they open it once. After that the small badge
   // in the alerts row keeps it discoverable without nagging.
@@ -369,18 +408,23 @@ function HomeScreen({ state, setState }) {
   useTick(60000);
   const countdown = preEventCountdown();
 
-  const current = ARTISTS.find(a => a.id === NOW.currentArtistId);
-  const next    = ARTISTS.find(a => a.id === NOW.nextArtistId);
+  const current = ARTISTS.find(a => a.id === NOW.currentArtistId) || null;
+  const next    = ARTISTS.find(a => a.id === NOW.nextArtistId) || null;
   const stageOf = id => STAGES.find(s => s.id === id);
 
-  const totalMin = 90;
-  const progress = NOW.elapsedMin / totalMin;
-  const minsLeft = totalMin - NOW.elapsedMin;
-
-  // Up Next countdown derived from clock — was hardcoded "48 MIN"
-  const upNextMin = Math.max(0, toNightMin(next.start) - toNightMin(NOW.time));
+  const totalMin = current ? Math.max(1, toNightMin(current.end) - toNightMin(current.start)) : 90;
+  const progress = current ? Math.min(1, NOW.elapsedMin / totalMin) : 0;
+  const minsLeft = current ? Math.max(0, totalMin - NOW.elapsedMin) : 0;
+  const upNextMin = next ? Math.max(0, toNightMin(next.start) - toNightMin(NOW.time)) : 0;
   const tonight   = buildTonightsPlan(state);
   const liveStrip = liveAcrossStages();
+
+  // Computed alerts from saved sets — replaces static demo ALERTS during festival
+  const _dynAlerts = !countdown && state.saved?.length
+    ? computeAlerts(state.saved, NOW.day, NOW.time)
+    : [];
+  const alerts = _dynAlerts.length ? _dynAlerts : (state.alerts || ALERTS);
+  const unread = alerts.filter(a => a.unread).length;
 
   return (
     <Screen bg="var(--paper)">
@@ -506,8 +550,8 @@ function HomeScreen({ state, setState }) {
         {/* Live festival sections — hidden pre-event */}
         {!countdown && (
           <>
-            {/* NOW PLAYING hero card */}
-            <div style={{
+            {/* NOW PLAYING hero card — hidden during stage changeovers */}
+            {current && <div style={{
               background: current.img,
               borderRadius: 22,
               padding: 18,
@@ -566,10 +610,10 @@ function HomeScreen({ state, setState }) {
                   </button>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* UP NEXT strip */}
-            <div style={{
+            {next && <div style={{
               background: "var(--paper-2)",
               border: "1px solid var(--line)",
               borderRadius: 16,
@@ -594,7 +638,7 @@ function HomeScreen({ state, setState }) {
                 borderRadius: 999, padding: "8px 12px", cursor: "pointer",
                 fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 500,
               }}>OPEN</button>
-            </div>
+            </div>}
 
             {/* LIVE ACROSS STAGES — what's on right now at every stage */}
             <LiveAcrossStrip strip={liveStrip} setState={setState} state={state} />
@@ -633,10 +677,9 @@ function HomeScreen({ state, setState }) {
 
       {/* Alerts drawer */}
       {alertsOpen && (
-        <AlertsDrawer alerts={state.alerts || ALERTS} onClose={() => {
+        <AlertsDrawer alerts={alerts} onClose={() => {
           setAlertsOpen(false);
-          // mark read
-          setState({ ...state, alerts: (state.alerts || ALERTS).map(a => ({ ...a, unread: false })) });
+          setState({ ...state, alerts: alerts.map(a => ({ ...a, unread: false })) });
         }} onOpenMap={() => { setAlertsOpen(false); setState({ ...state, tab: "map" }); }}
           onOpenLineup={() => { setAlertsOpen(false); setState({ ...state, tab: "lineup" }); }}
         />

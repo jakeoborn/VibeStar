@@ -576,7 +576,7 @@ function PingSheet({ onClose, onDropPin, friends }) {
           }}>{feedback.text}</div>
         )}
         <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 14, lineHeight: 1.5 }}>
-          DEMO CODES: LIME · FROG · NEON · PLUM
+          TIP: use the <span style={{ color: "var(--success)", fontWeight: 700 }}>CREW</span> button above for live real-time tracking with friends.
         </div>
       </div>
     </div>
@@ -1027,6 +1027,11 @@ function MapScreen({ state, setState }) {
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
   const [myStatusStage, setMyStatusStage] = React.useState(() => getMyStatus()?.stage || null);
+  const [crewLive, setCrewLive] = React.useState(false);
+  const [crewSnap, setCrewSnap] = React.useState(() => sbGetPresSnap());
+  const crewName = React.useMemo(() => {
+    try { return localStorage.getItem("plursky_display_name") || localStorage.getItem("user_name") || ""; } catch { return ""; }
+  }, []);
   // Push-style reminders for saved sets — see useSavedSetReminders below.
   const [notifyEnabled, setNotifyEnabled] = React.useState(readNotifyEnabled);
   useSavedSetReminders(state.saved, notifyEnabled);
@@ -1157,6 +1162,31 @@ function MapScreen({ state, setState }) {
     if (!goal) return;
     setHeading(Math.atan2(goal.y - avatar.y, goal.x - avatar.x));
   }, [isLiveOnSite, avatar.x, avatar.y, selectedStage, meetMode, meetTarget]);
+
+  // Subscribe to Supabase Realtime presence — crew members broadcasting their stage
+  React.useEffect(() => sbOnPresenceChange(s => setCrewSnap({ ...s })), []);
+
+  // Convert presence snap → map positions for rendering
+  const myPresId = sbGetMyPresId();
+  const crewFriends = React.useMemo(() => {
+    return Object.entries(crewSnap)
+      .filter(([id]) => id !== myPresId)
+      .map(([id, e]) => {
+        const st = STAGES.find(s => s.id === e.stageId);
+        if (!st) return null;
+        return { id, name: e.name || "?", color: e.color || "#888", x: st.x, y: st.y, stageId: e.stageId, ts: e.ts };
+      }).filter(Boolean);
+  }, [crewSnap, myPresId]);
+
+  const toggleCrewLive = () => {
+    if (crewLive) {
+      sbPresenceLeave();
+      setCrewLive(false);
+    } else {
+      sbPresenceJoin({ name: crewName || "Anon", stageId: myStatusStage || STAGES[0].id });
+      setCrewLive(true);
+    }
+  };
 
   const stage = selectedStage ? STAGES.find(s => s.id === selectedStage) : null;
   const nowAtStage = stage ? ARTISTS.find(a => a.stage === stage.id && a.day === NOW.day) : null;
@@ -1396,6 +1426,7 @@ function MapScreen({ state, setState }) {
           compass={compass && compassStatus === "live"}
           compassHeading={compassHeading}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
+          crewFriends={crewFriends}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
         />
@@ -1455,6 +1486,18 @@ function MapScreen({ state, setState }) {
             cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
             display: "flex", alignItems: "center", gap: 4,
           }}><span style={{ fontSize: 11 }}>◉</span>PING</button>
+          <button onClick={toggleCrewLive} title="Broadcast your location — crew sees your stage pin on the map" style={{
+            background: crewLive ? "var(--success)" : "var(--paper-2)",
+            color: crewLive ? "#fff" : "var(--ink)",
+            border: crewLive ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, padding: "7px 10px",
+            fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+            cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 4,
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: 7, background: crewLive ? "#fff" : "var(--muted)", animation: crewLive ? "pulse 1.6s infinite" : "none" }}/>
+            CREW{crewFriends.length > 0 ? ` · ${crewFriends.length}` : ""}
+          </button>
           {(() => {
             const ms = myStatusStage ? STAGES.find(s => s.id === myStatusStage) : null;
             return (
@@ -1508,6 +1551,27 @@ function MapScreen({ state, setState }) {
                 </button>
               );
             })}
+            {crewFriends.map(f => {
+              const st = STAGES.find(s => s.id === f.stageId);
+              const minsAgo = f.ts ? Math.floor((Date.now() - f.ts) / 60000) : null;
+              const age = minsAgo == null ? "" : minsAgo < 1 ? " · now" : ` · ${minsAgo}m`;
+              return (
+                <div key={f.id} style={{
+                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+                  padding: "3px 8px 3px 5px", borderRadius: 999,
+                  background: `${f.color}22`,
+                  border: `1px solid ${f.color}`,
+                  fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 0.4, fontWeight: 600,
+                  color: "var(--ink)",
+                }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 7, background: f.color, animation: "pulse 1.6s infinite", flexShrink: 0 }}/>
+                  {f.name.toUpperCase()}
+                  <span style={{ fontSize: 7.5, opacity: 0.7, letterSpacing: 0.8, color: st?.color }}>
+                    {st?.short || ""}{age}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1558,7 +1622,14 @@ function MapScreen({ state, setState }) {
         <IAmAtSheet
           initialStage={myStatusStage}
           onClose={() => setIAmAtOpen(false)}
-          onStatusSet={(stageId) => setMyStatusStage(stageId)}
+          onStatusSet={(stageId) => {
+            setMyStatusStage(stageId);
+            if (crewLive) sbPresenceUpdate(stageId);
+            else {
+              sbPresenceJoin({ name: crewName || "Anon", stageId });
+              setCrewLive(true);
+            }
+          }}
         />
       )}
     </Screen>
@@ -1714,7 +1785,7 @@ function _crowdDensity(stageId, nowMin) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, showHeat = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, showHeat = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], crewFriends = [], onPickStage, onClick }) {
   // Compass mode: rotate the entire map by -heading so the user's facing
   // direction is always "up" on screen. Readable text labels counter-rotate
   // back to upright so they stay legible at any heading.
@@ -2141,6 +2212,21 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
             fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.2, fontWeight: 700,
             boxShadow: `0 3px 10px ${f.color}66`, pointerEvents: "none",
           }}>
+            {f.name.toUpperCase()}
+          </div>
+        ))}
+
+        {crewFriends.map(f => (
+          <div key={`crew-${f.id}`} style={{
+            position: "absolute", left: `${f.x}%`, top: `${f.y}%`,
+            transform: `translate(-50%, -28px)${counterRot}`,
+            display: "flex", alignItems: "center", gap: 4,
+            background: f.color, color: "#fff",
+            padding: "2px 7px 2px 5px", borderRadius: 999,
+            fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 1.2, fontWeight: 700,
+            boxShadow: `0 3px 14px ${f.color}88`, pointerEvents: "none",
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: 6, background: "rgba(255,255,255,0.9)", animation: "pulse 1.6s infinite" }}/>
             {f.name.toUpperCase()}
           </div>
         ))}

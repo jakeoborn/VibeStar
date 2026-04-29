@@ -451,13 +451,57 @@ const DAYS = [
   { n: 3, label: "SUN", date: "May 17" },
 ];
 
-const NOW = {
-  currentArtistId: "k11",    // Porter Robinson at Kinetic Field (22:00–23:15 Fri)
-  nextArtistId:    "k9",     // Kaskade up next at 23:15
-  elapsedMin: 42,
-  day: 1,
-  time: "22:42",
-};
+// NOW is a live-computed Proxy — every access reflects the real clock.
+// All existing NOW.xxx consumers continue working without any changes.
+let _nowCache = null;
+let _nowCacheAt = 0;
+function _computeNow() {
+  const utcNow = Date.now();
+  // 30-second cache — fast for repeated accesses in a single render pass
+  if (_nowCache && utcNow - _nowCacheAt < 30000) return _nowCache;
+
+  // Current time in festival tz (PDT = UTC-7)
+  const localMs = utcNow + FESTIVAL_CONFIG.utcOffsetHours * 3600000;
+  const hh = Math.floor(localMs / 3600000) % 24;
+  const mm = Math.floor(localMs / 60000) % 60;
+  const timeStr = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+
+  // Convert HH:MM to absolute UTC ms for a given festival day.
+  // Mirrors toNightMin: times before 08:00 belong to the next calendar day.
+  function absMs(day, hhmm) {
+    const [h, m] = hhmm.split(":").map(Number);
+    const base = FESTIVAL_CONFIG.dayDates[day]?.midnightUtc;
+    if (!base) return Infinity;
+    return base + (h < 8 ? 86400000 : 0) + h * 3600000 + m * 60000;
+  }
+
+  // Find artists currently on stage
+  const liveNow = ARTISTS.filter(a => {
+    const s = absMs(a.day, a.start), e = absMs(a.day, a.end);
+    return utcNow >= s && utcNow < e;
+  });
+
+  // Featured: prefer main stage, then highest tier
+  const currentArtist = liveNow.find(a => a.stage === FESTIVAL_CONFIG.mainStageId)
+    || [...liveNow].sort((a, b) => (b.tier || 0) - (a.tier || 0))[0]
+    || null;
+
+  // Next upcoming
+  const nextArtist = ARTISTS
+    .filter(a => absMs(a.day, a.start) > utcNow)
+    .sort((a, b) => absMs(a.day, a.start) - absMs(b.day, b.start))[0]
+    || null;
+
+  const day = currentArtist?.day || nextArtist?.day || 1;
+  const elapsedMin = currentArtist
+    ? Math.max(0, Math.floor((utcNow - absMs(currentArtist.day, currentArtist.start)) / 60000))
+    : 0;
+
+  _nowCache = { day, time: timeStr, currentArtistId: currentArtist?.id || null, nextArtistId: nextArtist?.id || null, elapsedMin };
+  _nowCacheAt = utcNow;
+  return _nowCache;
+}
+const NOW = new Proxy({}, { get(_, prop) { return _computeNow()[prop]; } });
 
 // Live notifications feed
 const ALERTS = [
