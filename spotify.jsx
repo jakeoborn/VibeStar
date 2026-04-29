@@ -88,7 +88,7 @@ async function fetchAppleMusicArtists() {
 
 const SPOTIFY_CLIENT_ID = "2219c68606c54629a8799f467a996a81";
 const SPOTIFY_REDIRECT  = "https://plursky.com/callback";
-const SPOTIFY_SCOPES    = "user-top-read user-read-recently-played user-library-read user-read-private user-read-email playlist-read-private playlist-modify-public playlist-modify-private";
+const SPOTIFY_SCOPES    = "user-top-read user-read-recently-played user-library-read user-read-private user-read-email user-follow-read playlist-read-private playlist-modify-public playlist-modify-private";
 
 // Genre keywords → EDC stage affinity
 const STAGE_GENRES = {
@@ -789,6 +789,10 @@ async function fetchSpotifyTopArtists() {
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=150", "saved", 25),
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=200", "saved", 20),
       pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=250", "saved", 15),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=300", "saved", 12),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=350", "saved", 10),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=400", "saved", 8),
+      pull("https://api.spotify.com/v1/me/tracks?limit=50&offset=450", "saved", 6),
     ]);
 
     // Walk ALL playlists (owned + followed) — paginate both the playlist list
@@ -1083,6 +1087,12 @@ function SpotifyScreen({ state, setState }) {
   // Check if this connection was made after scope-recording was introduced (v54).
   // Old connections have no record → private playlists may have been silently skipped.
   const noScopeRecord = (() => { try { return !localStorage.getItem("spotify_auth_scopes"); } catch { return false; } })();
+  // Tokens granted before user-follow-read was added to SPOTIFY_SCOPES can't fetch
+  // followed artists — Layton Giordani / Sofi Tukker etc. get missed if user only follows them.
+  const missingFollowScope = (() => {
+    try { const s = localStorage.getItem("spotify_auth_scopes") || ""; return s !== "" && !s.includes("user-follow-read"); }
+    catch { return false; }
+  })();
 
   const handleSaveAll = () => {
     const newSaved = [...new Set([...state.saved, ...matched.map(a => a._realId || a.id)])];
@@ -1129,7 +1139,7 @@ function SpotifyScreen({ state, setState }) {
               : "Link Spotify to see your EDC matches, genre breakdown, and play 30-sec previews on any artist."}
           </div>
 
-          {connected && spotifyArtists !== null && (playlistScanFailed || noScopeRecord) && (
+          {connected && spotifyArtists !== null && (playlistScanFailed || noScopeRecord || missingFollowScope) && (
             <button
               onClick={() => { disconnectSpotify(setState, state); startSpotifyAuth(); }}
               style={{
@@ -1139,9 +1149,11 @@ function SpotifyScreen({ state, setState }) {
                 borderRadius: 8, padding: "8px 10px", color: "#fde68a",
                 cursor: "pointer", fontFamily: "inherit",
               }}>
-              {noScopeRecord && !playlistScanFailed
-                ? "↻ Reconnect Spotify to unlock full playlist scanning — artists in private playlists (like SOFI TUKKER) may be missing."
-                : "↻ Your playlists weren't scanned. Tap to reconnect Spotify with full access — this fixes missing artists like those in private playlists."}
+              {missingFollowScope
+                ? "↻ Reconnect Spotify — your current session can't see followed artists. Layton Giordani, Sofi Tukker and others you follow won't be matched until you reconnect."
+                : noScopeRecord && !playlistScanFailed
+                  ? "↻ Reconnect Spotify to unlock full playlist scanning — artists in private playlists may be missing."
+                  : "↻ Your playlists weren't scanned. Tap to reconnect Spotify with full access — this fixes missing artists like those in private playlists."}
             </button>
           )}
 
