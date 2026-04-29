@@ -46,7 +46,7 @@ const FESTIVAL_CONFIG = {
   },
 
   // Last-shuttle cutoff per night (clock time in tz)
-  lastShuttleHHMM: "05:30",
+  lastShuttleHHMM: "05:45",
 
   // ── Geography ──
   // FESTIVAL_CONFIG.gps is the EDC build centroid (~270m north of the

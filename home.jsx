@@ -389,6 +389,102 @@ function computeAlerts(savedIds, day, timeStr) {
   return out;
 }
 
+function PostFestivalRecap({ state, setState }) {
+  const savedIds = state.saved || [];
+  const byDay = [1, 2, 3].map(day => ({
+    day,
+    meta: FESTIVAL_CONFIG.dayDates[day],
+    artists: ARTISTS.filter(a => a.day === day && savedIds.includes(a.id))
+      .sort((a, b) => toNightMin(a.start) - toNightMin(b.start)),
+  })).filter(d => d.artists.length);
+
+  return (
+    <div style={{ padding: "0 0 24px" }}>
+      {/* Hero */}
+      <div style={{
+        background: "linear-gradient(135deg, #1a0a2e 0%, #0d1b2a 60%, #0a1628 100%)",
+        borderRadius: 22, padding: "28px 22px 24px", marginBottom: 14,
+        color: "#fff", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,100,30,0.18), transparent 70%)",
+          pointerEvents: "none",
+        }}/>
+        <div style={{ position: "relative" }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 2, color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>
+            {FESTIVAL_CONFIG.name.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
+          </div>
+          <div className="serif" style={{ fontSize: 34, lineHeight: 0.95, letterSpacing: -0.5, marginBottom: 6 }}>
+            That was{" "}
+            <span style={{ fontStyle: "italic", color: "var(--ember)" }}>electric.</span>
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 12, lineHeight: 1.5 }}>
+            {savedIds.length
+              ? `You saved ${savedIds.length} set${savedIds.length !== 1 ? "s" : ""} across ${byDay.length} night${byDay.length !== 1 ? "s" : ""}. See you under the electric sky next year.`
+              : "The festival is over. See you under the electric sky next year."}
+          </div>
+        </div>
+      </div>
+
+      {/* Saved sets recap grouped by day */}
+      {byDay.length > 0 && (
+        <div style={{
+          background: "var(--paper-2)", border: "1px solid var(--line)",
+          borderRadius: 18, padding: "16px 16px 8px", marginBottom: 14,
+        }}>
+          <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.6, color: "var(--muted)", fontWeight: 600, marginBottom: 14 }}>
+            YOUR SAVED SETS
+          </div>
+          {byDay.map(({ day, meta, artists }) => (
+            <div key={day} style={{ marginBottom: 14 }}>
+              <div className="mono" style={{
+                fontSize: 8.5, letterSpacing: 1.8, color: "var(--ember)",
+                fontWeight: 700, marginBottom: 8,
+              }}>
+                {meta.short} · {meta.name.toUpperCase()}
+              </div>
+              {artists.map(a => {
+                const stage = STAGES.find(s => s.id === a.stage);
+                return (
+                  <button key={a.id}
+                    onClick={() => setState({ ...state, tab: "home", artist: a.id })}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, width: "100%",
+                      background: "transparent", border: "none", borderBottom: "1px solid var(--line-2)",
+                      padding: "8px 0", cursor: "pointer", textAlign: "left",
+                    }}>
+                    <ArtistSwatch artist={a} size={36} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="serif" style={{ fontSize: 16, lineHeight: 1.1, color: "var(--ink)" }}>
+                        {a.name}
+                      </div>
+                      <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
+                        {stage ? stage.short : ""} · {a.start}–{a.end}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {savedIds.length === 0 && (
+        <div style={{
+          background: "var(--paper-2)", border: "1px solid var(--line)",
+          borderRadius: 18, padding: 20, textAlign: "center", marginBottom: 14,
+        }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)" }}>
+            NO SAVED SETS — NEXT YEAR, START PLANNING EARLY
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeScreen({ state, setState }) {
   const [alertsOpen, setAlertsOpen] = React.useState(false);
   const [firstTimerOpen, setFirstTimerOpen] = React.useState(false);
@@ -407,6 +503,7 @@ function HomeScreen({ state, setState }) {
   // Re-render every minute so the pre-event countdown stays accurate
   useTick(60000);
   const countdown = preEventCountdown();
+  const isPostFestival = Date.now() > FESTIVAL_END_MS;
 
   const current = ARTISTS.find(a => a.id === NOW.currentArtistId) || null;
   const next    = ARTISTS.find(a => a.id === NOW.nextArtistId) || null;
@@ -473,9 +570,11 @@ function HomeScreen({ state, setState }) {
                 }}/>
               )}
             </button>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
-              DAY {NOW.day} · {NOW.time}
-            </div>
+            {!isPostFestival && (
+              <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
+                DAY {NOW.day} · {NOW.time}
+              </div>
+            )}
           </div>
         </div>
         {countdown ? (
@@ -489,6 +588,15 @@ function HomeScreen({ state, setState }) {
               <CountdownPart n={countdown.mins}  label="MIN" />
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 8 }}>
+              {FESTIVAL_CONFIG.locationShort.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
+            </div>
+          </>
+        ) : isPostFestival ? (
+          <>
+            <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
+              {FESTIVAL_CONFIG.brand} <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{FESTIVAL_CONFIG.year}</span> — that's a wrap.
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6 }}>
               {FESTIVAL_CONFIG.locationShort.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
             </div>
           </>
@@ -547,8 +655,11 @@ function HomeScreen({ state, setState }) {
           </div>
         )}
 
-        {/* Live festival sections — hidden pre-event */}
-        {!countdown && (
+        {/* Post-festival recap */}
+        {isPostFestival && <PostFestivalRecap state={state} setState={setState} />}
+
+        {/* Live festival sections — hidden pre-event and post-festival */}
+        {!countdown && !isPostFestival && (
           <>
             {/* NOW PLAYING hero card — hidden during stage changeovers */}
             {current && <div style={{
@@ -649,12 +760,12 @@ function HomeScreen({ state, setState }) {
         )}
 
         {/* Tonight: sunrise/sunset · weather · last-shuttle countdown */}
-        <TonightCard state={state} setState={setState} />
+        {!isPostFestival && <TonightCard state={state} setState={setState} />}
 
         {/* Don't-miss strip — auto-detected legendary moments (sunrise sets
             + B2B collabs) for the relevant day. Vets came for THESE, so they
             sit prominently between the night card and the artist gossip. */}
-        <DontMissStrip day={countdown ? 1 : NOW.day} state={state} setState={setState} />
+        {!isPostFestival && <DontMissStrip day={countdown ? 1 : NOW.day} state={state} setState={setState} />}
       </ScrollBody>
 
       {/* Offline banner */}

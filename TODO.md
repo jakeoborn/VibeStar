@@ -7,11 +7,11 @@
 
 ## Features
 - [ ] Real-time friend DMs — `_fakeReply()` in `map.jsx` is a bot. Replace with Supabase Realtime channel messages.
-- [ ] Post-festival state — after `FESTIVAL_CONFIG.endMs`, the app shows day 1 as default. Consider a "festival over" screen or recap mode.
+- [x] Post-festival state — after `FESTIVAL_CONFIG.endMs`, the app shows day 1 as default. Consider a "festival over" screen or recap mode.
 
 ## Data / Content
 - [ ] Update GPS anchors in `FESTIVAL_CONFIG.gpsAnchors` once Insomniac releases the official 2026 stage map (~2 weeks before festival).
-- [ ] Verify shuttle times: `lastShuttleHHMM: "05:30"` and ESSENTIALS entry "Last shuttle 5:45 AM" are inconsistent — pick one.
+- [x] Verify shuttle times: unified to `05:45` in both `lastShuttleHHMM` and ESSENTIALS entry (v63).
 
 ## Done ✓
 - [x] Dynamic NOW — home tab shows real clock-based "now playing" (v62)
