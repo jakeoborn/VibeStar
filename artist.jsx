@@ -80,6 +80,95 @@ async function fetchYouTubeSet(artistName) {
   } catch { return null; }
 }
 
+// ── Mixcloud ───────────────────────────────────────────────────
+// Free public API — no key required.
+const _MC_TTL = 24 * 3600000;
+
+async function fetchMixcloud(artistName) {
+  const cacheKey = `mc_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _MC_TTL) return c.data;
+  } catch {}
+  try {
+    const q = encodeURIComponent(`${artistName} EDC`);
+    const res = await fetch(`https://api.mixcloud.com/search/?q=${q}&type=cloudcast&limit=10`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items = json.data || [];
+    if (!items.length) return [];
+    const an = artistName.toLowerCase();
+    const scored = items.map(item => {
+      const t = (item.name || "").toLowerCase();
+      const u = (item.user?.name || "").toLowerCase();
+      return {
+        item,
+        score: (t.includes("edc")        ? 4 : 0) +
+               (t.includes("las vegas")  ? 3 : 0) +
+               (t.includes("live")       ? 2 : 0) +
+               (t.includes("set")        ? 1 : 0) +
+               (u.includes(an) || t.includes(an) ? 2 : 0),
+      };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    const data = scored.slice(0, 4).map(s => ({
+      key:       s.item.key,
+      name:      s.item.name || "",
+      url:       s.item.url  || "",
+      thumbnail: s.item.pictures?.large || s.item.pictures?.medium || null,
+      user:      s.item.user?.name || "",
+      duration:  s.item.audio_length || s.item.cloudcast_length || 0,
+      plays:     s.item.play_count   || 0,
+    }));
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
+    return data;
+  } catch { return []; }
+}
+
+function _mcDur(s) {
+  if (!s) return "";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function _mcFmt(n) {
+  if (n >= 1_000_000) return `${(n/1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${Math.round(n/1_000)}K`;
+  return n ? String(n) : "";
+}
+
+// ── TheAudioDB ─────────────────────────────────────────────────
+// Free public API — no key required. Better bios + artist images for EDC artists.
+const _TADB_TTL = 7 * 24 * 3600000; // cache 7 days (biography rarely changes)
+
+async function fetchAudioDB(artistName) {
+  const cacheKey = `tadb_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _TADB_TTL) return c.data;
+  } catch {}
+  try {
+    const res = await fetch(
+      `https://www.theaudiodb.com/api/v1/json/2/search.php?s=${encodeURIComponent(artistName)}`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const artist = (json.artists || [])[0];
+    if (!artist) return null;
+    const data = {
+      bio:     artist.strBiographyEN || "",
+      image:   artist.strArtistThumb || artist.strArtistFanart || null,
+      banner:  artist.strArtistFanart2 || artist.strArtistFanart || null,
+      mood:    artist.strMood    || "",
+      style:   artist.strStyle   || "",
+      country: artist.strCountry || "",
+      formed:  artist.intFormedYear || "",
+      website: artist.strWebsite   || "",
+    };
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
+    return data;
+  } catch { return null; }
+}
+
 // ── Last.fm ────────────────────────────────────────────────────
 // Free API key at https://www.last.fm/api/account/create
 const LASTFM_KEY = "aae1625166e1c4fa3197ef44774c4ead";
@@ -367,7 +456,7 @@ function ArtistScreen({ state, setState }) {
   }, []);
   // On-demand photo: use cached image or fetch from Spotify search
   const [fetchedPhoto, setFetchedPhoto] = React.useState(null);
-  const heroPhoto = artistImages[activeName.toLowerCase()] || fetchedPhoto;
+  const heroPhoto = artistImages[activeName.toLowerCase()] || fetchedPhoto || (tadb?.image ?? null);
   const saved = state.saved.includes(a.id);
   const [note, setNote] = React.useState(() => _getArtistNotes()[a.id] || "");
   const handleNote = (text) => {
@@ -384,13 +473,19 @@ function ArtistScreen({ state, setState }) {
   const [ytVideo,   setYtVideo]   = React.useState(undefined);
   const [ytPlaying, setYtPlaying] = React.useState(false);
   const [tmEvents,  setTmEvents]  = React.useState(undefined);
+  const [mcTracks,  setMcTracks]  = React.useState(undefined);
+  const [mcPlaying, setMcPlaying] = React.useState(null); // key of playing track
+  const [tadb,      setTadb]      = React.useState(undefined);
   React.useEffect(() => {
-    setYtPlaying(false);
+    setYtPlaying(false); setMcPlaying(null);
     setLfm(undefined); setSetlists(undefined); setYtVideo(undefined); setTmEvents(undefined);
+    setMcTracks(undefined); setTadb(undefined);
     fetchLastfm(activeName).then(setLfm);
     fetchSetlists(activeName).then(setSetlists);
     fetchYouTubeSet(activeName).then(setYtVideo);
     fetchTicketmaster(activeName).then(setTmEvents);
+    fetchMixcloud(activeName).then(setMcTracks);
+    fetchAudioDB(activeName).then(setTadb);
   }, [a.id, activeB2B]);
 
   // Spotify stats: popularity, followers, genres — loaded from cache or fetched alongside photo
@@ -612,10 +707,26 @@ function ArtistScreen({ state, setState }) {
           }}>ON MAP</button>
         </div>
 
-        {/* Bio */}
-        <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: 14, textWrap: "pretty" }}>
+        {/* Bio — inline bio first, then AudioDB extended bio if available */}
+        <div className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: tadb?.bio ? 8 : 14, textWrap: "pretty" }}>
           {a.bio}
         </div>
+        {tadb?.bio && tadb.bio.length > 60 && (
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)", marginBottom: 14 }}>
+            {tadb.bio.slice(0, 320)}{tadb.bio.length > 320 ? "…" : ""}
+            {(tadb.mood || tadb.style || tadb.country) && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {[tadb.mood, tadb.style, tadb.country].filter(Boolean).map(tag => (
+                  <span key={tag} className="mono" style={{
+                    fontSize: 8, letterSpacing: 1, padding: "3px 8px",
+                    background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                    borderRadius: 999, color: "var(--muted)",
+                  }}>{tag.toUpperCase()}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Social search links */}
         <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
@@ -852,6 +963,134 @@ function ArtistScreen({ state, setState }) {
                     <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Watch on YouTube</div>
                     <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
                       {activeName.toUpperCase()} LIVE SET · EDC
+                    </div>
+                  </div>
+                  <div style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 14 }}>↗</div>
+                </a>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── Mixcloud sets ────────────────────────────────── */}
+        {(() => {
+          const mcSearchUrl = `https://www.mixcloud.com/search/?q=${encodeURIComponent(activeName + " EDC")}`;
+          return (
+            <div style={{ marginBottom: 18 }}>
+              <div className="mono" style={{
+                fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 10,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  MIXCLOUD SETS
+                  {mcTracks === undefined && <span style={{ fontSize: 8, opacity: 0.6 }}>LOADING…</span>}
+                </span>
+                <a href={mcSearchUrl} target="_blank" rel="noopener noreferrer" style={{
+                  fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.1,
+                  color: "var(--muted)", textDecoration: "none",
+                }}>SEARCH ↗</a>
+              </div>
+
+              {/* Results */}
+              {Array.isArray(mcTracks) && mcTracks.length > 0 && mcTracks.map((track, idx) => (
+                <div key={track.key} style={{ marginBottom: 10 }}>
+                  {/* Collapsed row — tap to embed */}
+                  {mcPlaying !== track.key && (
+                    <div onClick={() => setMcPlaying(track.key)} style={{
+                      display: "flex", gap: 12, alignItems: "center",
+                      background: "var(--ink)", borderRadius: 14, overflow: "hidden",
+                      cursor: "pointer",
+                    }}>
+                      {/* Thumbnail */}
+                      <div style={{
+                        width: 72, height: 72, flexShrink: 0, position: "relative",
+                        background: "rgba(247,237,224,0.06)",
+                      }}>
+                        {track.thumbnail && (
+                          <img src={track.thumbnail} alt="" style={{
+                            width: "100%", height: "100%", objectFit: "cover", display: "block",
+                          }} />
+                        )}
+                        {/* Play button */}
+                        <div style={{
+                          position: "absolute", inset: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: "rgba(0,0,0,0.35)",
+                        }}>
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 28,
+                            background: "#ff5500",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff">
+                              <path d="M8 5 L19 12 L8 19 Z"/>
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div style={{ flex: 1, minWidth: 0, padding: "10px 14px 10px 0" }}>
+                        <div style={{
+                          fontSize: 12, color: "var(--paper)", lineHeight: 1.3, fontWeight: 500,
+                          overflow: "hidden", textOverflow: "ellipsis",
+                          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                        }}>{track.name}</div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 5, alignItems: "center" }}>
+                          <span className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "#ff5500", fontWeight: 700 }}>
+                            {track.user.toUpperCase()}
+                          </span>
+                          {track.duration > 0 && (
+                            <span className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "rgba(247,237,224,0.4)" }}>
+                              {_mcDur(track.duration)}
+                            </span>
+                          )}
+                          {track.plays > 0 && (
+                            <span className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "rgba(247,237,224,0.35)" }}>
+                              {_mcFmt(track.plays)} PLAYS
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Embedded player */}
+                  {mcPlaying === track.key && (
+                    <div style={{ borderRadius: 14, overflow: "hidden", background: "var(--ink)" }}>
+                      <iframe
+                        src={`https://www.mixcloud.com/widget/iframe/?feed=${encodeURIComponent(track.key)}&mini=0&hide_cover=0&light=0&autoplay=1`}
+                        style={{ width: "100%", height: 120, border: "none", display: "block" }}
+                        allow="autoplay"
+                      />
+                      <button onClick={() => setMcPlaying(null)} style={{
+                        width: "100%", background: "transparent", border: "none",
+                        padding: "8px 0 10px",
+                        fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+                        color: "rgba(247,237,224,0.4)", cursor: "pointer",
+                      }}>▲ CLOSE</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* No results */}
+              {Array.isArray(mcTracks) && mcTracks.length === 0 && (
+                <a href={mcSearchUrl} target="_blank" rel="noopener noreferrer" style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: "var(--paper-2)", border: "1px solid var(--line)",
+                  borderRadius: 12, padding: "12px 14px", textDecoration: "none",
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 36, background: "#ff5500",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M8 5 L19 12 L8 19 Z"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Search on Mixcloud</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                      {activeName.toUpperCase()} · SETS & MIXES
                     </div>
                   </div>
                   <div style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 14 }}>↗</div>
