@@ -719,6 +719,31 @@ function HomeScreen({ state, setState }) {
                     style={homeBtn("ghost")}>
                     Details
                   </button>
+                  {(() => {
+                    const isSaved = (state.saved || []).includes(current.id);
+                    return (
+                      <button
+                        onClick={() => {
+                          const saved = state.saved || [];
+                          setState({ ...state, saved: isSaved
+                            ? saved.filter(id => id !== current.id)
+                            : [...saved, current.id] });
+                        }}
+                        title={isSaved ? "Unsave set" : "Save set"}
+                        style={{
+                          marginLeft: "auto", background: "transparent",
+                          border: "1.5px solid rgba(255,255,255,0.4)",
+                          borderRadius: 999, width: 36, height: 36,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: "pointer", color: isSaved ? "#fff" : "rgba(255,255,255,0.6)",
+                          flexShrink: 0,
+                        }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill={isSaved ? "#fff" : "none"} stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                        </svg>
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>}

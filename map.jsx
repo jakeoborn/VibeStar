@@ -455,6 +455,20 @@ function PingSheet({ onClose, onDropPin, friends }) {
       setFeedback({ kind: "err", text: "Enter a 4-letter code." });
       return;
     }
+    // Check live CREW presence first — real lookup, no server needed
+    if (typeof sbFindByPingCode === "function") {
+      const live = sbFindByPingCode(c);
+      if (live) {
+        const st = STAGES.find(s => s.id === live.stageId);
+        if (st) {
+          onDropPin({ x: st.x, y: st.y, label: `${live.name} (${c})` });
+          setFeedback({ kind: "ok", text: `Live pin dropped on ${live.name} at ${st.name}.` });
+          setTimeout(onClose, 900);
+          return;
+        }
+      }
+    }
+    // Fall back to demo address book
     const friendId = DEMO_FRIEND_CODES[c];
     if (friendId) {
       const f = friends.find(fr => fr.id === friendId);
@@ -465,7 +479,7 @@ function PingSheet({ onClose, onDropPin, friends }) {
         return;
       }
     }
-    setFeedback({ kind: "warn", text: `Code "${c}" not in your address book yet (demo).` });
+    setFeedback({ kind: "warn", text: `"${c}" isn't in CREW right now. Ask them to join CREW so their code goes live.` });
   };
 
   const copyCode = async () => {

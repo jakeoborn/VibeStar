@@ -461,7 +461,9 @@ function sbPresenceJoin({ name, stageId }) {
     })
     .subscribe(async status => {
       if (status === "SUBSCRIBED") {
-        await _presCh.track({ name, stageId, color, ts: Date.now() });
+        let pingCode;
+        try { pingCode = localStorage.getItem("ping_code") || undefined; } catch {}
+        await _presCh.track({ name, stageId, color, ts: Date.now(), pingCode });
       }
     });
 }
@@ -486,6 +488,17 @@ function sbOnPresenceChange(cb) {
 
 function sbGetMyPresId() { return _presMyId; }
 function sbGetPresSnap()  { return { ..._presSnap }; }
+
+function sbFindByPingCode(code) {
+  const upper = (code || "").trim().toUpperCase();
+  if (!upper) return null;
+  for (const [id, entry] of Object.entries(_presSnap)) {
+    if ((entry.pingCode || "").toUpperCase() === upper) {
+      return { presId: id, name: entry.name, stageId: entry.stageId, color: entry.color, ts: entry.ts };
+    }
+  }
+  return null;
+}
 
 // ── FriendsCard ───────────────────────────────────────────────
 // Replaces the hardcoded friends array in MeScreen.
@@ -794,7 +807,7 @@ Object.assign(window, {
   AccountCard, sbSignIn, sbSignInWithSpotify, sbSignInWithApple, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbGetArtistSaveCounts,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
-  sbGetMyPresId, sbGetPresSnap,
+  sbGetMyPresId, sbGetPresSnap, sbFindByPingCode,
   sbDMChannelKey, sbDMSubscribe, sbDMSend,
   FriendsCard,
 });
