@@ -423,7 +423,7 @@ function ArtistScreen({ state, setState }) {
     const ctrl = new AbortController();
     fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(activeName)}&type=artist&limit=3`, {
       headers: { Authorization: "Bearer " + token }, signal: ctrl.signal,
-    }).then(r => r.ok ? r.json() : null).then(d => {
+    }).then(r => r.ok ? r.json() : null).then(async d => {
       const ln = activeName.toLowerCase();
       const items = d?.artists?.items || [];
       const match = items.find(x => x.name.toLowerCase() === ln)
