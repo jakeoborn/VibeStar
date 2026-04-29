@@ -396,6 +396,15 @@ function ArtistScreen({ state, setState }) {
   // Spotify stats: popularity, followers, genres — loaded from cache or fetched alongside photo
   const [spotifyStats, setSpotifyStats] = React.useState(null);
 
+  // Social proof: how many Plursky users saved this set
+  const [saveCount, setSaveCount] = React.useState(null);
+  React.useEffect(() => {
+    setSaveCount(null);
+    if (typeof sbGetArtistSaveCounts === "function") {
+      sbGetArtistSaveCounts([a.id]).then(counts => setSaveCount(counts[a.id] ?? null));
+    }
+  }, [a.id]);
+
   React.useEffect(() => {
     setFetchedPhoto(null);
     // Load stats from cache immediately (no network needed)
@@ -589,6 +598,11 @@ function ArtistScreen({ state, setState }) {
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
               {DAYS.find(d => d.n === a.day).label} · {a.start}–{a.end}
             </div>
+            {saveCount != null && saveCount >= 2 && (
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: stage.color, marginTop: 5 }}>
+                ● {saveCount} FANS GOING
+              </div>
+            )}
           </div>
           <button onClick={() => setState({ ...state, tab: "map", focusStage: a.stage, artist: null })} style={{
             background: "transparent", border: "1px solid var(--line-2)",

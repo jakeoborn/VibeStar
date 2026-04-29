@@ -26,6 +26,18 @@ create policy "own rows only" on user_data for all
 --  2. Paste your Spotify Client ID + Secret (from developer.spotify.com)
 --  3. Copy the Supabase callback URL shown there
 --  4. In Spotify developer dashboard → your app → Redirect URIs → add that URL
+
+-- Social proof counter — run once to enable "X fans going" on artist screens:
+create or replace function get_artist_save_counts(ids text[])
+returns table(artist_id text, save_count bigint)
+language sql security definer stable
+as $$
+  select a.id as artist_id,
+         count(u.user_id) as save_count
+  from unnest(ids) as a(id)
+  left join user_data u on a.id = any(u.artist_ids)
+  group by a.id;
+$$;
 ─────────────────────────────────────────────────────────────────── */
 
 const SUPABASE_URL  = "https://pzoijbqsbbwyuyjinjtj.supabase.co";
@@ -129,6 +141,35 @@ async function sbPull() {
     .eq("user_id", user.id)
     .single();
   return data || null;
+}
+
+// Returns { [artistId]: count } for each id in artistIds.
+// Requires the get_artist_save_counts SQL function (see SQL block above).
+async function sbGetArtistSaveCounts(artistIds) {
+  if (!_sb || !artistIds?.length) return {};
+  const CACHE_TTL = 3600000;
+  const now = Date.now();
+  const result = {};
+  const toFetch = [];
+  for (const id of artistIds) {
+    try {
+      const c = JSON.parse(localStorage.getItem(`sb_sc_${id}`) || "null");
+      if (c && now - c.ts < CACHE_TTL) { result[id] = c.count; continue; }
+    } catch {}
+    toFetch.push(id);
+  }
+  if (!toFetch.length) return result;
+  try {
+    const { data, error } = await _sb.rpc("get_artist_save_counts", { ids: toFetch });
+    if (!error && data) {
+      for (const row of data) {
+        const count = Number(row.save_count);
+        result[row.artist_id] = count;
+        try { localStorage.setItem(`sb_sc_${row.artist_id}`, JSON.stringify({ count, ts: now })); } catch {}
+      }
+    }
+  } catch {}
+  return result;
 }
 
 // ── Account card (shown inside MeScreen) ─────────────────────
@@ -671,6 +712,7 @@ function _FriendRows({ friends, state, setState }) {
 
 Object.assign(window, {
   AccountCard, sbSignIn, sbSignInWithSpotify, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
+  sbGetArtistSaveCounts,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap,
   FriendsCard,
