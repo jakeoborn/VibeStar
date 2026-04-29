@@ -144,7 +144,7 @@ function NightWizard({ state, setState, onClose }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {Array.from(local).length > 0 && (
+          {Array.from(local).length > 0 && (<>
             <button
               onClick={() => exportSavedSetsICS(Array.from(local))}
               title="Export to calendar"
@@ -158,7 +158,33 @@ function NightWizard({ state, setState, onClose }) {
                 <path d="M8 14h2v2H8z" fill="var(--ink)" stroke="none"/>
               </svg>
             </button>
-          )}
+            <button
+              onClick={() => {
+                const ids = Array.from(local);
+                const lines = [1, 2, 3].flatMap(day => {
+                  const d = FESTIVAL_CONFIG.dayDates[day];
+                  const dayArtists = ARTISTS.filter(a => a.day === day && ids.includes(a.id))
+                    .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
+                  if (!dayArtists.length) return [];
+                  return [`${d.short} · ${d.name.toUpperCase()}`,
+                    ...dayArtists.map(a => `  ${a.start}  ${a.name}`), ""];
+                });
+                const text = [`My ${FESTIVAL_CONFIG.name} lineup (${ids.length} sets):`, "", ...lines].join("\n").trim();
+                if (navigator.share) { navigator.share({ title: "My EDC lineup", text }).catch(() => {}); }
+                else { try { navigator.clipboard.writeText(text); } catch {} }
+              }}
+              title="Share lineup"
+              style={{
+                width: 36, height: 36, borderRadius: 36,
+                background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/>
+              </svg>
+            </button>
+          </>)}
           <button onClick={handleSave} style={{
             background: "var(--ember)", color: "#fff", border: "none",
             borderRadius: 999, padding: "8px 16px", cursor: "pointer",

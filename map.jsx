@@ -1556,20 +1556,22 @@ function MapScreen({ state, setState }) {
               const minsAgo = f.ts ? Math.floor((Date.now() - f.ts) / 60000) : null;
               const age = minsAgo == null ? "" : minsAgo < 1 ? " · now" : ` · ${minsAgo}m`;
               return (
-                <div key={f.id} style={{
-                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-                  padding: "3px 8px 3px 5px", borderRadius: 999,
-                  background: `${f.color}22`,
-                  border: `1px solid ${f.color}`,
-                  fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 0.4, fontWeight: 600,
-                  color: "var(--ink)",
-                }}>
+                <button key={f.id}
+                  onClick={() => setChatFriend({ id: f.id, presId: f.id, name: f.name, avatarTone: f.color, x: f.x, y: f.y })}
+                  style={{
+                    flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+                    padding: "3px 8px 3px 5px", borderRadius: 999,
+                    background: `${f.color}22`,
+                    border: `1px solid ${f.color}`,
+                    fontFamily: "Geist Mono, monospace", fontSize: 8.5, letterSpacing: 0.4, fontWeight: 600,
+                    color: "var(--ink)", cursor: "pointer",
+                  }}>
                   <span style={{ width: 7, height: 7, borderRadius: 7, background: f.color, animation: "pulse 1.6s infinite", flexShrink: 0 }}/>
                   {f.name.toUpperCase()}
                   <span style={{ fontSize: 7.5, opacity: 0.7, letterSpacing: 0.8, color: st?.color }}>
                     {st?.short || ""}{age}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1580,6 +1582,7 @@ function MapScreen({ state, setState }) {
       {chatFriend && (
         <MessageDrawer
           friend={chatFriend}
+          myPresId={myPresId}
           avatarStage={selectedStage}
           onClose={() => setChatFriend(null)}
           onSwitchToMeet={() => {
@@ -2647,17 +2650,37 @@ function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArt
 }
 
 // ── MESSAGE DRAWER ── per-friend chat with offline queue + canned replies
-function MessageDrawer({ friend, avatarStage, onClose, onSwitchToMeet }) {
+// Pass myPresId + friend.presId to enable real Supabase Realtime DMs.
+// Falls back to the demo bot when either presId is absent or Supabase is unconfigured.
+function MessageDrawer({ friend, myPresId, avatarStage, onClose, onSwitchToMeet }) {
+  const isRealDM = !!(myPresId && friend.presId && typeof sbDMSubscribe === "function");
+  const dmKey = isRealDM ? sbDMChannelKey(myPresId, friend.presId) : null;
+
   const [thread, setThread] = React.useState(() => loadThread(friend.id));
   const [draft, setDraft] = React.useState("");
   const [typing, setTyping] = React.useState(false);
   const scrollerRef = React.useRef(null);
   const replyTimer = React.useRef(null);
+  const threadRef = React.useRef(thread);
+  threadRef.current = thread;
 
   React.useEffect(() => {
     markRead(friend.id);
     return () => { if (replyTimer.current) clearTimeout(replyTimer.current); };
   }, [friend.id]);
+
+  // Subscribe to Supabase DM channel when real DM is available
+  React.useEffect(() => {
+    if (!isRealDM) return;
+    return sbDMSubscribe(dmKey, (payload) => {
+      if (payload.from === myPresId) return; // echo guard
+      const incoming = { from: "them", text: payload.text, ts: payload.ts || Date.now() };
+      const updated = [...threadRef.current, incoming];
+      setThread(updated);
+      saveThread(friend.id, updated);
+      setTyping(false);
+    });
+  }, [dmKey]);
 
   React.useEffect(() => {
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
@@ -2677,15 +2700,21 @@ function MessageDrawer({ friend, avatarStage, onClose, onSwitchToMeet }) {
     setThread(newThread);
     saveThread(friend.id, newThread);
     setDraft("");
-    // Fake reply (stand-in for real backend)
-    const [reply, delay] = _fakeReply(stamped);
-    setTyping(true);
-    replyTimer.current = setTimeout(() => {
-      setTyping(false);
-      const next = [...newThread, { from: "them", text: reply, ts: Date.now() }];
-      setThread(next);
-      saveThread(friend.id, next);
-    }, delay);
+
+    if (isRealDM) {
+      // Real Supabase broadcast — no bot reply
+      sbDMSend(dmKey, { from: myPresId, text: stamped, ts: Date.now() });
+    } else {
+      // Demo bot
+      const [reply, delay] = _fakeReply(stamped);
+      setTyping(true);
+      replyTimer.current = setTimeout(() => {
+        setTyping(false);
+        const next = [...newThread, { from: "them", text: reply, ts: Date.now() }];
+        setThread(next);
+        saveThread(friend.id, next);
+      }, delay);
+    }
   };
 
   const sendNativeSMS = async () => {
@@ -2732,10 +2761,13 @@ function MessageDrawer({ friend, avatarStage, onClose, onSwitchToMeet }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="serif" style={{ fontSize: 22, lineHeight: 1 }}>{friend.name}</div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3, textTransform: "uppercase" }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
               {friendStage
                 ? `${friendStage.name} · ${statusAge}m AGO`
                 : "STATUS UNKNOWN"}
+              {isRealDM && (
+                <span style={{ color: "var(--success)", letterSpacing: 1 }}>● LIVE</span>
+              )}
             </div>
           </div>
           <button onClick={onSwitchToMeet} title="Meet here" style={{

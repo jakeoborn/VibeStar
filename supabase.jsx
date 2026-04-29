@@ -748,10 +748,53 @@ function _FriendRows({ friends, state, setState }) {
   );
 }
 
+// ── Realtime DM channels ──────────────────────────────────────
+// Point-to-point broadcast channel keyed by sorted pair of plursky_pid values.
+// Works purely in-memory per session — messages also saved to localStorage by
+// the caller so threads persist across reloads.
+const _dmChannels = new Map(); // channelKey → { ch, cbs: Set }
+
+function sbDMChannelKey(idA, idB) {
+  return `dm-${[idA, idB].sort().join("-")}`;
+}
+
+function sbDMSubscribe(channelKey, cb) {
+  if (!_sb) return () => {};
+  let entry = _dmChannels.get(channelKey);
+  if (!entry) {
+    const ch = _sb.channel(channelKey);
+    ch.on("broadcast", { event: "msg" }, ({ payload }) => {
+      const e = _dmChannels.get(channelKey);
+      if (e) e.cbs.forEach(fn => { try { fn(payload); } catch {} });
+    }).subscribe();
+    entry = { ch, cbs: new Set() };
+    _dmChannels.set(channelKey, entry);
+  }
+  entry.cbs.add(cb);
+  return () => {
+    entry.cbs.delete(cb);
+    if (entry.cbs.size === 0) {
+      try { _sb.removeChannel(entry.ch); } catch {}
+      _dmChannels.delete(channelKey);
+    }
+  };
+}
+
+async function sbDMSend(channelKey, payload) {
+  if (!_sb) return false;
+  const entry = _dmChannels.get(channelKey);
+  if (!entry) return false;
+  try {
+    await entry.ch.send({ type: "broadcast", event: "msg", payload });
+    return true;
+  } catch { return false; }
+}
+
 Object.assign(window, {
   AccountCard, sbSignIn, sbSignInWithSpotify, sbSignInWithApple, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbGetArtistSaveCounts,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap,
+  sbDMChannelKey, sbDMSubscribe, sbDMSend,
   FriendsCard,
 });
