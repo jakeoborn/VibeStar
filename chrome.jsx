@@ -161,9 +161,71 @@ function Pill({ children, tone = "ink", style }) {
   );
 }
 
-// Artist color swatch (small disk/thumbnail)
+// ── Artist photo cache + rate-limited Spotify fetch ──────────
+// One fetch at a time, 150 ms apart — avoids Spotify 429s when
+// the full lineup loads. Reads localStorage cache first (instant).
+const _photoQueue = [];
+let   _photoActive = false;
+
+function _drainPhotoQueue() {
+  if (_photoActive || !_photoQueue.length) return;
+  _photoActive = true;
+  const { name, resolve } = _photoQueue.shift();
+  const token   = localStorage.getItem("spotify_token");
+  const expires = localStorage.getItem("spotify_expires");
+  if (!token || !expires || Date.now() >= parseInt(expires)) {
+    _photoActive = false; resolve(null); _drainPhotoQueue(); return;
+  }
+  fetch(
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(name)}&type=artist&limit=3`,
+    { headers: { Authorization: "Bearer " + token } }
+  ).then(r => r.ok ? r.json() : null).then(d => {
+    const ln = name.toLowerCase();
+    const items = d?.artists?.items || [];
+    const match = items.find(x => x.name.toLowerCase() === ln)
+      || items.find(x => ln.includes(x.name.toLowerCase()))
+      || items[0];
+    const img = match?.images?.[0]?.url || null;
+    if (img) {
+      try {
+        const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+        imgs[ln] = img;
+        localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+      } catch {}
+    }
+    resolve(img);
+  }).catch(() => resolve(null)).finally(() => {
+    _photoActive = false;
+    setTimeout(_drainPhotoQueue, 150);
+  });
+}
+
+function _queuePhoto(name) {
+  return new Promise(resolve => { _photoQueue.push({ name, resolve }); _drainPhotoQueue(); });
+}
+
+function useArtistPhoto(name) {
+  const [photo, setPhoto] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem("artist_images_v1") || "{}")[name.toLowerCase()] || null; }
+    catch { return null; }
+  });
+  React.useEffect(() => {
+    if (photo) return;
+    const token   = localStorage.getItem("spotify_token");
+    const expires = localStorage.getItem("spotify_expires");
+    if (!token || !expires || Date.now() >= parseInt(expires)) return;
+    let live = true;
+    _queuePhoto(name).then(img => { if (live && img) setPhoto(img); });
+    return () => { live = false; };
+  }, [name.toLowerCase()]);
+  return photo;
+}
+
+// Artist color swatch — shows Spotify headshot when available,
+// falls back to gradient + initials.
 function ArtistSwatch({ artist, size = 44 }) {
-  const initials = artist.name.split(/\s+/).map(w => w[0]).slice(0,2).join("");
+  const photo = useArtistPhoto(artist.name);
+  const initials = artist.name.split(/\s+/).map(w => w[0]).slice(0, 2).join("");
   return (
     <div style={{
       width: size, height: size, borderRadius: size,
@@ -174,8 +236,14 @@ function ArtistSwatch({ artist, size = 44 }) {
       fontSize: size * 0.42,
       flexShrink: 0,
       boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.2)",
+      overflow: "hidden", position: "relative",
     }}>
-      {initials}
+      {photo
+        ? <img src={photo} alt={artist.name} style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%",
+            objectFit: "cover", objectPosition: "center 15%",
+          }}/>
+        : initials}
     </div>
   );
 }
@@ -899,6 +967,7 @@ function BatterySaverCard() {
 
 Object.assign(window, {
   Screen, ScrollBody, TopBar, TabBar, Pill, ArtistSwatch, Wordmark,
+  useArtistPhoto,
   useInstallPrompt, InstallBanner,
   useNotifications, NotificationsCard, scheduleReminders,
   FestivalChip, FestivalSwitcher,

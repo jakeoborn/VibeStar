@@ -508,6 +508,7 @@ function HomeScreen({ state, setState }) {
   const current = ARTISTS.find(a => a.id === NOW.currentArtistId) || null;
   const next    = ARTISTS.find(a => a.id === NOW.nextArtistId) || null;
   const stageOf = id => STAGES.find(s => s.id === id);
+  const currentPhoto = useArtistPhoto(current?.name || "");
 
   const totalMin = current ? Math.max(1, toNightMin(current.end) - toNightMin(current.start)) : 90;
   const progress = current ? Math.min(1, NOW.elapsedMin / totalMin) : 0;
@@ -663,7 +664,7 @@ function HomeScreen({ state, setState }) {
           <>
             {/* NOW PLAYING hero card — hidden during stage changeovers */}
             {current && <div style={{
-              background: current.img,
+              background: currentPhoto ? "#000" : current.img,
               borderRadius: 22,
               padding: 18,
               color: "#fff",
@@ -671,10 +672,21 @@ function HomeScreen({ state, setState }) {
               overflow: "hidden",
               marginBottom: 14,
             }}>
+              {/* Real artist photo as background */}
+              {currentPhoto && (
+                <div style={{
+                  position: "absolute", inset: 0,
+                  backgroundImage: `url(${currentPhoto})`,
+                  backgroundSize: "cover", backgroundPosition: "center 15%",
+                  opacity: 0.55,
+                }}/>
+              )}
               {/* Grain / vignette */}
               <div style={{
                 position: "absolute", inset: 0,
-                background: "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.18), transparent 60%), linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.35) 100%)",
+                background: currentPhoto
+                  ? "linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.6) 100%)"
+                  : "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.18), transparent 60%), linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.35) 100%)",
                 pointerEvents: "none",
               }} />
               <div style={{ position: "relative" }}>
