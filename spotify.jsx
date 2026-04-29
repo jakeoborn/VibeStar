@@ -311,9 +311,11 @@ function startSpotifyAuth() {
 }
 
 function disconnectSpotify(setState, state) {
-  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_pkce_verifier","spotify_profile"]
+  // Keep spotify_pkce_verifier — startSpotifyAuth() may be called immediately
+  // after disconnect (reconnect flow) and still needs the pre-warmed verifier.
+  // callback.html removes it after a successful token exchange.
+  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_profile"]
     .forEach(k => localStorage.removeItem(k));
-  try { sessionStorage.removeItem("spotify_pkce_verifier"); } catch {}
   setState({ ...state, spotifyConnected: false, spotifyProfile: null });
 }
 
