@@ -91,11 +91,14 @@ async function fetchMixcloud(artistName) {
     if (c && Date.now() - c.fetchedAt < _MC_TTL) return c.data;
   } catch {}
   try {
-    const q = encodeURIComponent(`${artistName} EDC`);
-    const res = await fetch(`https://api.mixcloud.com/search/?q=${q}&type=cloudcast&limit=10`);
-    if (!res.ok) return [];
-    const json = await res.json();
-    const items = json.data || [];
+    const fetchItems = async (query) => {
+      const res = await fetch(`https://api.mixcloud.com/search/?q=${encodeURIComponent(query)}&type=cloudcast&limit=10`);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || [];
+    };
+    let items = await fetchItems(`${artistName} EDC`);
+    if (!items.length) items = await fetchItems(artistName);
     if (!items.length) return [];
     const an = artistName.toLowerCase();
     const scored = items.map(item => {
