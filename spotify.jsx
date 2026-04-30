@@ -387,12 +387,25 @@ async function ensureSpotifyProfile() {
   } catch { return null; }
 }
 
+// Tokens issued by app versions <= v53 don't carry playlist-modify scopes —
+// refreshing inherits the original (limited) scope set, so the only fix is
+// a fresh OAuth grant. We detect this up-front to skip a guaranteed 403.
+function _hasPlaylistWriteScope() {
+  let s = "";
+  try { s = localStorage.getItem("spotify_auth_scopes") || ""; } catch {}
+  // Treat unknown (legacy connection, never recorded) as "missing" — better to
+  // ask the user to reconnect than to round-trip the API and 403.
+  if (!s) return false;
+  return s.includes("playlist-modify-public") || s.includes("playlist-modify-private");
+}
+
 // #12 Build my playlist — push the user's saved EDC sets into a
 // Spotify playlist on their account. Skips artists Spotify can't find.
 async function createEdcPlaylist(state) {
   const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
   if (!token || !profile) return { ok: false, reason: "not_connected" };
+  if (!_hasPlaylistWriteScope()) return { ok: false, reason: "reconnect", status: 403, message: "Need to reconnect for playlist permission" };
 
   const saved = state.saved
     .map(id => ARTISTS.find(a => a.id === id))
@@ -422,7 +435,10 @@ async function createEdcPlaylist(state) {
   if (!plRes.ok) {
     const err = await plRes.json().catch(() => ({}));
     if (plRes.status === 401 || plRes.status === 403) {
-      ["spotify_token","spotify_expires"].forEach(k => localStorage.removeItem(k));
+      // 403 here always means "scopes don't cover playlist-modify". Wipe the
+      // recorded scope set + cached token so getValidToken can't silently
+      // refresh into another doomed token before the user reconnects.
+      ["spotify_token","spotify_expires","spotify_auth_scopes"].forEach(k => localStorage.removeItem(k));
       return { ok: false, reason: "reconnect", status: plRes.status, message: err.error?.message || "Reconnect required" };
     }
     return { ok: false, reason: "create_fail", status: plRes.status, message: err.error?.message || "" };
@@ -1833,15 +1849,7 @@ function BuildPlaylistButton({ state }) {
   const [status, setStatus] = React.useState("idle"); // idle | working | done | err
   const [result, setResult] = React.useState(null);
 
-  const onClick = async () => {
-    if (status === "working") return;
-    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) {
-      startSpotifyAuth(); return;
-    }
-    // When done, clicking opens the playlist (user-initiated — not blocked)
-    if (status === "done" && result?.url) {
-      window.open(result.url, "_blank", "noopener"); return;
-    }
+  const run = async () => {
     setStatus("working");
     try {
       const r = await createEdcPlaylist(state);
@@ -1859,6 +1867,32 @@ function BuildPlaylistButton({ state }) {
     }
   };
 
+  // After the user reconnects via OAuth and returns to the app, resume the
+  // build automatically if they were mid-flow. Removes the otherwise required
+  // third click ("connect", "back", "build again").
+  React.useEffect(() => {
+    let pending = null;
+    try { pending = localStorage.getItem("plursky_pending_build"); } catch {}
+    if (pending && state.spotifyConnected && _hasPlaylistWriteScope()) {
+      try { localStorage.removeItem("plursky_pending_build"); } catch {}
+      run();
+    }
+  }, []); // mount-only — pending flag is one-shot
+
+  const onClick = async () => {
+    if (status === "working") return;
+    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) {
+      // Mark intent so we auto-resume after the OAuth round-trip.
+      try { localStorage.setItem("plursky_pending_build", "1"); } catch {}
+      startSpotifyAuth(); return;
+    }
+    // When done, clicking opens the playlist (user-initiated — not blocked)
+    if (status === "done" && result?.url) {
+      window.open(result.url, "_blank", "noopener"); return;
+    }
+    run();
+  };
+
   let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
   if (status === "working") {
     label = "BUILDING…";
@@ -1869,7 +1903,7 @@ function BuildPlaylistButton({ state }) {
       : `✓ ${result?.added} TRACKS · FRI→SAT→SUN — OPEN ↗`;
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
-    if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT SPOTIFY";
+    if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ TAP TO GRANT SPOTIFY ACCESS";
     else if (result?.reason === "empty") label = "SAVE SETS FIRST";
     else if (result?.reason === "create_fail") {
       const msg = (result?.message || "").slice(0, 28);
