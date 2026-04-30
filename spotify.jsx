@@ -223,8 +223,10 @@ async function _buildSpotifyAuthUrl() {
   // auth-domain redirect; the other usually survives.
   try { localStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
   try { sessionStorage.setItem("spotify_pkce_verifier", verifier); } catch {}
-  // Record which scopes were granted so we can detect stale/partial tokens later.
-  try { localStorage.setItem("spotify_auth_scopes", SPOTIFY_SCOPES); } catch {}
+  // Note: `spotify_auth_scopes` is the GRANTED-scope record, not the requested
+  // one — only callback.html writes it (after the token exchange returns the
+  // actual `scope` field). Writing here would falsely promise scopes that
+  // Spotify might silently downgrade if the user denied any.
   const params = new URLSearchParams({
     client_id:             SPOTIFY_CLIENT_ID,
     response_type:         "code",
@@ -252,6 +254,20 @@ function _prewarmSpotifyAuth() {
 }
 // Kick off immediately at module load.
 if (typeof window !== "undefined") _prewarmSpotifyAuth();
+
+// One-shot v80 migration: pre-v80 versions wrote the REQUESTED scope string
+// (not the granted one) to spotify_auth_scopes on every page load, falsely
+// promising playlist-modify scopes the running token may not have. Wipe it
+// for any user who hasn't migrated yet — _hasPlaylistWriteScope will then
+// correctly fail-closed and prompt reconnect.
+if (typeof window !== "undefined") {
+  try {
+    if (!localStorage.getItem("plursky_scope_migration_v80")) {
+      localStorage.removeItem("spotify_auth_scopes");
+      localStorage.setItem("plursky_scope_migration_v80", "1");
+    }
+  } catch {}
+}
 
 // Tiny visible toast — used when something silently goes wrong on iOS.
 // We DOM-inject so it works even if React state is in a bad place.
