@@ -1794,6 +1794,11 @@ function MeScreen({ state, setState }) {
           <FriendsCard state={state} setState={setState} />
         </div>
 
+        {/* Crew mode — shared saved lineups */}
+        <div style={{ marginBottom: 20 }}>
+          <CrewCard state={state} />
+        </div>
+
         {/* Cloud account / sync */}
         <AccountCard state={state} setState={setState} />
 

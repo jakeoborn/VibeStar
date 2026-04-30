@@ -120,6 +120,23 @@ function NightWizard({ state, setState, onClose }) {
     onClose();
   };
 
+  const autoFill = () => {
+    const candidates = ARTISTS.filter(a => a.day === activeDay)
+      .sort((a, b) => (b.tier - a.tier) || (toNightMin(a.start) - toNightMin(b.start)));
+    const picked = [];
+    for (const a of candidates) {
+      if (picked.length >= 8) break;
+      if (!picked.some(p => overlaps(p, a))) picked.push(a);
+    }
+    setLocal(prev => {
+      const merged = new Set(prev);
+      // Remove existing day sets then add optimal picks
+      ARTISTS.filter(a => a.day === activeDay).forEach(a => merged.delete(a.id));
+      picked.forEach(a => merged.add(a.id));
+      return merged;
+    });
+  };
+
   const sunrise = FESTIVAL_CONFIG.sunTimes[activeDay]?.rise;
   const fmtGap = m => m >= 60 ? `${Math.floor(m / 60)}H ${m % 60}M` : `${m}M`;
 
@@ -185,6 +202,11 @@ function NightWizard({ state, setState, onClose }) {
               </svg>
             </button>
           </>)}
+          <button onClick={autoFill} title="Auto-fill best non-clashing sets for this day" style={{
+            background: "var(--horizon)", color: "#fff", border: "none",
+            borderRadius: 999, padding: "8px 13px", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+          }}>✦ AUTO</button>
           <button onClick={handleSave} style={{
             background: "var(--ember)", color: "#fff", border: "none",
             borderRadius: 999, padding: "8px 16px", cursor: "pointer",
@@ -682,6 +704,14 @@ function LineupScreen({ state, setState }) {
                       border: "0.5px solid rgba(29,185,84,0.5)",
                     }}>♫</span>
                   )}
+                  {(() => { const n = window.sbGetCrewCount?.(a.id) || 0; return n > 0 ? (
+                    <span className="mono" style={{
+                      fontSize: 8, letterSpacing: 1, fontWeight: 700,
+                      color: "var(--horizon)", background: "rgba(123,61,154,0.12)",
+                      padding: "1px 6px", borderRadius: 999,
+                      border: "0.5px solid rgba(123,61,154,0.5)",
+                    }}>👥 {n}</span>
+                  ) : null; })()}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                   <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: stage.color, fontWeight: 600, textTransform: "uppercase" }}>

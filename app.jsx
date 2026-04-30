@@ -294,6 +294,8 @@ function App() {
     catch { return false; }
   });
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [chatOpen,   setChatOpen]   = React.useState(false);
+  const { perm: notifPerm, showLocal } = useNotifications();
   const [state, setState] = React.useState(() => {
     let saved;
     try {
@@ -331,6 +333,11 @@ function App() {
     try { localStorage.setItem(_SAVED_KEY, JSON.stringify(state.saved)); } catch {}
   }, [state.saved]);
 
+  // Auto-schedule push reminders whenever saves change (if permission already granted)
+  React.useEffect(() => {
+    if (notifPerm === "granted") scheduleReminders(state, showLocal);
+  }, [state.saved.join(","), notifPerm]);
+
   let body;
   if (state.artist) body = <ArtistScreen state={state} setState={setState} />;
   else if (state.tab === "home")    body = <HomeScreen    state={state} setState={setState} />;
@@ -348,7 +355,7 @@ function App() {
         <div style={{ flex: 1, position: "relative" }}>
           {body}
           {/* Search FAB — floats above TabBar, accessible from any screen */}
-          {!state.artist && !searchOpen && (
+          {!state.artist && !searchOpen && !chatOpen && (
             <button
               onClick={() => setSearchOpen(true)}
               aria-label="Search artists"
@@ -366,6 +373,22 @@ function App() {
               </svg>
             </button>
           )}
+          {/* Ask Plursky AI chat FAB */}
+          {!state.artist && !chatOpen && !searchOpen && (
+            <button
+              onClick={() => setChatOpen(true)}
+              aria-label="Ask Plursky AI"
+              style={{
+                position: "absolute", bottom: 16, left: 16, zIndex: 30,
+                width: 42, height: 42, borderRadius: 42,
+                background: "linear-gradient(135deg, var(--ember), var(--horizon))",
+                border: "none", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 4px 16px rgba(123,61,154,0.4)",
+                fontSize: 18,
+              }}
+            >✦</button>
+          )}
         </div>
         {!state.artist && (
           <TabBar active={state.tab} onChange={t => setState({ ...state, tab: t })} />
@@ -376,6 +399,9 @@ function App() {
           onClose={() => setSearchOpen(false)}
           onSelectArtist={(id) => setState({ ...state, artist: id })}
         />
+      )}
+      {chatOpen && (
+        <AskPlurskyChat state={state} onClose={() => setChatOpen(false)} />
       )}
       {showOnboarding && (
         <OnboardingModal

@@ -496,6 +496,10 @@ function HomeScreen({ state, setState }) {
   const [firstTimerOpen, setFirstTimerOpen] = React.useState(false);
   const [offline, setOffline] = React.useState(state.offline || false);
   const [weatherAlertDismissed, setWeatherAlertDismissed] = React.useState(false);
+  const [notifNudgeDismissed, setNotifNudgeDismissed] = React.useState(() => {
+    try { return localStorage.getItem("notif_nudge_dismissed") === "1"; } catch { return false; }
+  });
+  const { perm: notifPerm, enable: enableNotifs } = useNotifications();
   const weatherAlert = useWeatherAlert();
   // Pre-event newcomers haven't seen the first-timer guide yet — show a
   // prominent CTA card until they open it once. After that the small badge
@@ -639,6 +643,36 @@ function HomeScreen({ state, setState }) {
       )}
 
       <ScrollBody style={{ padding: "16px 16px 24px" }}>
+        {/* Notification nudge — appears once when saves exist but permission not yet granted */}
+        {state.saved.length > 0 && notifPerm === "default" && !notifNudgeDismissed && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: "rgba(123,61,154,0.1)", border: "1px solid rgba(123,61,154,0.35)",
+            borderRadius: 14, padding: "11px 13px", marginBottom: 14,
+          }}>
+            <span style={{ fontSize: 17, flexShrink: 0 }}>🔔</span>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink)", lineHeight: 1.4 }}>
+              Get notified 15 min before each saved set
+            </div>
+            <button onClick={async () => {
+              await enableNotifs();
+              setNotifNudgeDismissed(true);
+              try { localStorage.setItem("notif_nudge_dismissed", "1"); } catch {}
+            }} style={{
+              background: "var(--horizon)", color: "#fff", border: "none",
+              borderRadius: 999, padding: "5px 11px", cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+              flexShrink: 0,
+            }}>ENABLE</button>
+            <button onClick={() => {
+              setNotifNudgeDismissed(true);
+              try { localStorage.setItem("notif_nudge_dismissed", "1"); } catch {}
+            }} style={{
+              background: "transparent", border: "none", color: "var(--muted)",
+              fontSize: 17, cursor: "pointer", flexShrink: 0, lineHeight: 1,
+            }}>×</button>
+          </div>
+        )}
         {/* Weather alert banner */}
         {weatherAlert && !weatherAlertDismissed && (
           <div style={{

@@ -803,11 +803,218 @@ async function sbDMSend(channelKey, payload) {
   } catch { return false; }
 }
 
+// ── Group / Crew mode ────────────────────────────────────────
+// Supabase broadcast channel keyed by 6-char crew code.
+// Each member broadcasts their saved set IDs so everyone sees
+// "X crew" badges on the lineup without any DB tables.
+
+const _groupChannels = new Map(); // code → { ch, members: Map<pid,{name,artistIds,ts}> }
+
+function sbGetOrCreateGroupCode() {
+  try {
+    let code = localStorage.getItem("plursky_group_code");
+    if (!code) {
+      code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      localStorage.setItem("plursky_group_code", code);
+    }
+    return code;
+  } catch { return "PLURSK"; }
+}
+
+function sbGroupJoin(code, { pid, name, artistIds }, onChange) {
+  if (!_sb) return () => {};
+  sbGroupLeave(code);
+  const members = new Map();
+  const ch = _sb.channel(`group-${code}`);
+  ch.on("broadcast", { event: "lineup" }, ({ payload }) => {
+    members.set(payload.pid, { name: payload.name, artistIds: payload.artistIds || [], ts: Date.now() });
+    onChange?.(new Map(members));
+  }).subscribe(() => {
+    ch.send({ type: "broadcast", event: "lineup", payload: { pid, name, artistIds } });
+  });
+  _groupChannels.set(code, { ch, members });
+  return () => sbGroupLeave(code);
+}
+
+function sbGroupLeave(code) {
+  const entry = _groupChannels.get(code);
+  if (!entry) return;
+  try { _sb.removeChannel(entry.ch); } catch {}
+  _groupChannels.delete(code);
+}
+
+function sbGroupUpdate(code, payload) {
+  const entry = _groupChannels.get(code);
+  if (!entry) return;
+  entry.ch.send({ type: "broadcast", event: "lineup", payload }).catch?.(() => {});
+}
+
+function sbGetCrewCount(artistId) {
+  const myPid = sbGetMyPresId();
+  for (const [, entry] of _groupChannels) {
+    let n = 0;
+    for (const [pid, m] of entry.members) {
+      if (pid !== myPid && (m.artistIds || []).includes(artistId)) n++;
+    }
+    return n;
+  }
+  return 0;
+}
+
+function CrewCard({ state }) {
+  const configured = !!(SUPABASE_URL && SUPABASE_ANON);
+  const [code,      setCode]      = React.useState(() => sbGetOrCreateGroupCode());
+  const [joined,    setJoined]    = React.useState(false);
+  const [members,   setMembers]   = React.useState(new Map());
+  const [codeInput, setCodeInput] = React.useState("");
+  const [joining,   setJoining]   = React.useState(false);
+  const [copied,    setCopied]    = React.useState(false);
+  const leaveRef = React.useRef(null);
+
+  const myPid  = sbGetMyPresId();
+  const myName = (() => { try { return localStorage.getItem("plursky_display_name") || localStorage.getItem("user_name") || "Me"; } catch { return "Me"; } })();
+
+  const joinCrew = (c) => {
+    const newCode = (c || code).toUpperCase().trim().slice(0, 6);
+    if (newCode.length < 4) return;
+    setCode(newCode);
+    try { localStorage.setItem("plursky_group_code", newCode); } catch {}
+    if (leaveRef.current) leaveRef.current();
+    leaveRef.current = sbGroupJoin(newCode, { pid: myPid, name: myName, artistIds: state.saved }, setMembers);
+    setJoined(true);
+    setJoining(false);
+    setCodeInput("");
+  };
+
+  React.useEffect(() => {
+    if (joined) sbGroupUpdate(code, { pid: myPid, name: myName, artistIds: state.saved });
+  }, [state.saved.join(","), joined]);
+
+  React.useEffect(() => () => { if (leaveRef.current) leaveRef.current(); }, []);
+
+  const others = [...members.entries()].filter(([pid]) => pid !== myPid);
+
+  if (!configured) return null;
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="serif" style={{ fontSize: 22 }}>Crew Mode</div>
+        {joined && <span className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--success)" }}>● {others.length + 1} IN CREW</span>}
+      </div>
+
+      {!joined ? (
+        <div style={{ padding: "15px 14px", borderRadius: 14, background: "var(--paper)", border: "1px solid var(--line)" }}>
+          <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5, marginBottom: 14 }}>
+            Share a crew code with friends. When they join, you'll see which sets overlap — and the lineup shows crew badges.
+          </div>
+          <button onClick={() => joinCrew(code)} style={{
+            width: "100%", padding: "11px", background: "var(--ink)", color: "var(--paper)",
+            border: "none", borderRadius: 10, cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.4, fontWeight: 700,
+            marginBottom: 8,
+          }}>
+            START CREW · <span style={{ letterSpacing: 4 }}>{code}</span>
+          </button>
+          {joining ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text" value={codeInput}
+                onChange={e => setCodeInput(e.target.value.toUpperCase().slice(0, 6))}
+                onKeyDown={e => e.key === "Enter" && joinCrew(codeInput)}
+                placeholder="Enter crew code…" autoFocus maxLength={6}
+                style={{
+                  flex: 1, padding: "9px 12px",
+                  background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                  borderRadius: 10, fontFamily: "Geist Mono, monospace", fontSize: 13,
+                  color: "var(--ink)", outline: "none", letterSpacing: 3,
+                }}
+              />
+              <button onClick={() => joinCrew(codeInput)} style={{
+                padding: "9px 14px",
+                background: codeInput.length >= 4 ? "var(--ember)" : "var(--paper-2)",
+                color: codeInput.length >= 4 ? "#fff" : "var(--muted)",
+                border: "none", borderRadius: 10, cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.1, fontWeight: 700,
+              }}>JOIN</button>
+            </div>
+          ) : (
+            <button onClick={() => setJoining(true)} style={{
+              width: "100%", padding: "9px", background: "transparent",
+              border: "1px solid var(--line-2)", borderRadius: 10, cursor: "pointer",
+              color: "var(--muted)", fontFamily: "Geist Mono, monospace",
+              fontSize: 9.5, letterSpacing: 1.2,
+            }}>JOIN A FRIEND'S CREW</button>
+          )}
+        </div>
+      ) : (
+        <div>
+          <div style={{
+            padding: "12px 14px", borderRadius: 12, marginBottom: 8,
+            background: "var(--ink)", color: "var(--paper)",
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <div style={{ flex: 1 }}>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.45)", marginBottom: 3 }}>CREW CODE — SHARE WITH FRIENDS</div>
+              <div className="mono" style={{ fontSize: 28, letterSpacing: 8, fontWeight: 700, lineHeight: 1 }}>{code}</div>
+            </div>
+            <button onClick={() => { try { navigator.clipboard.writeText(code); } catch {} setCopied(true); setTimeout(() => setCopied(false), 1500); }} style={{
+              background: copied ? "rgba(45,122,85,0.3)" : "rgba(247,237,224,0.12)",
+              border: "none", borderRadius: 8, padding: "7px 11px", cursor: "pointer",
+              color: copied ? "var(--success)" : "var(--paper)",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+              transition: "all .15s",
+            }}>{copied ? "✓" : "COPY"}</button>
+            <button onClick={() => { if (leaveRef.current) leaveRef.current(); setJoined(false); setMembers(new Map()); }} style={{
+              background: "rgba(247,237,224,0.08)", border: "none", borderRadius: 8,
+              padding: "7px 11px", cursor: "pointer", color: "rgba(247,237,224,0.5)",
+              fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
+            }}>LEAVE</button>
+          </div>
+          {others.length === 0 ? (
+            <div style={{ padding: "13px 14px", borderRadius: 12, background: "var(--paper)", border: "1px solid var(--line)" }}>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)" }}>WAITING FOR CREW</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.45 }}>
+                Share code <strong>{code}</strong> — friends' saved sets appear when they join.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {others.map(([pid, m]) => (
+                <div key={pid} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
+                  background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 12,
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 36, background: _presColor(pid),
+                    color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "Instrument Serif, serif", fontSize: 17, flexShrink: 0,
+                  }}>{(m.name || "?")[0].toUpperCase()}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="serif" style={{ fontSize: 16 }}>{m.name || "Friend"}</div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                      {(m.artistIds || []).length} SETS SAVED
+                    </div>
+                  </div>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: 1, color: "var(--horizon)" }}>
+                    {(m.artistIds || []).filter(id => state.saved.includes(id)).length} IN COMMON
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 Object.assign(window, {
   AccountCard, sbSignIn, sbSignInWithSpotify, sbSignInWithApple, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbGetArtistSaveCounts,
   sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap, sbFindByPingCode,
   sbDMChannelKey, sbDMSubscribe, sbDMSend,
-  FriendsCard,
+  FriendsCard, CrewCard,
+  sbGetOrCreateGroupCode, sbGroupJoin, sbGroupLeave, sbGroupUpdate, sbGetCrewCount,
 });

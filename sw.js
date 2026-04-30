@@ -1,5 +1,5 @@
-const CACHE   = 'vibestar-v72';
-const APP_VER = 'v72';
+const CACHE   = 'vibestar-v73';
+const APP_VER = 'v73';
 
 // Own-origin app files — versioned to match what index.html requests.
 // addAll is atomic so a missed own-origin file fails the install fast.
@@ -21,6 +21,7 @@ const LOCAL = [
   `./lineup.jsx?v=${APP_VER}`,
   `./artist.jsx?v=${APP_VER}`,
   `./spotify.jsx?v=${APP_VER}`,
+  `./chat.jsx?v=${APP_VER}`,
   `./app.jsx?v=${APP_VER}`,
 ];
 
