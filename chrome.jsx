@@ -248,24 +248,14 @@ function ArtistSwatch({ artist, size = 44 }) {
   );
 }
 
-// Plursky logo mark — a small sun/circle + wordmark
+// Plursky logo mark — uses the same yellow P icon as the home-screen / app icon
+// so the brand is uniform between the website masthead and the installed PWA.
 function Wordmark({ size = 18, color = "var(--ink)" }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, color }}>
-      <svg width={size} height={size} viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-        {[0,45,90,135,180,225,270,315].map(a => {
-          const rad = a * Math.PI / 180;
-          return (
-            <line key={a}
-              x1={12 + Math.cos(rad) * 7}
-              y1={12 + Math.sin(rad) * 7}
-              x2={12 + Math.cos(rad) * 10}
-              y2={12 + Math.sin(rad) * 10}
-              stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          );
-        })}
-      </svg>
+      <img src="./apple-touch-icon.png" alt=""
+        width={size} height={size}
+        style={{ borderRadius: size * 0.22, display: "block", flexShrink: 0 }} />
       <span className="mono" style={{ fontSize: size * 0.72, letterSpacing: 3, fontWeight: 500 }}>PLURSKY</span>
     </div>
   );
@@ -333,14 +323,9 @@ function InstallBanner() {
       color: "var(--paper)",
       display: "flex", alignItems: "center", gap: 11,
     }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: 9,
-        background: "linear-gradient(135deg, var(--ember), var(--horizon))",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
-      }}>
-        <span className="serif" style={{ fontSize: 22, color: "#fff", fontStyle: "italic" }}>P</span>
-      </div>
+      <img src="./apple-touch-icon.png" alt=""
+        width="36" height="36"
+        style={{ borderRadius: 9, display: "block", flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--flare)", fontWeight: 700 }}>
           INSTALL PLURSKY

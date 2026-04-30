@@ -403,6 +403,37 @@ async function ensureSpotifyProfile() {
   } catch { return null; }
 }
 
+// Pick the right artist when Spotify returns multiple name collisions.
+// E.g. "Westend" (EDC tech-house DJ) vs "Westend" (rock band). Strategy:
+// exact-name matches first; among those, prefer electronic genres; tie-break
+// by Spotify popularity. Falls back to substring matches if no exact hit.
+const _ELECTRONIC_HINTS = ["electronic","dance","edm","house","techno","trance","dubstep","bass","garage","hardstyle","breakbeat","trap","electro","club","rave","tech","ambient","downtempo","progressive","jungle","phonk","riddim","dnb","drum and bass","drum & bass","psytrance","synthwave","moombahton","nu-disco","disco","hardcore","dance-pop"];
+function _isElectronicArtist(a) {
+  const gs = a?.genres || [];
+  if (gs.length === 0) return false;
+  return gs.some(g => {
+    const lower = String(g).toLowerCase();
+    return _ELECTRONIC_HINTS.some(k => lower.includes(k));
+  });
+}
+function _pickArtistMatch(items, ln) {
+  if (!items || items.length === 0) return null;
+  const byPop = arr => [...arr].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  const exact = items.filter(a => a.name.toLowerCase() === ln);
+  if (exact.length) {
+    const elec = exact.filter(_isElectronicArtist);
+    return (elec.length ? byPop(elec) : byPop(exact))[0];
+  }
+  const partial = items.filter(a =>
+    a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase())
+  );
+  if (partial.length) {
+    const elec = partial.filter(_isElectronicArtist);
+    return (elec.length ? byPop(elec) : byPop(partial))[0];
+  }
+  return null;
+}
+
 // Tokens issued by app versions <= v53 don't carry playlist-modify scopes —
 // refreshing inherits the original (limited) scope set, so the only fix is
 // a fresh OAuth grant. We detect this up-front to skip a guaranteed 403.
@@ -470,15 +501,14 @@ async function createEdcPlaylist(state) {
   const searchOne = async (searchName, limit) => {
     try {
       const ar = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=10`,
         { headers: { Authorization: "Bearer " + token } }
       );
       if (!ar.ok) return [];
       const aj = await ar.json();
       const ln = searchName.toLowerCase();
-      const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
-        || (aj.artists?.items || []).find(a =>
-            a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
+      const items = aj.artists?.items || [];
+      const found = _pickArtistMatch(items, ln);
       if (!found) return [];
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
@@ -592,15 +622,14 @@ async function createHypePlaylist() {
   const searchHypeOne = async (searchName) => {
     try {
       const ar = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=10`,
         { headers: { Authorization: "Bearer " + token } }
       );
       if (!ar.ok) return false;
       const aj = await ar.json();
       const ln = searchName.toLowerCase();
-      const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
-        || (aj.artists?.items || []).find(a =>
-            a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
+      const items = aj.artists?.items || [];
+      const found = _pickArtistMatch(items, ln);
       if (!found) return false;
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,

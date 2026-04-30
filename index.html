@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Plursky">
 <meta name="theme-color" content="#f0c040">
 <link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" href="./apple-touch-icon.png">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,23 +53,23 @@
 <body>
   <div id="root" class="stage"></div>
 
-  <script type="text/babel" src="ios-frame.jsx?v=v81"></script>
-  <script type="text/babel" src="data.jsx?v=v81"></script>
-  <script type="text/babel" src="supabase.jsx?v=v81"></script>
-  <script type="text/babel" src="chrome.jsx?v=v81"></script>
-  <script type="text/babel" src="home.jsx?v=v81"></script>
-  <script type="text/babel" src="map.jsx?v=v81"></script>
-  <script type="text/babel" src="lineup.jsx?v=v81"></script>
-  <script type="text/babel" src="artist.jsx?v=v81"></script>
-  <script type="text/babel" src="spotify.jsx?v=v81"></script>
-  <script type="text/babel" src="chat.jsx?v=v81"></script>
-  <script type="text/babel" src="app.jsx?v=v81"></script>
+  <script type="text/babel" src="ios-frame.jsx?v=v82"></script>
+  <script type="text/babel" src="data.jsx?v=v82"></script>
+  <script type="text/babel" src="supabase.jsx?v=v82"></script>
+  <script type="text/babel" src="chrome.jsx?v=v82"></script>
+  <script type="text/babel" src="home.jsx?v=v82"></script>
+  <script type="text/babel" src="map.jsx?v=v82"></script>
+  <script type="text/babel" src="lineup.jsx?v=v82"></script>
+  <script type="text/babel" src="artist.jsx?v=v82"></script>
+  <script type="text/babel" src="spotify.jsx?v=v82"></script>
+  <script type="text/babel" src="chat.jsx?v=v82"></script>
+  <script type="text/babel" src="app.jsx?v=v82"></script>
 
   <script>
     // Build version stamp — bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v81';
+    const APP_VERSION = 'v82';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -84,9 +85,9 @@
 
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v81').map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== 'vibestar-v82').map(k => caches.delete(k)))
       ).then(() =>
-        navigator.serviceWorker.register('./sw.js?v=v81', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('./sw.js?v=v82', { updateViaCache: 'none' })
           .then(reg => { try { reg.update(); } catch {} })
       );
 
