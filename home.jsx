@@ -872,6 +872,11 @@ function HomeScreen({ state, setState }) {
             sit prominently between the night card and the artist gossip. */}
         {!isPostFestival && <DontMissStrip day={countdown ? 1 : NOW.day} state={state} setState={setState} />}
 
+        {/* Friend's shared lineup — appears when ?lineup= deep link was opened. */}
+        {state.friendLineup?.length > 0 && (
+          <FriendLineupBanner state={state} setState={setState} />
+        )}
+
         {/* Reminders card — surfaces 15-min push opt-in on home when user has
             saved sets so it's discoverable, not buried on the Music tab. */}
         {state.saved?.length > 0 && typeof NotificationsCard === "function" && (
@@ -905,9 +910,12 @@ function HomeScreen({ state, setState }) {
                 <div className="serif" style={{ fontSize: 22 }}>
                   Your <span style={{ fontStyle: "italic", color: "var(--ember)" }}>lineup</span>
                 </div>
-                <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)" }}>
-                  {savedIds.length} SETS SAVED
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)" }}>
+                    {savedIds.length} SETS
+                  </span>
+                  <ShareLineupButton savedIds={savedIds} />
+                </div>
               </div>
               <div style={{
                 background: "var(--paper-2)", border: "1px solid var(--line)",
@@ -1604,4 +1612,177 @@ function FirstTimerGuide({ onClose, onOpenMap, onOpenLineup }) {
   );
 }
 
-Object.assign(window, { HomeScreen });
+// ── Lineup sharing ───────────────────────────────────────────
+// Encode/decode happens via the ?lineup=id1,id2 query param parsed in app.jsx
+// state init. The link is fully self-contained — no server, no friend graph,
+// no privacy model. Drop it in iMessage / Snap / WhatsApp and the receiver
+// sees your saved sets next to their own.
+
+function _buildShareUrl(savedIds) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  return `${base}?lineup=${savedIds.join(",")}`;
+}
+
+function ShareLineupButton({ savedIds }) {
+  const [flash, setFlash] = React.useState(null); // 'shared' | 'copied'
+  if (!savedIds?.length) return null;
+
+  const onShare = async () => {
+    const url = _buildShareUrl(savedIds);
+    const text = `My EDC lineup — ${savedIds.length} sets saved on Plursky`;
+    // navigator.share lights up the OS share sheet on iOS/Android — clipboard
+    // is the desktop / unsupported-browser fallback.
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "My EDC lineup", text, url });
+        setFlash("shared"); setTimeout(() => setFlash(null), 1800);
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError") return; // user cancelled the share sheet
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setFlash("copied"); setTimeout(() => setFlash(null), 1800);
+    } catch {
+      prompt("Copy your lineup link:", url);
+    }
+  };
+
+  return (
+    <button onClick={onShare} className="mono" style={{
+      background: flash ? "var(--success)" : "var(--ink)",
+      color: "var(--paper)", border: "none", borderRadius: 999,
+      padding: "5px 10px", cursor: "pointer",
+      fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700,
+      transition: "background 0.2s",
+    }}>
+      {flash === "shared" ? "✓ SHARED" : flash === "copied" ? "✓ COPIED" : "↗ SHARE"}
+    </button>
+  );
+}
+
+function FriendLineupBanner({ state, setState }) {
+  const friendIds = state.friendLineup || [];
+  const savedSet = new Set(state.saved || []);
+  const overlap = friendIds.filter(id => savedSet.has(id));
+  const fresh = friendIds.filter(id => !savedSet.has(id));
+  const [expanded, setExpanded] = React.useState(false);
+
+  const dismiss = () => setState({ ...state, friendLineup: null, friendName: null });
+
+  const addAll = () => {
+    const merged = [...new Set([...(state.saved || []), ...friendIds])];
+    setState({ ...state, saved: merged });
+  };
+  const addOverlap = () => {
+    // Already-overlapping IDs are by definition already saved — meaningful only
+    // when the friend has sets you don't yet. Falls back to addAll otherwise.
+    if (!fresh.length) return;
+    const merged = [...new Set([...(state.saved || []), ...fresh])];
+    setState({ ...state, saved: merged });
+  };
+
+  return (
+    <div style={{
+      marginTop: 18, padding: "16px 16px 14px",
+      borderRadius: 18,
+      background: "linear-gradient(135deg, rgba(123,61,154,0.12), rgba(232,93,46,0.08))",
+      border: "1px solid rgba(123,61,154,0.3)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "var(--horizon)", fontWeight: 700 }}>
+          SHARED WITH YOU{state.friendName ? ` · ${state.friendName.toUpperCase()}` : ""}
+        </span>
+        <button onClick={dismiss} style={{
+          background: "transparent", border: "none", color: "var(--muted)",
+          cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1,
+        }}>×</button>
+      </div>
+      <div className="serif" style={{ fontSize: 22, lineHeight: 1.1, marginBottom: 4 }}>
+        {state.friendName ? state.friendName : "Your friend"}'s <span style={{ fontStyle: "italic", color: "var(--ember)" }}>lineup</span>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--ink)", opacity: 0.75, lineHeight: 1.5, marginBottom: 12 }}>
+        {friendIds.length} sets saved · {overlap.length} match yours
+        {fresh.length > 0 && ` · ${fresh.length} new to you`}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setExpanded(e => !e)} className="mono" style={{
+          background: "var(--ink)", color: "var(--paper)", border: "none",
+          borderRadius: 999, padding: "8px 14px", cursor: "pointer",
+          fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+        }}>{expanded ? "HIDE SETS" : "VIEW SETS"}</button>
+        {fresh.length > 0 && (
+          <button onClick={addOverlap} className="mono" style={{
+            background: "var(--ember)", color: "#fff", border: "none",
+            borderRadius: 999, padding: "8px 14px", cursor: "pointer",
+            fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+          }}>+ ADD {fresh.length} NEW</button>
+        )}
+        <button onClick={addAll} className="mono" style={{
+          background: "transparent", color: "var(--ink)",
+          border: "1px solid var(--line-2)",
+          borderRadius: 999, padding: "8px 14px", cursor: "pointer",
+          fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+        }}>+ ADD ALL</button>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          {[1, 2, 3].map(day => {
+            const dayArtists = friendIds
+              .map(id => ARTISTS.find(a => a.id === id))
+              .filter(a => a && a.day === day)
+              .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
+            if (!dayArtists.length) return null;
+            const meta = FESTIVAL_CONFIG.dayDates[day];
+            return (
+              <div key={day} style={{ marginBottom: 10 }}>
+                <div className="mono" style={{
+                  fontSize: 8.5, letterSpacing: 1.6, color: "var(--horizon)",
+                  fontWeight: 700, marginBottom: 6,
+                }}>
+                  {meta.short} · {meta.name.toUpperCase()}
+                </div>
+                {dayArtists.map(a => {
+                  const stage = STAGES.find(s => s.id === a.stage);
+                  const isOverlap = savedSet.has(a.id);
+                  return (
+                    <button key={a.id} onClick={() => setState({ ...state, artist: a.id })}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, width: "100%",
+                        background: "transparent", border: "none",
+                        borderBottom: "1px solid var(--line-2)",
+                        padding: "6px 0", cursor: "pointer", textAlign: "left",
+                      }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: 999,
+                        background: isOverlap ? "var(--success)" : stage?.color || "var(--muted)",
+                        flexShrink: 0,
+                      }}/>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="serif" style={{ fontSize: 14, lineHeight: 1.15, color: "var(--ink)" }}>
+                          {a.name}
+                        </div>
+                        <div className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
+                          {stage?.short} · {a.start}
+                        </div>
+                      </div>
+                      {isOverlap && (
+                        <span className="mono" style={{
+                          fontSize: 7.5, letterSpacing: 1, color: "var(--success)",
+                          fontWeight: 700,
+                        }}>MATCH</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { HomeScreen, FriendLineupBanner, ShareLineupButton });

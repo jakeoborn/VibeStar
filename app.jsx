@@ -303,19 +303,27 @@ function App() {
       saved = raw ? JSON.parse(raw) : null;
     } catch {}
 
-    // Parse deep-link params: ?artist=ID, ?tab=map, ?stage=kinetic, ?day=1
+    // Parse deep-link params: ?artist=ID, ?tab=map, ?stage=kinetic, ?day=1, ?lineup=k9,k11,c5
     const params = new URLSearchParams(window.location.search);
     const dlArtist = params.get("artist");
     const dlTab    = params.get("tab");
     const dlStage  = params.get("stage");
     const dlDay    = params.get("day");
+    const dlLineup = params.get("lineup");
+    const dlFrom   = params.get("from"); // optional friend name
     const validArtist = dlArtist && ARTISTS.find(a => a.id === dlArtist) ? dlArtist : null;
     const validTab    = ["home","map","lineup","spotify","me"].includes(dlTab) ? dlTab : null;
     const validStage  = dlStage && STAGES.find(s => s.id === dlStage || s.short.toLowerCase() === dlStage.toLowerCase()) ? dlStage : null;
     const validDay    = dlDay && [1,2,3].includes(+dlDay) ? +dlDay : null;
+    // Decode shared lineup: comma-joined IDs validated against the local lineup so
+    // a stale or malicious URL can't inject phantom artists.
+    const validFriendIds = dlLineup
+      ? dlLineup.split(",").map(s => s.trim()).filter(id => ARTISTS.find(a => a.id === id))
+      : [];
+    const validFrom = (dlFrom || "").slice(0, 24).replace(/[^a-zA-Z0-9 _.-]/g, "") || null;
 
     // Clean the URL without reloading (so back button / sharing still works)
-    if (dlArtist || dlTab || dlStage || dlDay) {
+    if (dlArtist || dlTab || dlStage || dlDay || dlLineup || dlFrom) {
       try { history.replaceState(null, "", window.location.pathname); } catch {}
     }
 
@@ -326,6 +334,8 @@ function App() {
       artist:          validArtist,
       focusStage:      validStage || null,
       lineupDay:       validDay || NOW.day,
+      friendLineup:    validFriendIds.length ? validFriendIds : null,
+      friendName:      validFriendIds.length ? validFrom : null,
     };
   });
 
