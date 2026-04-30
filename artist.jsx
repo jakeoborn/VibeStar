@@ -80,6 +80,37 @@ async function fetchYouTubeSet(artistName) {
   } catch { return null; }
 }
 
+// ── Deezer photo fallback ──────────────────────────────────────
+// Public API, no key, CORS-enabled. Used when Spotify is disconnected
+// or returns no image (esp. for electronic acts not on TADB).
+const _DZ_TTL = 7 * 24 * 3600000;
+
+async function fetchDeezerPhoto(artistName) {
+  const cacheKey = `deezer_photo_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.fetchedAt < _DZ_TTL) return c.data;
+  } catch {}
+  try {
+    const res = await fetch(
+      `https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}&limit=3`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const ln = artistName.toLowerCase();
+    const items = json.data || [];
+    const match = items.find(x => (x.name || "").toLowerCase() === ln)
+      || items.find(x => ln.includes((x.name || "").toLowerCase()))
+      || items[0];
+    const img = match?.picture_xl || match?.picture_big || match?.picture_medium || null;
+    // Reject obvious placeholder (Deezer returns a default silhouette for unmatched artists)
+    const isPlaceholder = img && /\/artist\/?$|\/images\/artist\/?$/.test(img);
+    const final = isPlaceholder ? null : img;
+    try { localStorage.setItem(cacheKey, JSON.stringify({ data: final, fetchedAt: Date.now() })); } catch {}
+    return final;
+  } catch { return null; }
+}
+
 // ── Mixcloud ───────────────────────────────────────────────────
 // Free public API — no key required.
 const _MC_TTL = 24 * 3600000;
@@ -561,8 +592,22 @@ function ArtistScreen({ state, setState }) {
       if (cached) { setSpotifyStats(cached); hasCachedStats = true; }
       else setSpotifyStats(null);
     } catch { setSpotifyStats(null); }
-    // Skip network call if we already have both photo and stats cached
-    if (artistImages[activeName.toLowerCase()] && hasCachedStats) return;
+    // Deezer fallback runs regardless of Spotify connection — covers disconnected
+    // users and acts Spotify can't find. functional setState avoids racing Spotify.
+    const ln = activeName.toLowerCase();
+    if (!artistImages[ln]) {
+      fetchDeezerPhoto(activeName).then(img => {
+        if (img) {
+          setFetchedPhoto(prev => prev || img);
+          try {
+            const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+            if (!imgs[ln]) { imgs[ln] = img; localStorage.setItem("artist_images_v1", JSON.stringify(imgs)); }
+          } catch {}
+        }
+      });
+    }
+    // Skip Spotify network call if we already have both photo and stats cached
+    if (artistImages[ln] && hasCachedStats) return;
     if (!localStorage.getItem("spotify_token") && !localStorage.getItem("spotify_refresh_token")) return;
     const ctrl = new AbortController();
     getValidToken().then(token => {

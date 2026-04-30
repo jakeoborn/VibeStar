@@ -515,6 +515,33 @@ function HomeScreen({ state, setState }) {
   const countdown = preEventCountdown();
   const isPostFestival = Date.now() > FESTIVAL_END_MS;
 
+  // Offline prep: prefetch photos for any saved sets we haven't cached yet,
+  // so the schedule + artist screens render with hero images even when EDC's
+  // LTE is saturated. Uses Deezer (no auth) to avoid Spotify token dependency.
+  React.useEffect(() => {
+    const saved = state.saved || [];
+    if (!saved.length || !navigator.onLine) return;
+    let cached = {};
+    try { cached = JSON.parse(localStorage.getItem("artist_images_v1") || "{}"); } catch {}
+    const missing = saved
+      .map(id => ARTISTS.find(a => a.id === id))
+      .filter(a => a && !cached[a.name.toLowerCase()])
+      .slice(0, 12); // throttle: 12 per session, rest fill in on revisit
+    missing.forEach(a => {
+      if (typeof fetchDeezerPhoto !== "function") return;
+      fetchDeezerPhoto(a.name).then(img => {
+        if (!img) return;
+        try {
+          const imgs = JSON.parse(localStorage.getItem("artist_images_v1") || "{}");
+          if (!imgs[a.name.toLowerCase()]) {
+            imgs[a.name.toLowerCase()] = img;
+            localStorage.setItem("artist_images_v1", JSON.stringify(imgs));
+          }
+        } catch {}
+      });
+    });
+  }, [state.saved?.length]);
+
   const current = ARTISTS.find(a => a.id === NOW.currentArtistId) || null;
   const next    = ARTISTS.find(a => a.id === NOW.nextArtistId) || null;
   const stageOf = id => STAGES.find(s => s.id === id);
@@ -845,6 +872,14 @@ function HomeScreen({ state, setState }) {
             sit prominently between the night card and the artist gossip. */}
         {!isPostFestival && <DontMissStrip day={countdown ? 1 : NOW.day} state={state} setState={setState} />}
 
+        {/* Reminders card — surfaces 15-min push opt-in on home when user has
+            saved sets so it's discoverable, not buried on the Music tab. */}
+        {state.saved?.length > 0 && typeof NotificationsCard === "function" && (
+          <div style={{ marginTop: 18 }}>
+            <NotificationsCard state={state} />
+          </div>
+        )}
+
         {/* Pre-festival lineup preview — visible only during countdown */}
         {countdown && (() => {
           const savedIds = state.saved || [];
@@ -878,38 +913,89 @@ function HomeScreen({ state, setState }) {
                 background: "var(--paper-2)", border: "1px solid var(--line)",
                 borderRadius: 18, padding: "14px 16px 6px",
               }}>
-                {byDay.map(({ day, meta, artists }) => (
+                {byDay.map(({ day, meta, artists }) => {
+                  // Pre-compute conflicts + transitions so each row knows its
+                  // relationship to the previous saved set. Mirrors the live
+                  // PlanRow logic but for the pre-festival preview.
+                  const rows = artists.map((a, i) => {
+                    const prev = artists[i - 1];
+                    const walk = prev ? stageWalkMinutes(prev.stage, a.stage) : 0;
+                    const prevEnd = prev ? toNightMin(prev.end) : null;
+                    const startMin = toNightMin(a.start);
+                    const tight = prev && walk > 0 && (startMin - prevEnd) < walk;
+                    const conflict = prev && overlaps(prev, a);
+                    return { a, prev, walk, tight, conflict };
+                  });
+                  const conflictCount = rows.filter(r => r.conflict).length;
+                  return (
                   <div key={day} style={{ marginBottom: 10 }}>
-                    <div className="mono" style={{
-                      fontSize: 8.5, letterSpacing: 1.8, color: "var(--ember)",
-                      fontWeight: 700, marginBottom: 8,
-                    }}>
-                      {meta.short} · {meta.name.toUpperCase()}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div className="mono" style={{
+                        fontSize: 8.5, letterSpacing: 1.8, color: "var(--ember)",
+                        fontWeight: 700,
+                      }}>
+                        {meta.short} · {meta.name.toUpperCase()}
+                      </div>
+                      {conflictCount > 0 && (
+                        <span className="mono" style={{
+                          fontSize: 7.5, letterSpacing: 1.2, color: "var(--ember)",
+                          padding: "1px 5px", borderRadius: 3, fontWeight: 700,
+                          border: "1px solid var(--ember)",
+                        }}>{conflictCount} CLASH</span>
+                      )}
                     </div>
-                    {artists.map(a => {
+                    {rows.map(({ a, prev, walk, tight, conflict }) => {
                       const stage = STAGES.find(s => s.id === a.stage);
                       return (
-                        <button key={a.id}
-                          onClick={() => setState({ ...state, artist: a.id })}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10, width: "100%",
-                            background: "transparent", border: "none", borderBottom: "1px solid var(--line-2)",
-                            padding: "8px 0", cursor: "pointer", textAlign: "left",
-                          }}>
-                          <ArtistSwatch artist={a} size={36} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="serif" style={{ fontSize: 16, lineHeight: 1.1, color: "var(--ink)" }}>
-                              {a.name}
+                        <div key={a.id}>
+                          {prev && walk > 0 && (
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 8,
+                              padding: "2px 0 2px 46px",
+                            }}>
+                              <div style={{ width: 1, height: 14, background: tight ? "var(--ember)" : "var(--line-2)" }}/>
+                              <span className="mono" style={{
+                                fontSize: 8, letterSpacing: 1.1,
+                                color: tight ? "var(--ember)" : "var(--muted)",
+                                fontWeight: tight ? 700 : 500,
+                              }}>
+                                {walk} MIN WALK · {prev.stage === a.stage ? "SAME STAGE" : `${STAGES.find(s=>s.id===prev.stage)?.short} → ${stage?.short}`}
+                              </span>
                             </div>
-                            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
-                              {stage ? stage.short : ""} · {a.start}–{a.end}
+                          )}
+                          <button
+                            onClick={() => setState({ ...state, artist: a.id })}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10, width: "100%",
+                              background: conflict ? "rgba(232,93,46,0.06)" : "transparent",
+                              border: "none", borderBottom: "1px solid var(--line-2)",
+                              padding: "8px 6px", cursor: "pointer", textAlign: "left",
+                            }}>
+                            <ArtistSwatch artist={a} size={36} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <div className="serif" style={{ fontSize: 16, lineHeight: 1.1, color: "var(--ink)" }}>
+                                  {a.name}
+                                </div>
+                                {conflict && (
+                                  <span className="mono" style={{
+                                    fontSize: 7.5, letterSpacing: 1.2, color: "var(--ember)",
+                                    padding: "1px 4px", borderRadius: 3, fontWeight: 700,
+                                    border: "1px solid var(--ember)",
+                                  }}>CLASH</span>
+                                )}
+                              </div>
+                              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
+                                {stage ? stage.short : ""} · {a.start}–{a.end}
+                              </div>
                             </div>
-                          </div>
-                        </button>
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );

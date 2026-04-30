@@ -232,6 +232,10 @@ async function _buildSpotifyAuthUrl() {
     code_challenge_method: "S256",
     code_challenge:        challenge,
     scope:                 SPOTIFY_SCOPES,
+    // Force the consent screen even for previously-authorized users so newly
+    // added scopes (playlist-read-private etc.) actually get granted instead
+    // of Spotify silently re-issuing a token with the old scope set.
+    show_dialog:           "true",
   });
   return "https://accounts.spotify.com/authorize?" + params;
 }
@@ -314,8 +318,12 @@ function disconnectSpotify(setState, state) {
   // Keep spotify_pkce_verifier — startSpotifyAuth() may be called immediately
   // after disconnect (reconnect flow) and still needs the pre-warmed verifier.
   // callback.html removes it after a successful token exchange.
-  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_profile"]
+  ["spotify_token","spotify_refresh_token","spotify_expires","spotify_profile",
+   "spotify_auth_scopes"]
     .forEach(k => localStorage.removeItem(k));
+  // Drop cached scan results — stale data with old (limited) scopes would
+  // otherwise persist and the user wouldn't see the playlist-matched artists
+  // appear after reconnecting with the broader scope set.
   setState({ ...state, spotifyConnected: false, spotifyProfile: null });
 }
 
