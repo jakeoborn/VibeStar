@@ -319,7 +319,13 @@ function liveAcrossStages() {
       const start = toNightMin(a.start), end = toNightMin(a.end);
       return now >= start && now < end;
     });
-    return { stage: s, artist: live };
+    // When stage is dark, find the next artist starting on this stage today
+    const upcoming = !live ? ARTISTS
+      .filter(a => a.stage === s.id && a.day === NOW.day && toNightMin(a.start) > now)
+      .sort((a, b) => toNightMin(a.start) - toNightMin(b.start))[0] || null
+      : null;
+    const minsUntil = upcoming ? toNightMin(upcoming.start) - now : null;
+    return { stage: s, artist: live, upcoming, minsUntil };
   });
 }
 
@@ -850,6 +856,8 @@ function HomeScreen({ state, setState }) {
 }
 
 function LiveAcrossStrip({ strip, state, setState }) {
+  const savedSet = new Set(state.saved || []);
+  const liveCount = strip.filter(s => s.artist).length;
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
@@ -857,50 +865,96 @@ function LiveAcrossStrip({ strip, state, setState }) {
           LIVE ACROSS STAGES
         </div>
         <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--ember)" }}>
-          {strip.filter(s => s.artist).length}/{strip.length} ON
+          {liveCount}/{strip.length} ON
         </span>
       </div>
       <div className="no-scrollbar" style={{ display: "flex", gap: 7, overflowX: "auto", scrollbarWidth: "none", marginRight: -16, paddingRight: 16 }}>
-        {strip.map(({ stage, artist }) => (
-          <button
-            key={stage.id}
-            onClick={() => artist
-              ? setState({ ...state, tab: "home", artist: artist.id })
-              : setState({ ...state, tab: "map", focusStage: stage.id })}
-            style={{
-              flexShrink: 0, width: 132, textAlign: "left",
-              padding: "9px 11px", borderRadius: 13,
-              background: artist ? "var(--paper-2)" : "transparent",
-              border: `1px solid ${artist ? "var(--line)" : "var(--line-2)"}`,
-              borderLeft: `3px solid ${stage.color}`,
-              cursor: "pointer",
-              opacity: artist ? 1 : 0.55,
-            }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              {artist && (
-                <span style={{
-                  width: 6, height: 6, borderRadius: 6, background: stage.color,
-                  boxShadow: `0 0 0 3px ${stage.color}33`,
-                  animation: "pulse 1.6s ease-in-out infinite",
-                  flexShrink: 0,
-                }}/>
+        {strip.map(({ stage, artist, upcoming, minsUntil }) => {
+          const isSaved   = artist   && savedSet.has(artist.id);
+          const nextSaved = upcoming && savedSet.has(upcoming.id);
+          return (
+            <button
+              key={stage.id}
+              onClick={() => {
+                if (artist)   return setState({ ...state, tab: "home", artist: artist.id });
+                if (upcoming) return setState({ ...state, tab: "home", artist: upcoming.id });
+                setState({ ...state, tab: "map", focusStage: stage.id });
+              }}
+              style={{
+                flexShrink: 0, width: 136, textAlign: "left",
+                padding: "9px 11px", borderRadius: 13,
+                background: isSaved
+                  ? `${stage.color}18`
+                  : artist ? "var(--paper-2)" : "transparent",
+                border: `1px solid ${isSaved ? stage.color + "55" : artist ? "var(--line)" : "var(--line-2)"}`,
+                borderLeft: `3px solid ${stage.color}`,
+                cursor: "pointer",
+                opacity: (artist || upcoming) ? 1 : 0.45,
+              }}>
+
+              {/* Stage label row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  {artist && (
+                    <span style={{
+                      width: 6, height: 6, borderRadius: 6, background: stage.color,
+                      boxShadow: `0 0 0 3px ${stage.color}33`,
+                      animation: "pulse 1.6s ease-in-out infinite",
+                      flexShrink: 0,
+                    }}/>
+                  )}
+                  <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: stage.color, fontWeight: 700 }}>
+                    {stage.short}
+                  </span>
+                </div>
+                {isSaved && (
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill={stage.color} stroke="none">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                )}
+              </div>
+
+              {/* Artist name or "dark" state */}
+              {artist ? (
+                <>
+                  <div className="serif" style={{
+                    fontSize: 14, lineHeight: 1.1, marginTop: 4,
+                    color: "var(--ink)",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {artist.name}
+                  </div>
+                  <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                    {artist.start}–{artist.end}
+                  </div>
+                </>
+              ) : upcoming ? (
+                <>
+                  <div style={{
+                    fontSize: 11, lineHeight: 1.15, marginTop: 4,
+                    color: nextSaved ? stage.color : "var(--muted)",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    fontStyle: "italic",
+                  }}>
+                    {upcoming.name}
+                  </div>
+                  <div className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                    IN {minsUntil}m · {upcoming.start}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="serif" style={{ fontSize: 13, lineHeight: 1.1, marginTop: 4, color: "var(--muted)" }}>
+                    Stage dark
+                  </div>
+                  <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                    {stage.name.toUpperCase()}
+                  </div>
+                </>
               )}
-              <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: stage.color, fontWeight: 700 }}>
-                {stage.short}
-              </span>
-            </div>
-            <div className="serif" style={{
-              fontSize: 14, lineHeight: 1.1, marginTop: 4,
-              color: artist ? "var(--ink)" : "var(--muted)",
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>
-              {artist ? artist.name : "Stage dark"}
-            </div>
-            <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
-              {artist ? `${artist.start}–${artist.end}` : stage.name.toUpperCase()}
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

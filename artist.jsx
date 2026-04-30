@@ -184,12 +184,14 @@ async function fetchLastfm(artistName) {
   try {
     const base = `https://ws.audioscrobbler.com/2.0/?format=json&api_key=${LASTFM_KEY}`;
     const enc  = encodeURIComponent(artistName);
-    const [infoRes, simRes] = await Promise.all([
+    const [infoRes, simRes, topRes] = await Promise.all([
       fetch(`${base}&method=artist.getinfo&artist=${enc}`),
       fetch(`${base}&method=artist.getsimilar&artist=${enc}&limit=5`),
+      fetch(`${base}&method=artist.gettoptracks&artist=${enc}&limit=20`),
     ]);
     const infoJson = infoRes.ok ? await infoRes.json() : null;
     const simJson  = simRes.ok  ? await simRes.json()  : null;
+    const topJson  = topRes.ok  ? await topRes.json()  : null;
 
     const info    = infoJson?.artist;
     const similar = (simJson?.similarartists?.artist || []).slice(0, 5);
@@ -209,7 +211,12 @@ async function fetchLastfm(artistName) {
     const rawBio = info?.bio?.summary || "";
     const bio = rawBio.replace(/<a[^>]*>.*?<\/a>/gi, "").replace(/<[^>]+>/g, "").trim().split("\n")[0].slice(0, 280);
 
-    const data = { listeners, playcount, tags, bio, similar, url: info?.url || null };
+    // Top track names for setlist highlighting (works without Spotify)
+    const topTrackNames = (topJson?.toptracks?.track || [])
+      .map(t => (t.name || "").toLowerCase())
+      .filter(Boolean);
+
+    const data = { listeners, playcount, tags, bio, similar, topTrackNames, url: info?.url || null };
     try { localStorage.setItem(cacheKey, JSON.stringify({ data, fetchedAt: Date.now() })); } catch {}
     return data;
   } catch { return null; }
@@ -1210,7 +1217,9 @@ function ArtistScreen({ state, setState }) {
 
                   <div style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}>
                     {displaySongs.map((song, si) => {
-                      const isBanger = spotifyStats?.topTrackNames?.includes(song.name?.toLowerCase());
+                      const sn = song.name?.toLowerCase();
+                      const isBanger = spotifyStats?.topTrackNames?.includes(sn)
+                                    || lfm?.topTrackNames?.includes(sn);
                       return (
                         <div key={si} style={{ display: "flex", alignItems: "center", gap: 10, padding: "3px 0" }}>
                           <span className="mono" style={{ fontSize: 9, color: "var(--muted)", width: 18, textAlign: "right", flexShrink: 0 }}>{si + 1}</span>
