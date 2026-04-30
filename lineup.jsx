@@ -28,7 +28,7 @@ function _artistMs(artist, hhmm) {
   return day.midnightUtc + (h < 8 ? 86400000 : 0) + h * 3600000 + m * 60000;
 }
 
-function exportSavedSetsICS(savedIds) {
+async function exportSavedSetsICS(savedIds) {
   const artists = ARTISTS.filter(a => savedIds.includes(a.id))
     .sort((a, b) => (a.day - b.day) || (a.start < b.start ? -1 : 1));
   if (!artists.length) return;
@@ -55,11 +55,20 @@ function exportSavedSetsICS(savedIds) {
   });
   lines.push("END:VCALENDAR");
 
-  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const icsContent = lines.join("\r\n");
+  const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+  const fileName = `${FESTIVAL_CONFIG.id}-plursky.ics`;
+  const shareFile = new File([blob], fileName, { type: "text/plain" });
+  if (navigator.canShare?.({ files: [shareFile] }) && navigator.share) {
+    try { await navigator.share({ files: [shareFile], title: `My ${FESTIVAL_CONFIG.shortName || FESTIVAL_CONFIG.name}` }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    window.open(`data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`, "_blank");
+    return;
+  }
   const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), {
-    href: url, download: `${FESTIVAL_CONFIG.id}-plursky.ics`,
-  });
+  const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
@@ -964,11 +973,22 @@ async function exportLineupICS(state) {
 
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
   const fileName = `my-${fid}.ics`;
-  const file = new File([blob], fileName, { type: "text/calendar" });
-  if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-    try { await navigator.share({ files: [file], title: `My ${fname}` }); return { ok: true, mode: "share", count: saved.length }; }
+  // Use text/plain for the share file — text/calendar is NOT in the Web Share API
+  // allowlist on iOS, causing canShare() to return false silently.
+  // iOS Calendar and most apps still recognise .ics by filename extension.
+  const shareFile = new File([blob], fileName, { type: "text/plain" });
+  if (navigator.canShare?.({ files: [shareFile] }) && navigator.share) {
+    try { await navigator.share({ files: [shareFile], title: `My ${fname}` }); return { ok: true, mode: "share", count: saved.length }; }
     catch (e) { if (e.name === "AbortError") return { ok: true, mode: "abort" }; }
   }
+  // iOS PWA: link.download is blocked; open a data: URL instead which Safari
+  // recognises as a calendar file and offers the "Add to Calendar" prompt.
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    const dataUrl = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+    window.open(dataUrl, "_blank");
+    return { ok: true, mode: "download", count: saved.length };
+  }
+  // Desktop / Android: anchor download
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url; link.download = fileName;

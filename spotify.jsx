@@ -381,15 +381,14 @@ async function ensureSpotifyProfile() {
 
 // #12 Build my playlist — push the user's saved EDC sets into a
 // Spotify playlist on their account. Skips artists Spotify can't find.
-async function createEdcPlaylist(state, day = null) {
+async function createEdcPlaylist(state) {
   const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
   if (!token || !profile) return { ok: false, reason: "not_connected" };
 
   const saved = state.saved
     .map(id => ARTISTS.find(a => a.id === id))
-    .filter(Boolean)
-    .filter(a => day === null || a.day === day);
+    .filter(Boolean);
   if (saved.length === 0) return { ok: false, reason: "empty" };
 
   // Sort by night (day 1→2→3) then by set start time with after-midnight wrap
@@ -398,20 +397,17 @@ async function createEdcPlaylist(state, day = null) {
     a.day !== b.day ? a.day - b.day : timeKey(a.start) - timeKey(b.start)
   );
 
-  // Track depth by tier: headliners (tier 3) = 5, prime time (tier 2) = 4, openers (tier 1) = 3
+  // Track depth: headliners (tier 3) = 5, prime time (tier 2) = 4, openers (tier 1) = 3
   const trackLimit = tier => tier === 3 ? 5 : tier === 2 ? 4 : 3;
+  const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   // 1) Create empty playlist on user's account
-  const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const dayLabel = day ? ` — ${FESTIVAL_CONFIG.dayDates[day].name}` : "";
   const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({
-      name: `My ${FESTIVAL_CONFIG.shortName} Lineup${dayLabel}`,
-      description: day
-        ? `${sorted.length} acts · ${FESTIVAL_CONFIG.dayDates[day].name} night · headliners 5 tracks · Plursky · ${dateStr}`
-        : `${sorted.length} acts · FRI→SAT→SUN by set time · headliners 5 tracks · built with Plursky · ${dateStr}`,
+      name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
+      description: `${sorted.length} sets sorted FRI→SAT→SUN by stage time · headliners 5 tracks · built with Plursky · ${dateStr}`,
       public: false,
     }),
   });
@@ -425,12 +421,11 @@ async function createEdcPlaylist(state, day = null) {
   }
   const playlist = await plRes.json();
 
-  // 2) Top tracks per saved artist — tagged with day for energy-arc sorting.
-  //    B2B sets split so each artist contributes; collab track searched too.
+  // 2) Top tracks per saved artist, kept in day buckets for FRI→SAT→SUN ordering.
+  //    B2B names split so each artist contributes independently.
   const seenUris = new Set();
-  const uriEntries = []; // {uri, day} — day tag enables per-night energy sorting
+  const urisByDay = { 1: [], 2: [], 3: [] };
   let missed = 0;
-  const savedSpotifyIds = [];
 
   const searchOne = async (searchName, limit) => {
     try {
@@ -438,135 +433,50 @@ async function createEdcPlaylist(state, day = null) {
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchName)}&type=artist&limit=5`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!ar.ok) return { uris: [], id: null };
+      if (!ar.ok) return [];
       const aj = await ar.json();
       const ln = searchName.toLowerCase();
       const found = (aj.artists?.items || []).find(a => a.name.toLowerCase() === ln)
         || (aj.artists?.items || []).find(a =>
             a.name.toLowerCase().includes(ln) || ln.includes(a.name.toLowerCase()));
-      if (!found) return { uris: [], id: null };
+      if (!found) return [];
       const tr = await fetch(
         `https://api.spotify.com/v1/artists/${found.id}/top-tracks?market=US`,
         { headers: { Authorization: "Bearer " + token } }
       );
-      if (!tr.ok) return { uris: [], id: found.id };
+      if (!tr.ok) return [];
       const tj = await tr.json();
       const collected = [];
       for (const t of (tj.tracks || [])) {
         if (!t?.uri || seenUris.has(t.uri) || collected.length >= limit) continue;
         seenUris.add(t.uri); collected.push(t.uri);
       }
-      return { uris: collected, id: found.id };
-    } catch { return { uris: [], id: null }; }
-  };
-
-  const searchB2BCollab = async (parts, artistDay) => {
-    try {
-      const res = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(parts.join(" "))}&type=track&limit=10`,
-        { headers: { Authorization: "Bearer " + token } }
-      );
-      if (!res.ok) return;
-      const rj = await res.json();
-      const lparts = parts.map(p => p.toLowerCase());
-      for (const t of (rj.tracks?.items || [])) {
-        if (seenUris.has(t.uri)) continue;
-        const artists = (t.artists || []).map(a => a.name.toLowerCase());
-        if (!lparts.some(p => artists.some(ta => ta.includes(p) || p.includes(ta)))) continue;
-        seenUris.add(t.uri); uriEntries.push({ uri: t.uri, day: artistDay }); break;
-      }
-    } catch {}
+      return collected;
+    } catch { return []; }
   };
 
   const search = async (artist) => {
     const parts = artist.name.split(/ b2b /i).map(s => s.trim());
     const limit = trackLimit(artist.tier);
-    let totalAdded = 0;
+    let total = 0;
     for (const part of parts) {
-      const { uris: partUris, id } = await searchOne(part, limit);
-      for (const uri of partUris) uriEntries.push({ uri, day: artist.day });
-      totalAdded += partUris.length;
-      if (id) savedSpotifyIds.push({ name: part, id });
+      const uris = await searchOne(part, limit);
+      uris.forEach(u => (urisByDay[artist.day] || []).push(u));
+      total += uris.length;
     }
-    if (parts.length > 1) await searchB2BCollab(parts, artist.day);
-    if (totalAdded === 0) missed++;
+    if (total === 0) missed++;
   };
+
   for (let i = 0; i < sorted.length; i += 6) {
     await Promise.all(sorted.slice(i, i + 6).map(search));
   }
 
-  // 3) Discovery via Spotify recommendations — far more accurate than related-artists.
-  //    Seed with batches of 5 saved artist IDs; filter results to unsaved EDC acts.
-  const savedNames = new Set(
-    saved.flatMap(a => a.name.split(/ b2b /i).map(s => s.trim().toLowerCase()))
-  );
-  const unsavedEdcLookup = {};
-  ARTISTS.forEach(a => {
-    a.name.split(/ b2b /i).forEach(part => {
-      const k = part.trim().toLowerCase();
-      if (!savedNames.has(k)) unsavedEdcLookup[k] = a.name;
-    });
-  });
-  const edcKeys = Object.keys(unsavedEdcLookup);
-
-  const discoveredUris = [];
-  const discoveredNames = [];
-
-  const seedIds = savedSpotifyIds.map(s => s.id).slice(0, 25);
-  const seedChunks = [];
-  for (let i = 0; i < seedIds.length; i += 5) seedChunks.push(seedIds.slice(i, i + 5));
-  await Promise.all(seedChunks.map(async chunk => {
-    try {
-      const rr = await fetch(
-        `https://api.spotify.com/v1/recommendations?seed_artists=${chunk.join(',')}&limit=100&market=US`,
-        { headers: { Authorization: "Bearer " + token } }
-      );
-      if (!rr.ok) return;
-      const rj = await rr.json();
-      for (const track of (rj.tracks || [])) {
-        if (!track?.uri || seenUris.has(track.uri)) continue;
-        for (const artist of (track.artists || [])) {
-          const aln = artist.name.toLowerCase();
-          const matched = edcKeys.find(k => k === aln || k.includes(aln) || aln.includes(k));
-          if (!matched) continue;
-          seenUris.add(track.uri);
-          discoveredUris.push(track.uri);
-          discoveredNames.push(unsavedEdcLookup[matched] || artist.name);
-          break;
-        }
-      }
-    } catch {}
-  }));
-
-  // 4) Energy-arc sort: fetch audio features and sort each night opener→headliner energy
-  const allMainUris = uriEntries.map(e => e.uri);
-  const featMap = {};
-  for (let i = 0; i < allMainUris.length; i += 100) {
-    try {
-      const ids = allMainUris.slice(i, i + 100).map(u => u.replace('spotify:track:', ''));
-      const fr = await fetch(
-        `https://api.spotify.com/v1/audio-features?ids=${ids.join(',')}`,
-        { headers: { Authorization: "Bearer " + token } }
-      );
-      if (fr.ok) {
-        const fj = await fr.json();
-        (fj.audio_features || []).forEach((f, idx) => {
-          if (f?.energy != null) featMap[allMainUris[i + idx]] = f.energy;
-        });
-      }
-    } catch {}
-  }
-  const byDay = { 1: [], 2: [], 3: [] };
-  for (const e of uriEntries) (byDay[e.day] || []).push(e);
-  const sortedUris = [];
-  for (const d of [1, 2, 3]) {
-    const entries = byDay[d] || [];
-    entries.sort((a, b) => (featMap[a.uri] ?? 0.5) - (featMap[b.uri] ?? 0.5));
-    entries.forEach(e => sortedUris.push(e.uri));
-  }
-
-  // 5) Add tracks: energy-sorted nights first, discoveries appended at tail
-  const allUris = [...sortedUris, ...discoveredUris];
+  // 3) Add tracks in FRI→SAT→SUN day order
+  const allUris = [
+    ...(urisByDay[1] || []),
+    ...(urisByDay[2] || []),
+    ...(urisByDay[3] || []),
+  ];
   let addedCount = 0;
   for (let i = 0; i < allUris.length; i += 100) {
     try {
@@ -579,27 +489,28 @@ async function createEdcPlaylist(state, day = null) {
     } catch {}
   }
 
-  // 6) Update description with discovered names (best-effort)
-  const uniqueDiscovered = [...new Set(discoveredNames)];
-  if (uniqueDiscovered.length > 0) {
+  // 4) Update description with per-day track counts for easy navigation
+  const dayLabels = [1, 2, 3].map(d => {
+    const n = (urisByDay[d] || []).length;
+    return n > 0 ? `${FESTIVAL_CONFIG.dayDates[d].short} ${n}` : null;
+  }).filter(Boolean);
+  if (dayLabels.length > 0) {
     await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}`, {
       method: "PUT",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify({
-        description: `${sorted.length} acts · FRI→SAT→SUN · discoveries: ${uniqueDiscovered.slice(0, 8).join(", ")} · Plursky · ${dateStr}`,
+        description: `${sorted.length} sets · ${dayLabels.join(" · ")} tracks · headliners 5 songs · built with Plursky · ${dateStr}`,
       }),
     }).catch(() => {});
   }
 
   return {
-    ok: true,
-    added:           addedCount || sortedUris.length,
-    total:           sorted.length,
+    ok:    true,
+    added: addedCount,
+    total: sorted.length,
     missed,
-    discovered:      discoveredUris.length,
-    discoveredNames: uniqueDiscovered,
-    url:             playlist.external_urls?.spotify,
-    id:              playlist.id,
+    url:   playlist.external_urls?.spotify,
+    id:    playlist.id,
   };
 }
 
@@ -1180,9 +1091,6 @@ function SpotifyScreen({ state, setState }) {
             {connected && state.saved.length > 0 && (
               <BuildPlaylistButton state={state} />
             )}
-            {connected && state.saved.length > 0 && [1, 2, 3].map(d => (
-              <DayPlaylistButton key={d} state={state} day={d} />
-            ))}
             <button
               onClick={() => connected ? disconnectSpotify(setState, state) : startSpotifyAuth()}
               style={{
@@ -1944,17 +1852,19 @@ function BuildPlaylistButton({ state }) {
   };
 
   let label, bg = "rgba(29,185,84,0.14)", color = "#1DB954", border = "1px solid #1DB954";
-  if (status === "working") label = "BUILDING…";
-  else if (status === "done") {
-    label = result?.discovered > 0
-      ? `✓ ${result?.added} TRACKS + ${result?.discovered} NEW FINDS — OPEN ↗`
-      : `✓ ${result?.added}/${result?.total} TRACKS — OPEN ↗`;
+  if (status === "working") {
+    label = "BUILDING…";
+  } else if (status === "done") {
+    const missed = result?.missed || 0;
+    label = missed > 0
+      ? `✓ ${result?.added} TRACKS (${missed} not on Spotify) — OPEN ↗`
+      : `✓ ${result?.added} TRACKS · FRI→SAT→SUN — OPEN ↗`;
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
     if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ RECONNECT SPOTIFY";
     else if (result?.reason === "empty") label = "SAVE SETS FIRST";
     else if (result?.reason === "create_fail") {
-      const msg = (result?.message || "").slice(0, 22);
+      const msg = (result?.message || "").slice(0, 28);
       label = msg ? `✕ ${result?.status} · ${msg}` : `✕ FAILED · ${result?.status || "?"}`;
     } else label = "✕ TRY AGAIN";
     bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
@@ -1963,75 +1873,16 @@ function BuildPlaylistButton({ state }) {
   }
 
   return (
-    <React.Fragment>
-      <button onClick={onClick} disabled={status === "working"} style={{
-        background: bg, color, border,
-        borderRadius: 999, padding: "10px 16px",
-        cursor: status === "working" ? "wait" : "pointer",
-        fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-        transition: "all .2s",
-      }}>{label}</button>
-      {status === "done" && result?.discoveredNames?.length > 0 && (
-        <div style={{
-          marginTop: 8, fontSize: 9.5, fontFamily: "Geist Mono, monospace",
-          letterSpacing: 0.8, color: "var(--muted)", lineHeight: 1.5,
-        }}>
-          <span style={{ color: "#1DB954", marginRight: 4 }}>✦ ALSO DISCOVERED</span>
-          {result.discoveredNames.slice(0, 8).join(" · ")}
-        </div>
-      )}
-    </React.Fragment>
+    <button onClick={onClick} disabled={status === "working"} style={{
+      background: bg, color, border,
+      borderRadius: 999, padding: "10px 16px",
+      cursor: status === "working" ? "wait" : "pointer",
+      fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+      transition: "all .2s",
+    }}>{label}</button>
   );
 }
 
-function DayPlaylistButton({ state, day }) {
-  const [status, setStatus] = React.useState("idle");
-  const [result, setResult] = React.useState(null);
-
-  const dayInfo = FESTIVAL_CONFIG.dayDates[day];
-  const count = state.saved.filter(id => ARTISTS.find(a => a.id === id)?.day === day).length;
-  if (count === 0) return null;
-
-  const onClick = async () => {
-    if (status === "working") return;
-    if (status === "done" && result?.url) { window.open(result.url, "_blank", "noopener"); return; }
-    if (status === "err" && (result?.reason === "reconnect" || result?.reason === "not_connected")) { startSpotifyAuth(); return; }
-    setStatus("working");
-    try {
-      const r = await createEdcPlaylist(state, day);
-      setResult(r);
-      setStatus(r.ok ? "done" : "err");
-      if (!r.ok && r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
-    } catch (e) {
-      setResult({ ok: false, reason: "create_fail", message: String(e?.message || e) });
-      setStatus("err");
-      setTimeout(() => setStatus("idle"), 4500);
-    }
-  };
-
-  let label, bg, color, border;
-  if (status === "working") {
-    label = "…"; bg = "rgba(29,185,84,0.1)"; color = "#1DB954"; border = "1px solid rgba(29,185,84,0.4)";
-  } else if (status === "done") {
-    label = `✓ ${result?.added}`; bg = "#1DB954"; color = "#000"; border = "none";
-  } else if (status === "err") {
-    label = "✕"; bg = "rgba(248,113,113,0.18)"; color = "#fecaca"; border = "1px solid #f87171";
-  } else {
-    label = dayInfo.short; bg = "rgba(29,185,84,0.08)"; color = "#1DB954"; border = "1px solid rgba(29,185,84,0.4)";
-  }
-
-  return (
-    <button onClick={onClick} disabled={status === "working"}
-      title={`Build ${dayInfo.name} night playlist · ${count} saved sets`}
-      style={{
-        background: bg, color, border,
-        borderRadius: 999, padding: "10px 14px",
-        cursor: status === "working" ? "wait" : "pointer",
-        fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-        transition: "all .2s",
-      }}>{label}</button>
-  );
-}
 
 Object.assign(window, {
   SpotifyScreen, MeScreen, fetchPreviewUrl,
