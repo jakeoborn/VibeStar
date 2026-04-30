@@ -405,13 +405,24 @@ function AccountCard({ state, setState }) {
 
 // ── Realtime presence (friend locations) ─────────────────────
 // No DB table needed — presence is ephemeral, managed by Supabase
-// Realtime. Channel is scoped per festival so events don't bleed.
+// Realtime. Channel is scoped per CREW so a stranger running Plursky
+// can't see your location: only people who joined your crew code do.
+// Falls back to a festival-wide demo channel if no crew is set yet.
 
-const PRESENCE_CHANNEL_NAME = `presence-${FESTIVAL_CONFIG?.id || "festival"}`;
+const PRESENCE_FALLBACK = `presence-${FESTIVAL_CONFIG?.id || "festival"}`;
 const PRESENCE_COLORS = [
   "#e85d2e","#7b3d9a","#f59a36","#6f8fb8",
   "#2d7a55","#e85d8f","#34b4e8","#a855f7",
 ];
+
+// Reuse the existing crew/group code (CrewCard already manages it under
+// plursky_group_code) so the presence channel is scoped to your crew —
+// only members see each other's stage, not the whole festival.
+function _presChannelName() {
+  let code = null;
+  try { code = localStorage.getItem("plursky_group_code") || null; } catch {}
+  return code ? `crew-${code}` : PRESENCE_FALLBACK;
+}
 
 function _presColor(id) {
   if (!id) return PRESENCE_COLORS[0];
@@ -445,7 +456,7 @@ function sbPresenceJoin({ name, stageId }) {
   _presMyId = _myPresId();
   const color = _presColor(_presMyId);
   if (_presCh) { _sb.removeChannel(_presCh); _presCh = null; }
-  _presCh = _sb.channel(PRESENCE_CHANNEL_NAME, {
+  _presCh = _sb.channel(_presChannelName(), {
     config: { presence: { key: _presMyId } },
   });
   _presCh
@@ -472,6 +483,17 @@ async function sbPresenceUpdate(stageId) {
   if (!_presCh || !_presMyId) return;
   const cur = (_presCh.presenceState()[_presMyId] || [])[0];
   if (cur) await _presCh.track({ ...cur, stageId, ts: Date.now() });
+}
+
+// Re-join presence on the channel matching the current crew code. Called
+// after a crew code change so a sharing user moves to the new crew's channel
+// instead of being stranded on the previous one.
+function sbPresenceRefresh() {
+  if (!_presCh || !_presMyId) return false;
+  const cur = (_presCh.presenceState()[_presMyId] || [])[0];
+  if (!cur) return false;
+  sbPresenceJoin({ name: cur.name, stageId: cur.stageId });
+  return true;
 }
 
 function sbPresenceLeave() {
@@ -884,6 +906,9 @@ function CrewCard({ state }) {
     setJoined(true);
     setJoining(false);
     setCodeInput("");
+    // Migrate any active presence broadcast to the crew's channel so map
+    // pins are scoped to crew members only.
+    sbPresenceRefresh();
   };
 
   React.useEffect(() => {
@@ -958,13 +983,22 @@ function CrewCard({ state }) {
               <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.45)", marginBottom: 3 }}>CREW CODE — SHARE WITH FRIENDS</div>
               <div className="mono" style={{ fontSize: 28, letterSpacing: 8, fontWeight: 700, lineHeight: 1 }}>{code}</div>
             </div>
-            <button onClick={() => { try { navigator.clipboard.writeText(code); } catch {} setCopied(true); setTimeout(() => setCopied(false), 1500); }} style={{
+            <button onClick={async () => {
+              const url = `${window.location.origin}${window.location.pathname}?crew=${code}`;
+              const text = `Join my Plursky crew · code ${code}`;
+              if (navigator.share) {
+                try { await navigator.share({ title: "Plursky crew", text, url }); setCopied(true); setTimeout(() => setCopied(false), 1500); return; }
+                catch (e) { if (e?.name === "AbortError") return; }
+              }
+              try { await navigator.clipboard.writeText(url); } catch {}
+              setCopied(true); setTimeout(() => setCopied(false), 1500);
+            }} style={{
               background: copied ? "rgba(45,122,85,0.3)" : "rgba(247,237,224,0.12)",
               border: "none", borderRadius: 8, padding: "7px 11px", cursor: "pointer",
               color: copied ? "var(--success)" : "var(--paper)",
               fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2,
               transition: "all .15s",
-            }}>{copied ? "✓" : "COPY"}</button>
+            }}>{copied ? "✓" : "↗ SHARE"}</button>
             <button onClick={() => { if (leaveRef.current) leaveRef.current(); setJoined(false); setMembers(new Map()); }} style={{
               background: "rgba(247,237,224,0.08)", border: "none", borderRadius: 8,
               padding: "7px 11px", cursor: "pointer", color: "rgba(247,237,224,0.5)",
@@ -1012,7 +1046,7 @@ function CrewCard({ state }) {
 Object.assign(window, {
   AccountCard, sbSignIn, sbSignInWithSpotify, sbSignInWithApple, sbSignOut, sbGetUser, sbPush, sbPull, sbOnAuthChange,
   sbGetArtistSaveCounts,
-  sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbOnPresenceChange,
+  sbPresenceJoin, sbPresenceUpdate, sbPresenceLeave, sbPresenceRefresh, sbOnPresenceChange,
   sbGetMyPresId, sbGetPresSnap, sbFindByPingCode,
   sbDMChannelKey, sbDMSubscribe, sbDMSend,
   FriendsCard, CrewCard,

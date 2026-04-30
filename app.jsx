@@ -311,6 +311,7 @@ function App() {
     const dlDay    = params.get("day");
     const dlLineup = params.get("lineup");
     const dlFrom   = params.get("from"); // optional friend name
+    const dlCrew   = params.get("crew"); // crew code from a shared invite link
     const validArtist = dlArtist && ARTISTS.find(a => a.id === dlArtist) ? dlArtist : null;
     const validTab    = ["home","map","lineup","spotify","me"].includes(dlTab) ? dlTab : null;
     const validStage  = dlStage && STAGES.find(s => s.id === dlStage || s.short.toLowerCase() === dlStage.toLowerCase()) ? dlStage : null;
@@ -321,9 +322,19 @@ function App() {
       ? dlLineup.split(",").map(s => s.trim()).filter(id => ARTISTS.find(a => a.id === id))
       : [];
     const validFrom = (dlFrom || "").slice(0, 24).replace(/[^a-zA-Z0-9 _.-]/g, "") || null;
+    // Crew codes are short alphanumerics — sanitise hard so a malformed link
+    // can't poison the localStorage key that scopes our presence channel.
+    const validCrew = (dlCrew || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) || null;
+    if (validCrew) {
+      try { localStorage.setItem("plursky_group_code", validCrew); } catch {}
+      // Migrate any active presence to the crew-scoped channel. Safe no-op if
+      // the user hasn't joined presence yet — sbPresenceJoin will pick the
+      // crew channel automatically the next time it's called.
+      try { window.sbPresenceRefresh?.(); } catch {}
+    }
 
     // Clean the URL without reloading (so back button / sharing still works)
-    if (dlArtist || dlTab || dlStage || dlDay || dlLineup || dlFrom) {
+    if (dlArtist || dlTab || dlStage || dlDay || dlLineup || dlFrom || dlCrew) {
       try { history.replaceState(null, "", window.location.pathname); } catch {}
     }
 
