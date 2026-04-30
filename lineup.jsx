@@ -331,16 +331,30 @@ function LineupScreen({ state, setState }) {
   const [stageFilter, setStageFilter] = React.useState("all"); // all | stage id
   const [tierFilter, setTierFilter] = React.useState("all"); // all | head | prime | open | legend
   const [wizardOpen, setWizardOpen] = React.useState(false);
+  const [genreFilter, setGenreFilter] = React.useState("all");
+  React.useEffect(() => setGenreFilter("all"), [day]);
 
   const spotifyMatchedIds = React.useMemo(() => {
     try { return new Set(JSON.parse(localStorage.getItem('spotify_matched_ids_v1') || '[]')); }
     catch { return new Set(); }
   }, []);
 
+  const dayGenres = React.useMemo(() => {
+    const freq = {};
+    ARTISTS.filter(a => a.day === day).forEach(a => {
+      if (a.genre) freq[a.genre] = (freq[a.genre] || 0) + 1;
+    });
+    return Object.entries(freq)
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([g]) => g);
+  }, [day]);
+
   const dayArtists = ARTISTS
     .filter(a => a.day === day)
     .filter(a => filter === "all" || state.saved.includes(a.id))
     .filter(a => stageFilter === "all" || a.stage === stageFilter)
+    .filter(a => genreFilter === "all" || a.genre === genreFilter)
     .filter(a => {
       if (tierFilter === "all") return true;
       if (tierFilter === "head") return a.tier === 3;
@@ -458,7 +472,6 @@ function LineupScreen({ state, setState }) {
       <div className="no-scrollbar" style={{
         display: "flex", gap: 6, padding: "8px 16px 4px",
         overflowX: "auto", scrollbarWidth: "none",
-        borderBottom: "1px solid var(--line)",
       }}>
         {[{ id: "all", name: "All Stages", color: "var(--ink)" }, ...STAGES].map(s => {
           const on = stageFilter === s.id;
@@ -476,6 +489,37 @@ function LineupScreen({ state, setState }) {
           );
         })}
       </div>
+
+      {/* Genre filter chips */}
+      {dayGenres.length > 0 && (
+        <div className="no-scrollbar" style={{
+          display: "flex", gap: 6, padding: "4px 16px 8px",
+          overflowX: "auto", scrollbarWidth: "none",
+          borderBottom: "1px solid var(--line)",
+        }}>
+          <button onClick={() => setGenreFilter("all")} className="mono" style={{
+            flexShrink: 0, padding: "5px 11px", borderRadius: 999,
+            background: genreFilter === "all" ? "var(--ink)" : "transparent",
+            color: genreFilter === "all" ? "#fff" : "var(--ink)",
+            border: genreFilter === "all" ? "none" : "1px solid var(--line-2)",
+            fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
+            fontWeight: genreFilter === "all" ? 700 : 400, whiteSpace: "nowrap",
+          }}>ALL GENRES</button>
+          {dayGenres.map(g => {
+            const on = genreFilter === g;
+            return (
+              <button key={g} onClick={() => setGenreFilter(g)} className="mono" style={{
+                flexShrink: 0, padding: "5px 11px", borderRadius: 999,
+                background: on ? "var(--horizon)" : "transparent",
+                color: on ? "#fff" : "var(--ink)",
+                border: on ? "none" : "1px solid var(--line-2)",
+                fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
+                fontWeight: on ? 700 : 400, whiteSpace: "nowrap",
+              }}>{g.toUpperCase()}</button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filter row */}
       <div style={{
@@ -510,6 +554,22 @@ function LineupScreen({ state, setState }) {
           {state.saved.length > 0 && (
             <ShareLineupButton state={state} />
           )}
+          <button onClick={() => {
+            const savedArtists = ARTISTS.filter(a => state.saved.includes(a.id));
+            const savedGenres = new Set(savedArtists.map(a => a.genre));
+            const unsaved = ARTISTS.filter(a => !state.saved.includes(a.id));
+            const pool = savedGenres.size
+              ? unsaved.filter(a => savedGenres.has(a.genre))
+              : unsaved;
+            if (!(pool.length ? pool : unsaved).length) return;
+            const pick = (pool.length ? pool : unsaved)[Math.floor(Math.random() * (pool.length || unsaved.length))];
+            setState({ ...state, artist: pick.id });
+          }} className="mono" title="Discover a random artist that matches your taste" style={{
+            padding: "5px 10px", borderRadius: 999,
+            background: "var(--horizon)", color: "#fff", border: "none",
+            fontSize: 9, letterSpacing: 1.2, fontWeight: 700, cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}>✦ SURPRISE</button>
           <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
             {dayArtists.length} SETS
           </div>
@@ -988,10 +1048,38 @@ function printLineupPDF(state) {
   return { ok: true };
 }
 
+async function copyScheduleText(state) {
+  const ids = state.saved;
+  if (!ids.length) return { ok: false, reason: "empty" };
+  const lines = [1, 2, 3].flatMap(day => {
+    const d = FESTIVAL_CONFIG.dayDates[day];
+    const artists = ARTISTS.filter(a => a.day === day && ids.includes(a.id))
+      .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
+    if (!artists.length) return [];
+    return [
+      `${d.short} · ${d.name.toUpperCase()}`,
+      ...artists.map(a => {
+        const stage = STAGES.find(s => s.id === a.stage);
+        return `  ${a.start}  ${a.name}  @  ${stage ? stage.name : a.stage}`;
+      }),
+      "",
+    ];
+  });
+  const text = [`My ${FESTIVAL_CONFIG.name} lineup (${ids.length} sets):`, "", ...lines].join("\n").trim();
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `My ${FESTIVAL_CONFIG.name} lineup`, text });
+      return { ok: true };
+    }
+    await navigator.clipboard.writeText(text);
+    return { ok: true };
+  } catch { return { ok: false }; }
+}
+
 function ShareLineupButton({ state }) {
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [done, setDone] = React.useState(null); // 'image' | 'cal' | 'pdf' | null
+  const [done, setDone] = React.useState(null); // 'image' | 'cal' | 'pdf' | 'txt' | null
 
   const wrap = (key, fn) => async () => {
     if (busy) return;
@@ -1021,6 +1109,7 @@ function ShareLineupButton({ state }) {
         {done === "image" ? "SAVED"
           : done === "cal" ? "ADDED"
           : done === "pdf" ? "PRINTED"
+          : done === "txt" ? "COPIED"
           : busy ? "…" : "SHARE"}
       </button>
 
@@ -1038,6 +1127,7 @@ function ShareLineupButton({ state }) {
             <ShareMenuItem icon="img"  label="Image for stories" sub="1080×1920 PNG" onClick={wrap("image", shareLineupImage)} />
             <ShareMenuItem icon="cal"  label="Add to calendar"   sub=".ics with 15-min reminders" onClick={wrap("cal", exportLineupICS)} />
             <ShareMenuItem icon="prn"  label="Print schedule"    sub="Save as PDF from print dialog" onClick={wrap("pdf", async (s) => printLineupPDF(s))} />
+            <ShareMenuItem icon="txt"  label="Copy as text"      sub="Paste anywhere" onClick={wrap("txt", copyScheduleText)} />
           </div>
         </>
       )}
@@ -1049,6 +1139,7 @@ function ShareMenuItem({ icon, label, sub, onClick }) {
   const ico =
     icon === "img" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 17 L9 12 L14 16 L17 13 L21 17"/></svg> :
     icon === "cal" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9 H21"/><path d="M8 3 V7"/><path d="M16 3 V7"/></svg> :
+    icon === "txt" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8 H16"/><path d="M8 12 H16"/><path d="M8 16 H12"/></svg> :
                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9 V3 H18 V9"/><rect x="3" y="9" width="18" height="9" rx="1"/><rect x="6" y="14" width="12" height="6"/></svg>;
   return (
     <button onClick={onClick} style={{
@@ -1070,6 +1161,7 @@ function ShareMenuItem({ icon, label, sub, onClick }) {
 }
 
 function toggleSave(state, setState, id) {
+  try { navigator.vibrate([30]); } catch {}
   const has = state.saved.includes(id);
   setState({ ...state, saved: has ? state.saved.filter(x => x !== id) : [...state.saved, id] });
 }

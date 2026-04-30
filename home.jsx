@@ -742,6 +742,7 @@ function HomeScreen({ state, setState }) {
                     return (
                       <button
                         onClick={() => {
+                          try { navigator.vibrate([30]); } catch {}
                           const saved = state.saved || [];
                           setState({ ...state, saved: isSaved
                             ? saved.filter(id => id !== current.id)
@@ -1057,7 +1058,7 @@ function PlanRow({ entry, state, setState }) {
             fontWeight: tight ? 700 : 500,
           }}>
             {walk} MIN WALK · {prev.stage === a.stage ? "SAME STAGE" : `${STAGES.find(s=>s.id===prev.stage).short} → ${stage.short}`}
-            {tight && leaveByLabel && ` · LEAVE BY ${leaveByLabel}`}
+            {leaveByLabel && ` · LEAVE BY ${leaveByLabel}`}
           </span>
         </div>
       )}

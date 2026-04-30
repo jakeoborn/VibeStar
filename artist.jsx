@@ -744,6 +744,8 @@ function ArtistScreen({ state, setState }) {
             { label: "SPOTIFY", url: `https://open.spotify.com/search/${encodeURIComponent(activeName)}/artists` },
             { label: "SOUNDCLOUD", url: `https://soundcloud.com/search?q=${encodeURIComponent(activeName)}` },
             { label: "RA", url: `https://ra.co/search?query=${encodeURIComponent(activeName)}` },
+            { label: "INSTAGRAM", url: `https://www.instagram.com/explore/tags/${encodeURIComponent(activeName.replace(/\s+/g,"").toLowerCase())}` },
+            { label: "𝕏", url: `https://x.com/search?q=${encodeURIComponent(activeName)}` },
           ].map(({ label, url }) => (
             <a key={label} href={url} target="_blank" rel="noopener noreferrer" style={{
               fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 1.2, fontWeight: 700,
