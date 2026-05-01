@@ -47,13 +47,13 @@ function TopBar({ title, right, sub, tight }) {
   );
 }
 
-// Bottom tab nav — 5 tabs, labels + icons drawn as SVG
+// Bottom tab nav — 4 tabs after v92 collapse (Music folded into Me).
+// SpotifyScreen still routes via state.tab="spotify" but Me lights up in the bar.
 function TabBar({ active, onChange }) {
   const tabs = [
     { id: "home",    label: "Today",  icon: HomeIcon },
-    { id: "map",     label: "Map",    icon: MapIcon },
     { id: "lineup",  label: "Lineup", icon: LineupIcon },
-    { id: "spotify", label: "Music",  icon: MusicIcon },
+    { id: "map",     label: "Map",    icon: MapIcon },
     { id: "me",      label: "Me",     icon: MeIcon },
   ];
   return (

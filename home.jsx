@@ -499,6 +499,9 @@ function HomeScreen({ state, setState }) {
   const [notifNudgeDismissed, setNotifNudgeDismissed] = React.useState(() => {
     try { return localStorage.getItem("notif_nudge_dismissed") === "1"; } catch { return false; }
   });
+  const [setupBannerDismissed, setSetupBannerDismissed] = React.useState(() => {
+    try { return localStorage.getItem("setup_banner_dismissed") === "1"; } catch { return false; }
+  });
   const { perm: notifPerm, enable: enableNotifs } = useNotifications();
   const weatherAlert = useWeatherAlert();
   // Pre-event newcomers haven't seen the first-timer guide yet — show a
@@ -658,9 +661,43 @@ function HomeScreen({ state, setState }) {
           wins. Without this gate, three nudges could stack on first launch. */}
       {(() => {
         const ip = useInstallPrompt();
-        const showInstall = ip.canInstall;
-        const showNotif   = !showInstall && state.saved.length > 0 && notifPerm === "default" && !notifNudgeDismissed;
-        const showWeather = !showInstall && !showNotif && weatherAlert && !weatherAlertDismissed;
+        // Setup nudge — replaces the old blocking onboarding modal. Shows
+        // when the user hasn't picked a name AND hasn't connected Spotify
+        // (signal that they're truly new), and is dismissable.
+        let userName = "";
+        try { userName = localStorage.getItem("user_name") || ""; } catch {}
+        const showSetup = !setupBannerDismissed && !userName && !state.spotifyConnected;
+        const showInstall = !showSetup && ip.canInstall;
+        const showNotif   = !showSetup && !showInstall && state.saved.length > 0 && notifPerm === "default" && !notifNudgeDismissed;
+        const showWeather = !showSetup && !showInstall && !showNotif && weatherAlert && !weatherAlertDismissed;
+        if (showSetup) return (
+          <div style={{ padding: "8px 16px 0" }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              background: "linear-gradient(135deg, rgba(232,93,46,0.12), rgba(123,61,154,0.10))",
+              border: "1px solid rgba(232,93,46,0.4)",
+              borderRadius: 14, padding: "11px 13px",
+            }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>✦</span>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink)", lineHeight: 1.4 }}>
+                Personalize Plursky — name, Spotify, reminders.
+              </div>
+              <button onClick={() => window.plurskyOpenOnboarding?.()} style={{
+                background: "var(--ink)", color: "var(--paper)", border: "none",
+                borderRadius: 999, padding: "5px 11px", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+                flexShrink: 0,
+              }}>SET UP</button>
+              <button onClick={() => {
+                try { localStorage.setItem("setup_banner_dismissed", "1"); } catch {}
+                setSetupBannerDismissed(true);
+              }} style={{
+                background: "transparent", border: "none", color: "var(--muted)",
+                fontSize: 17, cursor: "pointer", flexShrink: 0, lineHeight: 1,
+              }}>×</button>
+            </div>
+          </div>
+        );
         if (showInstall) return <InstallBanner />;
         if (showNotif) return (
           <div style={{ padding: "8px 16px 0" }}>

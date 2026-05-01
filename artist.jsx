@@ -797,12 +797,20 @@ function ArtistScreen({ state, setState }) {
               </div>
             )}
           </div>
-          <button onClick={() => setState({ ...state, tab: "map", focusStage: a.stage, artist: null })} style={{
-            background: "transparent", border: "1px solid var(--line-2)",
-            borderRadius: 999, padding: "8px 12px",
-            fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2,
-            cursor: "pointer",
-          }}>ON MAP</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => setState({ ...state, tab: "map", focusStage: a.stage, artist: null })} style={{
+              background: "transparent", border: "1px solid var(--line-2)",
+              borderRadius: 999, padding: "6px 12px",
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2,
+              cursor: "pointer",
+            }}>ON MAP</button>
+            <button onClick={() => setState({ ...state, tab: "lineup", lineupDay: a.day, artist: null })} style={{
+              background: "transparent", border: "1px solid var(--line-2)",
+              borderRadius: 999, padding: "6px 12px",
+              fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}>SCHEDULE</button>
+          </div>
         </div>
 
         {/* Bio — inline bio first, then AudioDB extended bio if available */}

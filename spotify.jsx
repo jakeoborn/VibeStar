@@ -1880,6 +1880,47 @@ function MeScreen({ state, setState }) {
           </div>
         </div>
 
+        {/* Music — primary entry to SpotifyScreen now that the Music tab is
+            gone (v92 fold). Connect status is the headline; tapping opens
+            the full Music screen with top artists, discoveries, playlist build. */}
+        <button
+          onClick={() => setState({ ...state, tab: "spotify" })}
+          style={{
+            display: "flex", alignItems: "center", gap: 12,
+            width: "100%", padding: "13px 14px", marginBottom: 14,
+            background: state.spotifyConnected
+              ? "linear-gradient(135deg, rgba(29,185,84,0.12), rgba(123,61,154,0.10))"
+              : "var(--paper-2)",
+            border: state.spotifyConnected
+              ? "1px solid rgba(29,185,84,0.4)"
+              : "1px solid var(--line-2)",
+            borderRadius: 14, cursor: "pointer", textAlign: "left",
+          }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 38, flexShrink: 0,
+            background: state.spotifyConnected
+              ? "linear-gradient(135deg, #1DB954, var(--horizon))"
+              : "linear-gradient(135deg, var(--ember), var(--horizon))",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="7" cy="17" r="2.5"/><circle cx="17" cy="15" r="2.5"/>
+              <path d="M9.5 17 L9.5 5 L19.5 3 L19.5 15"/>
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="serif" style={{ fontSize: 18, lineHeight: 1.05, color: "var(--ink)" }}>
+              {state.spotifyConnected ? "Music · matched" : "Match the lineup to your Spotify"}
+            </div>
+            <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
+              {state.spotifyConnected ? "TOP ARTISTS · DISCOVERIES · BUILD PLAYLIST" : "TAP TO CONNECT"}
+            </div>
+          </div>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M9 18 L15 12 L9 6"/>
+          </svg>
+        </button>
+
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 20 }}>
           {[{ n: state.saved.length, l: "SAVED" }, { n: "3.2", l: "KM TODAY" }, { n: "7", l: "STAMPS" }].map(s => (
@@ -1923,6 +1964,35 @@ function MeScreen({ state, setState }) {
           ON-SITE TEAMS · NO QUESTIONS ASKED
         </div>
         <SafetyCards />
+
+        {/* Power-user: API-key gated AI chat + setup wizard re-run.
+            Hidden behind small mono-link aesthetic so it's available without
+            adding visual weight to the main flow. */}
+        <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => window.plurskyOpenChat?.()} style={{
+            background: "transparent", border: "1px dashed var(--line-2)",
+            borderRadius: 10, padding: "10px 12px", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+          }}>
+            <span style={{ fontSize: 14 }}>✦</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, fontWeight: 700, color: "var(--ink)" }}>
+                ASK PLURSKY AI
+              </div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                BRING YOUR OWN ANTHROPIC KEY · POWERED BY CLAUDE
+              </div>
+            </div>
+          </button>
+          <button onClick={() => window.plurskyOpenOnboarding?.()} style={{
+            background: "transparent", border: "none",
+            padding: "6px 4px", cursor: "pointer", textAlign: "left",
+            color: "var(--muted)",
+            fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2,
+          }}>
+            ↻ RE-RUN SETUP WIZARD
+          </button>
+        </div>
 
         {/* Your headliners — saved tier-3 sets, tappable to artist screen.
             Replaces the old static "Memories" grid which was unlinked

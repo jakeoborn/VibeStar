@@ -288,13 +288,78 @@ function SearchModal({ onClose, onSelectArtist }) {
   );
 }
 
+// ── Lightweight global toast (anyone can call window.plurskyToast) ──
+// Used by save/unsave heart-tap and other quick confirmations.
+function ToastHost() {
+  const [msg, setMsg] = React.useState(null);
+  React.useEffect(() => {
+    window.plurskyToast = (text) => {
+      setMsg(null);
+      requestAnimationFrame(() => setMsg({ text, id: Date.now() }));
+      try { navigator.vibrate?.(15); } catch {}
+    };
+    return () => { delete window.plurskyToast; };
+  }, []);
+  React.useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 1600);
+    return () => clearTimeout(t);
+  }, [msg?.id]);
+  if (!msg) return null;
+  return (
+    <div style={{
+      position: "absolute", left: 0, right: 0, bottom: 80, zIndex: 95,
+      display: "flex", justifyContent: "center", pointerEvents: "none",
+    }}>
+      <div className="mono" style={{
+        background: "var(--ink)", color: "var(--paper)",
+        padding: "9px 16px", borderRadius: 999,
+        fontSize: 11, letterSpacing: 1.2, fontWeight: 600,
+        boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+        animation: "fadeIn .15s",
+      }}>{msg.text}</div>
+    </div>
+  );
+}
+
 function App() {
-  const [showOnboarding, setShowOnboarding] = React.useState(() => {
-    try { return localStorage.getItem("onboarded") !== ONBOARD_VERSION; }
-    catch { return false; }
-  });
+  // First-time visitors no longer get a blocking modal — onboarding becomes
+  // a passive setup card on Home (see SetupBanner). Mark onboarded right away
+  // so the modal won't auto-trigger on cold open.
+  const [showOnboarding, setShowOnboarding] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      if (localStorage.getItem("onboarded") !== ONBOARD_VERSION) {
+        localStorage.setItem("onboarded", ONBOARD_VERSION);
+      }
+    } catch {}
+  }, []);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [chatOpen,   setChatOpen]   = React.useState(false);
+  // AI chat needs a user-supplied Anthropic key (most visitors don't have one),
+  // so the corner FAB is hidden unless that key is already stored. Users who
+  // want to enable it can open the chat from a Me-tab link instead.
+  const [hasAiKey, setHasAiKey] = React.useState(() => {
+    try { return !!localStorage.getItem("plursky_anthropic_key"); } catch { return false; }
+  });
+  React.useEffect(() => {
+    const onStorage = () => {
+      try { setHasAiKey(!!localStorage.getItem("plursky_anthropic_key")); } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    window.plurskyOpenChat = () => setChatOpen(true);
+    window.plurskyOpenOnboarding = () => setShowOnboarding(true);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      delete window.plurskyOpenChat;
+      delete window.plurskyOpenOnboarding;
+    };
+  }, []);
+  React.useEffect(() => {
+    if (!chatOpen) {
+      try { setHasAiKey(!!localStorage.getItem("plursky_anthropic_key")); } catch {}
+    }
+  }, [chatOpen]);
   const { perm: notifPerm, showLocal } = useNotifications();
   const [state, setState] = React.useState(() => {
     let saved;
@@ -400,8 +465,10 @@ function App() {
               </svg>
             </button>
           )}
-          {/* Ask Plursky AI chat FAB */}
-          {!state.artist && !chatOpen && !searchOpen && (
+          {/* Ask Plursky AI chat FAB — hidden unless user has stored an
+              Anthropic API key. Most visitors don't have one, so the FAB
+              would otherwise be a dead pixel. Activation lives on Me. */}
+          {hasAiKey && !state.artist && !chatOpen && !searchOpen && (
             <button
               onClick={() => setChatOpen(true)}
               aria-label="Ask Plursky AI"
@@ -416,9 +483,13 @@ function App() {
               }}
             >✦</button>
           )}
+          <ToastHost />
         </div>
         {!state.artist && (
-          <TabBar active={state.tab} onChange={t => setState({ ...state, tab: t })} />
+          <TabBar
+            active={state.tab === "spotify" ? "me" : state.tab}
+            onChange={t => setState({ ...state, tab: t })}
+          />
         )}
       </div>
       {searchOpen && (

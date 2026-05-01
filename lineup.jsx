@@ -1281,7 +1281,13 @@ function ShareMenuItem({ icon, label, sub, onClick }) {
 function toggleSave(state, setState, id) {
   try { navigator.vibrate([30]); } catch {}
   const has = state.saved.includes(id);
-  setState({ ...state, saved: has ? state.saved.filter(x => x !== id) : [...state.saved, id] });
+  const next = has ? state.saved.filter(x => x !== id) : [...state.saved, id];
+  setState({ ...state, saved: next });
+  try {
+    const a = ARTISTS.find(x => x.id === id);
+    const label = a?.name ? a.name.toUpperCase() : "SET";
+    window.plurskyToast?.(has ? `REMOVED · ${label}` : `SAVED · ${next.length} SETS`);
+  } catch {}
 }
 
 // ── Share lineup image (canvas → PNG → Web Share / download) ──
