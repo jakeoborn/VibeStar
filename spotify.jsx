@@ -446,8 +446,48 @@ function _hasPlaylistWriteScope() {
   return s.includes("playlist-modify-public") || s.includes("playlist-modify-private");
 }
 
-// #12 Build my playlist — push the user's saved EDC sets into a
-// Spotify playlist on their account. Skips artists Spotify can't find.
+// Find a user-owned playlist whose name starts with "plursky" (case-insensitive).
+// Falls back from a cached ID. Returns the playlist object or null.
+// Used because POST /users/{id}/playlists is blocked for Spotify Development
+// Mode apps (post-Nov 2024) — the user creates a "Plursky" playlist manually
+// once, then modify-existing endpoints (which are NOT restricted) take over.
+async function _findPlurskyPlaylist(token, profileId) {
+  let cachedId = null;
+  try { cachedId = localStorage.getItem("plursky_target_playlist_id"); } catch {}
+  if (cachedId) {
+    try {
+      const r = await fetch(`https://api.spotify.com/v1/playlists/${cachedId}`, {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (r.ok) {
+        const candidate = await r.json();
+        if (candidate?.owner?.id === profileId) return candidate;
+      }
+    } catch {}
+    try { localStorage.removeItem("plursky_target_playlist_id"); } catch {}
+  }
+  for (let offset = 0; offset < 200; offset += 50) {
+    const r = await fetch(
+      `https://api.spotify.com/v1/me/playlists?limit=50&offset=${offset}`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    const items = j.items || [];
+    const found = items.find(p =>
+      p?.owner?.id === profileId &&
+      typeof p?.name === "string" &&
+      p.name.trim().toLowerCase().startsWith("plursky")
+    );
+    if (found) return found;
+    if (items.length < 50) break;
+  }
+  return null;
+}
+
+// #12 Build my playlist — push the user's saved EDC sets into their existing
+// "Plursky" Spotify playlist (created manually, see _findPlurskyPlaylist).
+// Skips artists Spotify can't find.
 async function createEdcPlaylist(state) {
   const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
@@ -469,28 +509,16 @@ async function createEdcPlaylist(state) {
   const trackLimit = tier => tier === 3 ? 5 : tier === 2 ? 4 : 3;
   const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // 1) Create empty playlist on user's account
-  const plRes = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: `My ${FESTIVAL_CONFIG.shortName} Lineup`,
-      description: `${sorted.length} sets sorted FRI→SAT→SUN by stage time · headliners 5 tracks · built with Plursky · ${dateStr}`,
-      public: false,
-    }),
-  });
-  if (!plRes.ok) {
-    const err = await plRes.json().catch(() => ({}));
-    if (plRes.status === 401 || plRes.status === 403) {
-      // 403 here always means "scopes don't cover playlist-modify". Wipe the
-      // recorded scope set + cached token so getValidToken can't silently
-      // refresh into another doomed token before the user reconnects.
-      ["spotify_token","spotify_expires","spotify_auth_scopes"].forEach(k => localStorage.removeItem(k));
-      return { ok: false, reason: "reconnect", status: plRes.status, message: err.error?.message || "Reconnect required" };
-    }
-    return { ok: false, reason: "create_fail", status: plRes.status, message: err.error?.message || "" };
+  // 1) Find the user's manually-created "Plursky" playlist
+  const playlist = await _findPlurskyPlaylist(token, profile.id);
+  if (!playlist) {
+    return {
+      ok: false,
+      reason: "no_target_playlist",
+      message: "Create empty Spotify playlist named 'Plursky' first",
+    };
   }
-  const playlist = await plRes.json();
+  try { localStorage.setItem("plursky_target_playlist_id", playlist.id); } catch {}
 
   // 2) Top tracks per saved artist, kept in day buckets for FRI→SAT→SUN ordering.
   //    B2B names split so each artist contributes independently.
@@ -551,22 +579,39 @@ async function createEdcPlaylist(state) {
     await Promise.all(sorted.slice(i, i + 6).map(search));
   }
 
-  // 3) Add tracks in FRI→SAT→SUN day order
+  // 3) Replace existing tracks: PUT clears+sets the first batch, POST appends rest.
+  //    PUT with { uris: [] } clears entirely — runs even if we have zero matched
+  //    tracks, so a rebuild with no matches still empties the playlist.
   const allUris = [
     ...(urisByDay[1] || []),
     ...(urisByDay[2] || []),
     ...(urisByDay[3] || []),
   ];
+  const batches = [];
+  for (let i = 0; i < allUris.length; i += 100) batches.push(allUris.slice(i, i + 100));
+  if (batches.length === 0) batches.push([]);
   let addedCount = 0;
-  for (let i = 0; i < allUris.length; i += 100) {
+  let writeFailStatus = null;
+  for (let i = 0; i < batches.length; i++) {
     try {
+      const isFirst = i === 0;
       const ar = await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
-        method: "POST",
+        method: isFirst ? "PUT" : "POST",
         headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ uris: allUris.slice(i, i + 100) }),
+        body: JSON.stringify({ uris: batches[i] }),
       });
-      if (ar.ok) addedCount += Math.min(100, allUris.length - i);
+      if (ar.ok) addedCount += batches[i].length;
+      else if (writeFailStatus === null) writeFailStatus = ar.status;
     } catch {}
+  }
+  if (allUris.length > 0 && addedCount === 0 && writeFailStatus) {
+    // Couldn't write any tracks — likely scope or ownership issue; surface it
+    // rather than silently reporting a "successful" empty rebuild.
+    if (writeFailStatus === 401 || writeFailStatus === 403) {
+      ["spotify_token","spotify_expires","spotify_auth_scopes"].forEach(k => { try { localStorage.removeItem(k); } catch {} });
+      return { ok: false, reason: "reconnect", status: writeFailStatus, message: "Reconnect required" };
+    }
+    return { ok: false, reason: "create_fail", status: writeFailStatus, message: "Couldn't write tracks" };
   }
 
   // 4) Update description with per-day track counts for easy navigation
@@ -589,7 +634,7 @@ async function createEdcPlaylist(state) {
     added: addedCount,
     total: sorted.length,
     missed,
-    url:   playlist.external_urls?.spotify,
+    url:   playlist.external_urls?.spotify || `https://open.spotify.com/playlist/${playlist.id}`,
     id:    playlist.id,
   };
 }
@@ -1918,7 +1963,11 @@ function BuildPlaylistButton({ state }) {
         setStatus("done");
       } else {
         setStatus("err");
-        if (r.reason !== "reconnect") setTimeout(() => setStatus("idle"), 4500);
+        // Persist actionable errors (reconnect, missing target playlist) so the
+        // user has time to read + click. Auto-clear only transient failures.
+        if (r.reason !== "reconnect" && r.reason !== "no_target_playlist") {
+          setTimeout(() => setStatus("idle"), 4500);
+        }
       }
     } catch (e) {
       setResult({ ok: false, reason: "create_fail", message: String(e?.message || e) });
@@ -1946,6 +1995,9 @@ function BuildPlaylistButton({ state }) {
       try { localStorage.setItem("plursky_pending_build", "1"); } catch {}
       startSpotifyAuth(); return;
     }
+    if (status === "err" && result?.reason === "no_target_playlist") {
+      window.open("https://open.spotify.com/", "_blank", "noopener"); return;
+    }
     // When done, clicking opens the playlist (user-initiated — not blocked)
     if (status === "done" && result?.url) {
       window.open(result.url, "_blank", "noopener"); return;
@@ -1964,6 +2016,7 @@ function BuildPlaylistButton({ state }) {
     bg = "#1DB954"; color = "#000"; border = "none";
   } else if (status === "err") {
     if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ TAP TO GRANT SPOTIFY ACCESS";
+    else if (result?.reason === "no_target_playlist") label = "↗ CREATE 'PLURSKY' PLAYLIST IN SPOTIFY";
     else if (result?.reason === "empty") label = "SAVE SETS FIRST";
     else if (result?.reason === "create_fail") {
       const msg = (result?.message || "").slice(0, 28);
