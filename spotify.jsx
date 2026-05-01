@@ -1100,12 +1100,23 @@ function getDiscoveries(spotifyArtists, matched, savedIds, max = 8) {
     });
   });
   const total = Math.max(1, Object.values(stageProfile).reduce((a, b) => a + b, 0));
+  // Identify the user's strongest stage so we can call it out by name in the
+  // recommendation reason ("matches your top stage").
+  const ranked = Object.entries(stageProfile).sort((a, b) => b[1] - a[1]);
+  const topStageId = ranked[0]?.[1] > 0 ? ranked[0][0] : null;
   const scored = ARTISTS
     .filter(a => !matchedIds.has(a.id) && !savedSet.has(a.id) && a.tier >= 2)
     .map(a => {
       const stageWeight = (stageProfile[a.stage] || 0) / total;
       const tierBonus   = a.tier * 0.5; // light nudge toward primetime/headliner picks
-      return { artist: a, score: stageWeight * 100 + tierBonus };
+      const stage       = STAGES.find(s => s.id === a.stage);
+      const stageShort  = stage?.short || stage?.name || a.stage;
+      let reason;
+      if (a.stage === topStageId && stageWeight > 0) reason = `Your top stage · ${stageShort}`;
+      else if (stageWeight > 0)                     reason = `Matches your ${stageShort} taste`;
+      else if (a.tier === 3)                        reason = "Headliner you haven't heard";
+      else                                           reason = null;
+      return { artist: { ...a, _reason: reason }, score: stageWeight * 100 + tierBonus };
     });
   // Filter out anyone with zero genre fit AND no headliner status — avoid random fallbacks
   const meaningful = scored.filter(s => s.score > 0.6);
@@ -1521,6 +1532,11 @@ function SpotifyScreen({ state, setState }) {
                     <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
                       {stg.name} · DAY {a.day} · {a.start}
                     </div>
+                    {a._reason && (
+                      <div style={{ fontSize: 11, fontStyle: "italic", color: "var(--horizon)", marginTop: 3, lineHeight: 1.3 }}>
+                        {a._reason}
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => toggleSave(state, setState, a.id)} style={{
                     width: 34, height: 34, borderRadius: 34,
@@ -1908,21 +1924,39 @@ function MeScreen({ state, setState }) {
         </div>
         <SafetyCards />
 
-        {/* Memories */}
-        <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 10 }}>Memories</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-          {ARTISTS.filter(a => a.tier === 3).slice(0, 6).map(a => (
-            <div key={a.id} style={{
-              aspectRatio: "1/1", borderRadius: 10, background: a.img,
-              position: "relative", overflow: "hidden",
-            }}>
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 40%,rgba(0,0,0,0.5))" }}/>
-              <div style={{ position: "absolute", bottom: 5, left: 6, right: 6, color: "#fff" }} className="mono">
-                <span style={{ fontSize: 8, letterSpacing: 1, opacity: 0.9 }}>{a.start}</span>
+        {/* Your headliners — saved tier-3 sets, tappable to artist screen.
+            Replaces the old static "Memories" grid which was unlinked
+            decoration. Hidden if the user hasn't saved any headliners yet. */}
+        {(() => {
+          const savedHeadliners = state.saved
+            .map(id => ARTISTS.find(a => a.id === id))
+            .filter(a => a && a.tier === 3)
+            .slice(0, 6);
+          if (savedHeadliners.length === 0) return null;
+          return (
+            <>
+              <div className="serif" style={{ fontSize: 22, marginTop: 20, marginBottom: 10 }}>
+                Your <span style={{ fontStyle: "italic" }}>headliners</span>
               </div>
-            </div>
-          ))}
-        </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+                {savedHeadliners.map(a => (
+                  <button key={a.id} onClick={() => setState({ ...state, artist: a.id })} style={{
+                    aspectRatio: "1/1", borderRadius: 10, background: a.img,
+                    position: "relative", overflow: "hidden", border: "none", padding: 0, cursor: "pointer",
+                  }}>
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 40%,rgba(0,0,0,0.65))" }}/>
+                    <div style={{ position: "absolute", bottom: 6, left: 6, right: 6, color: "#fff", textAlign: "left" }} className="mono">
+                      <div style={{ fontSize: 10, letterSpacing: 0.4, fontWeight: 700, lineHeight: 1.1, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                      <div style={{ fontSize: 8, letterSpacing: 1, opacity: 0.8 }}>
+                        {FESTIVAL_CONFIG.dayDates[a.day]?.short || ""} · {a.start}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          );
+        })()}
         <div style={{ padding: 20 }} />
       </ScrollBody>
     </Screen>

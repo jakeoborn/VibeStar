@@ -363,6 +363,14 @@ function LineupScreen({ state, setState }) {
   const [tierFilter, setTierFilter] = React.useState("all"); // all | head | prime | open | legend
   const [wizardOpen, setWizardOpen] = React.useState(false);
   const [genreFilter, setGenreFilter] = React.useState("all");
+  // Filter panel collapses by default — three chip rows (tier/stage/genre)
+  // were dominating the top of the screen even when the user wasn't using
+  // them. Active filters surface as dismissable chips so a user can clear
+  // them without re-opening the panel.
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const activeFilterCount = (tierFilter !== "all" ? 1 : 0)
+                          + (stageFilter !== "all" ? 1 : 0)
+                          + (genreFilter !== "all" ? 1 : 0);
   React.useEffect(() => setGenreFilter("all"), [day]);
 
   const spotifyMatchedIds = React.useMemo(() => {
@@ -468,88 +476,148 @@ function LineupScreen({ state, setState }) {
         })}
       </div>
 
-      {/* Tier / vibe filter — the vet's killer filter. ALL is the default,
-          LEGEND surfaces sunrise sets and B2Bs (auto-detected, no manual
-          curation), HEAD/PRIME/OPEN map to the existing tier field. */}
+      {/* Filter toggle row — collapses tier/stage/genre rows behind a single
+          control. Active filters render as dismissable chips so users can
+          clear them without re-opening the panel. */}
       <div className="no-scrollbar" style={{
-        display: "flex", gap: 6, padding: "10px 16px 4px",
+        display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 8px",
         overflowX: "auto", scrollbarWidth: "none",
+        borderBottom: filtersOpen ? "none" : "1px solid var(--line)",
       }}>
-        {[
-          { id: "all",    label: "ALL TIERS" },
-          { id: "legend", label: "★ LEGENDARY",   accent: "#fbbf24" },
-          { id: "head",   label: "HEADLINERS",    accent: "var(--ember)" },
-          { id: "prime",  label: "PRIME TIME",    accent: "var(--horizon)" },
-          { id: "open",   label: "OPENERS",       accent: "var(--success)" },
-        ].map(t => {
-          const on = tierFilter === t.id;
-          return (
-            <button key={t.id} onClick={() => setTierFilter(t.id)} className="mono" style={{
-              flexShrink: 0,
-              padding: "5px 11px",
-              borderRadius: 999,
-              background: on ? (t.accent || "var(--ink)") : "transparent",
-              color: on ? "#fff" : "var(--ink)",
-              border: on ? "none" : "1px solid var(--line-2)",
-              fontSize: 9.5, letterSpacing: 1.1,
-              cursor: "pointer", fontWeight: on ? 700 : 500,
-              whiteSpace: "nowrap",
-            }}>{t.label}</button>
-          );
-        })}
-      </div>
-
-      {/* Stage filter chips */}
-      <div className="no-scrollbar" style={{
-        display: "flex", gap: 6, padding: "8px 16px 4px",
-        overflowX: "auto", scrollbarWidth: "none",
-      }}>
-        {[{ id: "all", name: "All Stages", color: "var(--ink)" }, ...STAGES].map(s => {
-          const on = stageFilter === s.id;
-          return (
-            <button key={s.id} onClick={() => setStageFilter(s.id)} className="mono" style={{
-              flexShrink: 0,
-              padding: "5px 11px",
-              borderRadius: 999,
-              background: on ? (s.color || "var(--ink)") : "transparent",
-              color: on ? "#fff" : "var(--ink)",
-              border: on ? "none" : "1px solid var(--line-2)",
-              fontSize: 9.5, letterSpacing: 1.1, textTransform: "uppercase",
-              cursor: "pointer", fontWeight: on ? 700 : 400,
-            }}>{s.short || s.name}</button>
-          );
-        })}
-      </div>
-
-      {/* Genre filter chips */}
-      {dayGenres.length > 0 && (
-        <div className="no-scrollbar" style={{
-          display: "flex", gap: 6, padding: "4px 16px 8px",
-          overflowX: "auto", scrollbarWidth: "none",
-          borderBottom: "1px solid var(--line)",
+        <button onClick={() => setFiltersOpen(o => !o)} className="mono" style={{
+          flexShrink: 0, padding: "5px 11px", borderRadius: 999,
+          background: filtersOpen || activeFilterCount > 0 ? "var(--ink)" : "transparent",
+          color: filtersOpen || activeFilterCount > 0 ? "var(--paper)" : "var(--ink)",
+          border: filtersOpen || activeFilterCount > 0 ? "none" : "1px solid var(--line-2)",
+          fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
+          fontWeight: 700, whiteSpace: "nowrap",
         }}>
+          {filtersOpen ? "▲ FILTERS" : `▼ FILTERS${activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}`}
+        </button>
+        {!filtersOpen && tierFilter !== "all" && (() => {
+          const t = [
+            { id: "legend", label: "★ LEGENDARY", accent: "#fbbf24" },
+            { id: "head",   label: "HEADLINERS",  accent: "var(--ember)" },
+            { id: "prime",  label: "PRIME TIME",  accent: "var(--horizon)" },
+            { id: "open",   label: "OPENERS",     accent: "var(--success)" },
+          ].find(x => x.id === tierFilter);
+          return t && (
+            <button onClick={() => setTierFilter("all")} className="mono" style={{
+              flexShrink: 0, padding: "5px 9px 5px 11px", borderRadius: 999,
+              background: t.accent, color: "#fff", border: "none",
+              fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer", fontWeight: 700,
+              whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6,
+            }}>{t.label} <span style={{ fontSize: 13, lineHeight: 1, opacity: 0.85 }}>×</span></button>
+          );
+        })()}
+        {!filtersOpen && stageFilter !== "all" && (() => {
+          const s = STAGES.find(x => x.id === stageFilter);
+          return s && (
+            <button onClick={() => setStageFilter("all")} className="mono" style={{
+              flexShrink: 0, padding: "5px 9px 5px 11px", borderRadius: 999,
+              background: s.color || "var(--ink)", color: "#fff", border: "none",
+              fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer", fontWeight: 700,
+              textTransform: "uppercase", whiteSpace: "nowrap",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>{s.short || s.name} <span style={{ fontSize: 13, lineHeight: 1, opacity: 0.85 }}>×</span></button>
+          );
+        })()}
+        {!filtersOpen && genreFilter !== "all" && (
           <button onClick={() => setGenreFilter("all")} className="mono" style={{
-            flexShrink: 0, padding: "5px 11px", borderRadius: 999,
-            background: genreFilter === "all" ? "var(--ink)" : "transparent",
-            color: genreFilter === "all" ? "#fff" : "var(--ink)",
-            border: genreFilter === "all" ? "none" : "1px solid var(--line-2)",
-            fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
-            fontWeight: genreFilter === "all" ? 700 : 400, whiteSpace: "nowrap",
-          }}>ALL GENRES</button>
-          {dayGenres.map(g => {
-            const on = genreFilter === g;
-            return (
-              <button key={g} onClick={() => setGenreFilter(g)} className="mono" style={{
+            flexShrink: 0, padding: "5px 9px 5px 11px", borderRadius: 999,
+            background: "var(--horizon)", color: "#fff", border: "none",
+            fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer", fontWeight: 700,
+            whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6,
+          }}>{genreFilter.toUpperCase()} <span style={{ fontSize: 13, lineHeight: 1, opacity: 0.85 }}>×</span></button>
+        )}
+      </div>
+
+      {filtersOpen && (
+        <>
+          {/* Tier / vibe filter — the vet's killer filter. ALL is the default,
+              LEGEND surfaces sunrise sets and B2Bs (auto-detected, no manual
+              curation), HEAD/PRIME/OPEN map to the existing tier field. */}
+          <div className="no-scrollbar" style={{
+            display: "flex", gap: 6, padding: "4px 16px 4px",
+            overflowX: "auto", scrollbarWidth: "none",
+          }}>
+            {[
+              { id: "all",    label: "ALL TIERS" },
+              { id: "legend", label: "★ LEGENDARY",   accent: "#fbbf24" },
+              { id: "head",   label: "HEADLINERS",    accent: "var(--ember)" },
+              { id: "prime",  label: "PRIME TIME",    accent: "var(--horizon)" },
+              { id: "open",   label: "OPENERS",       accent: "var(--success)" },
+            ].map(t => {
+              const on = tierFilter === t.id;
+              return (
+                <button key={t.id} onClick={() => setTierFilter(t.id)} className="mono" style={{
+                  flexShrink: 0,
+                  padding: "5px 11px",
+                  borderRadius: 999,
+                  background: on ? (t.accent || "var(--ink)") : "transparent",
+                  color: on ? "#fff" : "var(--ink)",
+                  border: on ? "none" : "1px solid var(--line-2)",
+                  fontSize: 9.5, letterSpacing: 1.1,
+                  cursor: "pointer", fontWeight: on ? 700 : 500,
+                  whiteSpace: "nowrap",
+                }}>{t.label}</button>
+              );
+            })}
+          </div>
+
+          {/* Stage filter chips */}
+          <div className="no-scrollbar" style={{
+            display: "flex", gap: 6, padding: "4px 16px 4px",
+            overflowX: "auto", scrollbarWidth: "none",
+          }}>
+            {[{ id: "all", name: "All Stages", color: "var(--ink)" }, ...STAGES].map(s => {
+              const on = stageFilter === s.id;
+              return (
+                <button key={s.id} onClick={() => setStageFilter(s.id)} className="mono" style={{
+                  flexShrink: 0,
+                  padding: "5px 11px",
+                  borderRadius: 999,
+                  background: on ? (s.color || "var(--ink)") : "transparent",
+                  color: on ? "#fff" : "var(--ink)",
+                  border: on ? "none" : "1px solid var(--line-2)",
+                  fontSize: 9.5, letterSpacing: 1.1, textTransform: "uppercase",
+                  cursor: "pointer", fontWeight: on ? 700 : 400,
+                }}>{s.short || s.name}</button>
+              );
+            })}
+          </div>
+
+          {/* Genre filter chips */}
+          {dayGenres.length > 0 && (
+            <div className="no-scrollbar" style={{
+              display: "flex", gap: 6, padding: "4px 16px 8px",
+              overflowX: "auto", scrollbarWidth: "none",
+              borderBottom: "1px solid var(--line)",
+            }}>
+              <button onClick={() => setGenreFilter("all")} className="mono" style={{
                 flexShrink: 0, padding: "5px 11px", borderRadius: 999,
-                background: on ? "var(--horizon)" : "transparent",
-                color: on ? "#fff" : "var(--ink)",
-                border: on ? "none" : "1px solid var(--line-2)",
+                background: genreFilter === "all" ? "var(--ink)" : "transparent",
+                color: genreFilter === "all" ? "#fff" : "var(--ink)",
+                border: genreFilter === "all" ? "none" : "1px solid var(--line-2)",
                 fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
-                fontWeight: on ? 700 : 400, whiteSpace: "nowrap",
-              }}>{g.toUpperCase()}</button>
-            );
-          })}
-        </div>
+                fontWeight: genreFilter === "all" ? 700 : 400, whiteSpace: "nowrap",
+              }}>ALL GENRES</button>
+              {dayGenres.map(g => {
+                const on = genreFilter === g;
+                return (
+                  <button key={g} onClick={() => setGenreFilter(g)} className="mono" style={{
+                    flexShrink: 0, padding: "5px 11px", borderRadius: 999,
+                    background: on ? "var(--horizon)" : "transparent",
+                    color: on ? "#fff" : "var(--ink)",
+                    border: on ? "none" : "1px solid var(--line-2)",
+                    fontSize: 9.5, letterSpacing: 1.1, cursor: "pointer",
+                    fontWeight: on ? 700 : 400, whiteSpace: "nowrap",
+                  }}>{g.toUpperCase()}</button>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Filter row */}
