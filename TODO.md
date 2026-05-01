@@ -59,7 +59,7 @@
 
 ## Features
 - [ ] Real-time friend DMs — `_fakeReply()` in `map.jsx` is a bot. Replace with Supabase Realtime channel messages.
-- [ ] Lineup highlight-on-arrival — ArtistScreen "SCHEDULE" button (v92) only sets `state.lineupDay`. Add `state.lineupHighlight = artistId` and have LineupScreen scroll the matching card into view + flash it briefly, then clear the highlight.
+- [ ] Lineup highlight-on-arrival — ArtistScreen "SCHEDULE" button (v92) only sets `state.lineupDay`. Add `state.lineupHighlight = artistId` and have LineupScreen scroll the matching card (or grid block, v94) into view + flash it briefly, then clear the highlight.
 - [ ] AskPlurskyChat key-saved toast — when a user adds an Anthropic key from the Me-tab entry (v92), show a confirmation that the FAB is now active. Today the chat just transitions silently.
 - [ ] Sticky top strip on mobile — small persistent "DAY · TIME" / battery-saver / offline indicator strip across all screens. Audit item #4 from the v92 flow audit, not yet implemented.
 - [ ] Setup banner smarter dismiss — currently gates on "no name AND no Spotify". Consider auto-dismissing once the user saves their first set (signal of engagement) so it doesn't keep nagging users who clearly figured the app out.
