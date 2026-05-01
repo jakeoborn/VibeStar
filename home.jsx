@@ -563,7 +563,9 @@ function HomeScreen({ state, setState }) {
 
   return (
     <Screen bg="var(--paper)">
-      {/* Masthead */}
+      <ScrollBody style={{ padding: 0 }}>
+      {/* Masthead — scrolls with content (was previously pinned, now flows
+          naturally so the home tab stops feeling like a fixed-header app) */}
       <div style={{
         padding: "8px 20px 14px",
         background: "linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%)",
@@ -669,7 +671,7 @@ function HomeScreen({ state, setState }) {
         </div>
       )}
 
-      <ScrollBody style={{ padding: "16px 16px 24px" }}>
+      <div style={{ padding: "16px 16px 24px" }}>
         {/* Notification nudge — appears once when saves exist but permission not yet granted */}
         {state.saved.length > 0 && notifPerm === "default" && !notifNudgeDismissed && (
           <div style={{
@@ -1008,6 +1010,7 @@ function HomeScreen({ state, setState }) {
             </div>
           );
         })()}
+      </div>
       </ScrollBody>
 
       {/* Offline banner */}
