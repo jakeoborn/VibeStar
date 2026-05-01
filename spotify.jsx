@@ -447,31 +447,46 @@ function _hasPlaylistWriteScope() {
 }
 
 // Find a user-owned playlist whose name starts with "plursky" (case-insensitive).
-// Falls back from a cached ID. Returns the playlist object or null.
+// Falls back from a cached ID. Returns one of:
+//   { playlist }                    — found
+//   { error: "not_found" }          — searched all pages, none matched
+//   { error: "rate_limited" }       — 429 (often after heavy API churn)
+//   { error: "fetch_failed", status } — other non-ok response
 // Used because POST /users/{id}/playlists is blocked for Spotify Development
 // Mode apps (post-Nov 2024) — the user creates a "Plursky" playlist manually
 // once, then modify-existing endpoints (which are NOT restricted) take over.
 async function _findPlurskyPlaylist(token, profileId) {
+  // Brief retry helper for transient 429s — Spotify's rate limit windows are
+  // short (seconds), so two retries with backoff usually clears them.
+  const fetchWithRetry = async (url) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+      if (r.status !== 429) return r;
+      const retryAfter = parseInt(r.headers.get("Retry-After") || "2");
+      const wait = Math.min(retryAfter * 1000, 4000) + attempt * 500;
+      if (attempt < 2) await new Promise(res => setTimeout(res, wait));
+    }
+    return null;
+  };
+
   let cachedId = null;
   try { cachedId = localStorage.getItem("plursky_target_playlist_id"); } catch {}
   if (cachedId) {
     try {
-      const r = await fetch(`https://api.spotify.com/v1/playlists/${cachedId}`, {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (r.ok) {
+      const r = await fetchWithRetry(`https://api.spotify.com/v1/playlists/${cachedId}`);
+      if (r?.ok) {
         const candidate = await r.json();
-        if (candidate?.owner?.id === profileId) return candidate;
+        if (candidate?.owner?.id === profileId) return { playlist: candidate };
       }
     } catch {}
     try { localStorage.removeItem("plursky_target_playlist_id"); } catch {}
   }
   for (let offset = 0; offset < 200; offset += 50) {
-    const r = await fetch(
-      `https://api.spotify.com/v1/me/playlists?limit=50&offset=${offset}`,
-      { headers: { Authorization: "Bearer " + token } }
+    const r = await fetchWithRetry(
+      `https://api.spotify.com/v1/me/playlists?limit=50&offset=${offset}`
     );
-    if (!r.ok) return null;
+    if (!r) return { error: "rate_limited" };
+    if (!r.ok) return { error: "fetch_failed", status: r.status };
     const j = await r.json();
     const items = j.items || [];
     const found = items.find(p =>
@@ -479,10 +494,10 @@ async function _findPlurskyPlaylist(token, profileId) {
       typeof p?.name === "string" &&
       p.name.trim().toLowerCase().startsWith("plursky")
     );
-    if (found) return found;
+    if (found) return { playlist: found };
     if (items.length < 50) break;
   }
-  return null;
+  return { error: "not_found" };
 }
 
 // #12 Build my playlist — push the user's saved EDC sets into their existing
@@ -510,14 +525,25 @@ async function createEdcPlaylist(state) {
   const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   // 1) Find the user's manually-created "Plursky" playlist
-  const playlist = await _findPlurskyPlaylist(token, profile.id);
-  if (!playlist) {
+  const lookup = await _findPlurskyPlaylist(token, profile.id);
+  if (lookup.error === "rate_limited") {
+    return { ok: false, reason: "rate_limited", message: "Spotify rate limit — wait 30s & retry" };
+  }
+  if (lookup.error === "fetch_failed") {
+    if (lookup.status === 401 || lookup.status === 403) {
+      ["spotify_token","spotify_expires","spotify_auth_scopes"].forEach(k => { try { localStorage.removeItem(k); } catch {} });
+      return { ok: false, reason: "reconnect", status: lookup.status, message: "Reconnect required" };
+    }
+    return { ok: false, reason: "create_fail", status: lookup.status, message: "Spotify lookup failed" };
+  }
+  if (lookup.error === "not_found" || !lookup.playlist) {
     return {
       ok: false,
       reason: "no_target_playlist",
       message: "Create empty Spotify playlist named 'Plursky' first",
     };
   }
+  const playlist = lookup.playlist;
   try { localStorage.setItem("plursky_target_playlist_id", playlist.id); } catch {}
 
   // 2) Top tracks per saved artist, kept in day buckets for FRI→SAT→SUN ordering.
@@ -2017,6 +2043,7 @@ function BuildPlaylistButton({ state }) {
   } else if (status === "err") {
     if (result?.reason === "reconnect" || result?.reason === "not_connected") label = "↻ TAP TO GRANT SPOTIFY ACCESS";
     else if (result?.reason === "no_target_playlist") label = "↗ CREATE 'PLURSKY' PLAYLIST IN SPOTIFY";
+    else if (result?.reason === "rate_limited") label = "⏱ SPOTIFY BUSY · WAIT 30S, TAP AGAIN";
     else if (result?.reason === "empty") label = "SAVE SETS FIRST";
     else if (result?.reason === "create_fail") {
       const msg = (result?.message || "").slice(0, 28);
