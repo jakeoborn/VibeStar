@@ -187,10 +187,45 @@ function IOSList({ header, children, dark = false }) {
 // ─────────────────────────────────────────────────────────────
 // Device frame
 // ─────────────────────────────────────────────────────────────
+function _useNakedFrame() {
+  const get = () => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.matchMedia('(max-width: 500px)').matches ||
+             window.matchMedia('(display-mode: standalone)').matches ||
+             window.navigator?.standalone === true;
+    } catch { return false; }
+  };
+  const [naked, setNaked] = React.useState(get);
+  React.useEffect(() => {
+    const mqls = [
+      window.matchMedia('(max-width: 500px)'),
+      window.matchMedia('(display-mode: standalone)'),
+    ];
+    const onChange = () => setNaked(get());
+    mqls.forEach(m => m.addEventListener?.('change', onChange));
+    return () => mqls.forEach(m => m.removeEventListener?.('change', onChange));
+  }, []);
+  return naked;
+}
+
 function IOSDevice({
   children, width = 402, height = 874, dark = false,
   title, keyboard = false,
 }) {
+  const naked = _useNakedFrame();
+  if (naked) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, overflow: 'hidden',
+        background: dark ? '#000' : '#f7ede0',
+        fontFamily: '-apple-system, system-ui, sans-serif',
+        WebkitFontSmoothing: 'antialiased',
+      }}>
+        {children}
+      </div>
+    );
+  }
   return (
     <div style={{
       width, height, borderRadius: 48, overflow: 'hidden',

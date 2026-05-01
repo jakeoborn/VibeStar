@@ -24,6 +24,16 @@
   html,body{width:100%;min-height:100%;background:#0d0a08;font-family:'Geist',system-ui,sans-serif;color:#f4ece2;overflow-x:hidden}
   body{display:flex;align-items:center;justify-content:center;padding:24px 12px;min-height:100vh}
   .stage{display:flex;align-items:center;justify-content:center;width:100%}
+  /* On real phones / installed PWA: drop the desktop "phone preview" framing entirely. */
+  :root{--top-pad:54px}
+  @media (max-width:500px){
+    body{padding:0;background:#f7ede0;align-items:stretch;justify-content:stretch}
+    :root{--top-pad:0px}
+  }
+  @media (display-mode:standalone){
+    body{padding:0;background:#f7ede0;align-items:stretch;justify-content:stretch}
+    :root{--top-pad:env(safe-area-inset-top,0px)}
+  }
   .serif{font-family:'Instrument Serif',serif;font-weight:400}
   .mono{font-family:'Geist Mono',monospace}
 
@@ -53,23 +63,23 @@
 <body>
   <div id="root" class="stage"></div>
 
-  <script type="text/babel" src="ios-frame.jsx?v=v90"></script>
-  <script type="text/babel" src="data.jsx?v=v90"></script>
-  <script type="text/babel" src="supabase.jsx?v=v90"></script>
-  <script type="text/babel" src="chrome.jsx?v=v90"></script>
-  <script type="text/babel" src="home.jsx?v=v90"></script>
-  <script type="text/babel" src="map.jsx?v=v90"></script>
-  <script type="text/babel" src="lineup.jsx?v=v90"></script>
-  <script type="text/babel" src="artist.jsx?v=v90"></script>
-  <script type="text/babel" src="spotify.jsx?v=v90"></script>
-  <script type="text/babel" src="chat.jsx?v=v90"></script>
-  <script type="text/babel" src="app.jsx?v=v90"></script>
+  <script type="text/babel" src="ios-frame.jsx?v=v91"></script>
+  <script type="text/babel" src="data.jsx?v=v91"></script>
+  <script type="text/babel" src="supabase.jsx?v=v91"></script>
+  <script type="text/babel" src="chrome.jsx?v=v91"></script>
+  <script type="text/babel" src="home.jsx?v=v91"></script>
+  <script type="text/babel" src="map.jsx?v=v91"></script>
+  <script type="text/babel" src="lineup.jsx?v=v91"></script>
+  <script type="text/babel" src="artist.jsx?v=v91"></script>
+  <script type="text/babel" src="spotify.jsx?v=v91"></script>
+  <script type="text/babel" src="chat.jsx?v=v91"></script>
+  <script type="text/babel" src="app.jsx?v=v91"></script>
 
   <script>
     // Build version stamp — bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v90';
+    const APP_VERSION = 'v91';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -85,9 +95,9 @@
 
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v90').map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== 'vibestar-v91').map(k => caches.delete(k)))
       ).then(() =>
-        navigator.serviceWorker.register('./sw.js?v=v90', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('./sw.js?v=v91', { updateViaCache: 'none' })
           .then(reg => { try { reg.update(); } catch {} })
       );
 

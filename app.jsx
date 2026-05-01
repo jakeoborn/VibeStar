@@ -378,7 +378,7 @@ function App() {
 
   return (
     <IOSDevice dark={statusBarStyle === "light"}>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: 54 }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: "var(--top-pad, 54px)" }}>
         <div style={{ flex: 1, position: "relative" }}>
           {body}
           {/* Search FAB — floats above TabBar, accessible from any screen */}
