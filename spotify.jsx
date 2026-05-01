@@ -875,16 +875,28 @@ async function fetchSpotifyTopArtists() {
     const _missingScopeRecord = _storedScopes !== "" && !_storedScopes.includes("playlist-read-private");
     let _playlistCount = 0;
     let _playlistScanOk = _missingScopeRecord ? false : false; // stays false until first HTTP 2xx
+    // Retry helper — Spotify throttles bursty token traffic with 429.
+    // Treating 429 as "scan failed" surfaces a misleading reconnect banner,
+    // so retry up to 3 times honoring Retry-After before giving up.
+    const fetchPlaylistsWithRetry = async (url) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+        if (r.status !== 429) return r;
+        const retryAfter = parseInt(r.headers.get("Retry-After") || "2");
+        const wait = Math.min(retryAfter * 1000, 4000) + attempt * 500;
+        if (attempt < 2) await new Promise(res => setTimeout(res, wait));
+      }
+      return null;
+    };
     try {
       // Fetch every playlist the user has (paginate the list — max 50 per page)
       const allPlaylists = [];
       let plOffset = 0;
       while (true) {
-        const plRes = await fetch(
-          `https://api.spotify.com/v1/me/playlists?limit=50&offset=${plOffset}`,
-          { headers: { Authorization: "Bearer " + token } }
+        const plRes = await fetchPlaylistsWithRetry(
+          `https://api.spotify.com/v1/me/playlists?limit=50&offset=${plOffset}`
         );
-        if (!plRes.ok) break;
+        if (!plRes || !plRes.ok) break;
         _playlistScanOk = true;
         const plData = await plRes.json();
         const items = (plData.items || []).filter(p => p?.id);
@@ -900,11 +912,10 @@ async function fetchSpotifyTopArtists() {
         try {
           let offset = 0;
           while (true) {
-            const tr = await fetch(
-              `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&offset=${offset}`,
-              { headers: { Authorization: "Bearer " + token } }
+            const tr = await fetchPlaylistsWithRetry(
+              `https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=100&offset=${offset}`
             );
-            if (!tr.ok) break;
+            if (!tr || !tr.ok) break;
             const td = await tr.json();
             const items = td.items || [];
             items.forEach(item => {
