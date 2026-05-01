@@ -70,6 +70,7 @@
 - [x] Verify shuttle times: unified to `05:45` in both `lastShuttleHHMM` and ESSENTIALS entry (v63).
 
 ## Done ✓
+- [x] **v94** — Timeline grid view on LineupScreen. ☰ LIST / ⊞ GRID toggle (persisted in `plursky_lineup_view`). Grid: 9 stages × time (19:00→05:30) with hour rules, sticky stage header, NOW line on today's day, saved★ + Spotify♫ markers, conflict glow, tier-3 stronger fill. Filters dim non-matching blocks instead of hiding so empty space still reads as "no matching set on this stage."
 - [x] **v93** — Strip placeholder data (no more Ava Torres / fake stats / fake crew / seeded saves / late-night battery flicker / pre-event LIVE+DAY badges). Hybrid-C onboarding (auto-fire welcome wizard, contextual empty states). Labeled SEARCH FAB. Configurable reminder lead-time (5/15/30/60 min) in NotificationsCard. Cloud auto-push on save when signed in (1s debounce) + one-time toast nudge after first save. Removed per-row `stage.vibeNote` clutter. Battery-saver `auto` now requires real <25% AND festival context (window OR saved set ≤24h). Marketing copy: "offline-first" → "online-first … works offline" (app.jsx welcome, manifest.json, og.svg).
 - [x] **v92** — Flow cleanup: AI FAB hidden unless key stored, 5→4 tabs (Music folded into Me), onboarding modal → soft Setup banner, ArtistScreen SCHEDULE handoff, global toast on save with haptics.
 - [x] **v91** — Drop iPhone frame on real phones / installed PWA. Naked full-bleed mode via `_useNakedFrame()` (max-width:500px || display-mode:standalone || navigator.standalone).

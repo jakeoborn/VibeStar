@@ -368,10 +368,25 @@ function LineupScreen({ state, setState }) {
   // them. Active filters surface as dismissable chips so a user can clear
   // them without re-opening the panel.
   const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState(() => {
+    try { return localStorage.getItem('plursky_lineup_view') || 'list'; } catch { return 'list'; }
+  });
+  React.useEffect(() => { try { localStorage.setItem('plursky_lineup_view', viewMode); } catch {} }, [viewMode]);
   const activeFilterCount = (tierFilter !== "all" ? 1 : 0)
                           + (stageFilter !== "all" ? 1 : 0)
                           + (genreFilter !== "all" ? 1 : 0);
   React.useEffect(() => setGenreFilter("all"), [day]);
+
+  const matchesActive = (a) => {
+    if (filter !== "all" && !state.saved.includes(a.id)) return false;
+    if (stageFilter !== "all" && a.stage !== stageFilter) return false;
+    if (genreFilter !== "all" && a.genre !== genreFilter) return false;
+    if (tierFilter === "head"   && a.tier !== 3) return false;
+    if (tierFilter === "prime"  && a.tier !== 2) return false;
+    if (tierFilter === "open"   && a.tier !== 1) return false;
+    if (tierFilter === "legend" && !isLegendary(a)) return false;
+    return true;
+  };
 
   const spotifyMatchedIds = React.useMemo(() => {
     try { return new Set(JSON.parse(localStorage.getItem('spotify_matched_ids_v1') || '[]')); }
@@ -484,6 +499,23 @@ function LineupScreen({ state, setState }) {
         overflowX: "auto", scrollbarWidth: "none",
         borderBottom: filtersOpen ? "none" : "1px solid var(--line)",
       }}>
+        <div style={{
+          flexShrink: 0, display: "inline-flex",
+          border: "1px solid var(--line-2)", borderRadius: 999, padding: 2, gap: 2,
+        }}>
+          {[["list","☰ LIST"],["grid","⊞ GRID"]].map(([k,l]) => {
+            const on = viewMode === k;
+            return (
+              <button key={k} onClick={() => setViewMode(k)} className="mono" style={{
+                padding: "3px 9px", borderRadius: 999, border: "none",
+                background: on ? "var(--ink)" : "transparent",
+                color: on ? "var(--paper)" : "var(--ink)",
+                fontSize: 9, letterSpacing: 1, fontWeight: 700, cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}>{l}</button>
+            );
+          })}
+        </div>
         <button onClick={() => setFiltersOpen(o => !o)} className="mono" style={{
           flexShrink: 0, padding: "5px 11px", borderRadius: 999,
           background: filtersOpen || activeFilterCount > 0 ? "var(--ink)" : "transparent",
@@ -725,18 +757,53 @@ function LineupScreen({ state, setState }) {
         );
       })()}
 
-      <ScrollBody style={{ padding: "0 16px 20px" }}>
-        {dayArtists.length === 0 && (
+      <ScrollBody style={{ padding: viewMode === "grid" ? 0 : "0 16px 20px" }}>
+        {viewMode === "grid" && !(filter === "saved" && state.saved.length === 0) && (
+          <TimelineGrid
+            day={day}
+            allDayArtists={ARTISTS.filter(a => a.day === day)}
+            state={state}
+            setState={setState}
+            matchesActive={matchesActive}
+            conflictById={conflictById}
+            spotifyMatchedIds={spotifyMatchedIds}
+          />
+        )}
+        {viewMode === "list" && dayArtists.length === 0 && (
           <div style={{ padding: 40, textAlign: "center" }}>
             <div className="serif" style={{ fontSize: 22, color: "var(--muted)", fontStyle: "italic", marginBottom: 6 }}>
-              Nothing saved for this day
+              {state.saved.length === 0 ? "No sets saved yet" : "Nothing saved for this day"}
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
-              SWITCH TO "ALL" TO BROWSE
+              {state.saved.length === 0
+                ? "TAP ANY [+] TO SAVE YOUR FIRST SET"
+                : 'SWITCH TO "ALL" TO BROWSE'}
             </div>
+            {state.saved.length === 0 && filter !== "all" && (
+              <button onClick={() => setFilter("all")} className="mono" style={{
+                marginTop: 14, padding: "8px 16px", borderRadius: 999,
+                background: "var(--ink)", color: "var(--paper)", border: "none",
+                fontSize: 10, letterSpacing: 1.4, fontWeight: 700, cursor: "pointer",
+              }}>BROWSE ALL SETS</button>
+            )}
           </div>
         )}
-        {dayArtists.map(a => {
+        {viewMode === "grid" && filter === "saved" && state.saved.length === 0 && (
+          <div style={{ padding: 40, textAlign: "center" }}>
+            <div className="serif" style={{ fontSize: 22, color: "var(--muted)", fontStyle: "italic", marginBottom: 6 }}>
+              No sets saved yet
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
+              SWITCH TO ALL — TAP ANY SET TO SAVE
+            </div>
+            <button onClick={() => setFilter("all")} className="mono" style={{
+              marginTop: 14, padding: "8px 16px", borderRadius: 999,
+              background: "var(--ink)", color: "var(--paper)", border: "none",
+              fontSize: 10, letterSpacing: 1.4, fontWeight: 700, cursor: "pointer",
+            }}>BROWSE ALL SETS</button>
+          </div>
+        )}
+        {viewMode === "list" && dayArtists.map(a => {
           const stage = STAGES.find(s => s.id === a.stage);
           const saved = state.saved.includes(a.id);
           const clashWith = conflictById[a.id];
@@ -800,29 +867,19 @@ function LineupScreen({ state, setState }) {
                   </span>
                 </div>
                 {stage.vibe && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span className="mono" style={{
-                        fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
-                        color: stage.color,
-                        padding: "1px 6px", borderRadius: 999,
-                        background: `${stage.color}1a`,
-                        border: `0.5px solid ${stage.color}55`,
-                        textTransform: "uppercase",
-                      }}>{stage.vibe}</span>
-                      {stage.peak && (
-                        <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)" }}>
-                          PEAKS {stage.peak}
-                        </span>
-                      )}
-                    </div>
-                    {stage.vibeNote && (
-                      <div style={{
-                        fontSize: 10, lineHeight: 1.3, color: "var(--muted)", fontStyle: "italic",
-                        marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        {stage.vibeNote}
-                      </div>
+                  <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>
+                    <span className="mono" style={{
+                      fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
+                      color: stage.color,
+                      padding: "1px 6px", borderRadius: 999,
+                      background: `${stage.color}1a`,
+                      border: `0.5px solid ${stage.color}55`,
+                      textTransform: "uppercase",
+                    }}>{stage.vibe}</span>
+                    {stage.peak && (
+                      <span className="mono" style={{ fontSize: 7.5, letterSpacing: 0.9, color: "var(--muted)" }}>
+                        PEAKS {stage.peak}
+                      </span>
                     )}
                   </div>
                 )}
@@ -853,6 +910,173 @@ function overlaps(a, b) {
   const aS = toNightMin(a.start), aE = toNightMin(a.end);
   const bS = toNightMin(b.start), bE = toNightMin(b.end);
   return aS < bE && bS < aE;
+}
+
+function TimelineGrid({ day, allDayArtists, state, setState, matchesActive, conflictById, spotifyMatchedIds }) {
+  const COL_W = 76;
+  const GUTTER_W = 38;
+  const PX_PER_MIN = 1.8;
+  const GRID_START_MIN = 19 * 60;            // 19:00
+  const GRID_END_MIN   = (24 + 5) * 60 + 30; // 05:30 next day
+  const TOTAL_H = (GRID_END_MIN - GRID_START_MIN) * PX_PER_MIN;
+  const minToTop = (m) => (Math.max(GRID_START_MIN, Math.min(GRID_END_MIN, m)) - GRID_START_MIN) * PX_PER_MIN;
+
+  const HOURS = [];
+  for (let h = 19; h <= 24 + 5; h++) {
+    HOURS.push({ label: `${String(h % 24).padStart(2, "0")}:00`, mins: h * 60 });
+  }
+
+  // NOW indicator — only when viewing today
+  let nowTop = null;
+  if (NOW.day === day && NOW.time) {
+    const nm = toNightMin(NOW.time);
+    if (nm >= GRID_START_MIN && nm <= GRID_END_MIN) nowTop = minToTop(nm);
+  }
+
+  return (
+    <div style={{ overflowX: "auto", overflowY: "visible", width: "100%", paddingBottom: 20 }}>
+      <div style={{ minWidth: GUTTER_W + STAGES.length * COL_W, position: "relative" }}>
+        {/* Sticky stage header */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 5,
+          display: "flex", background: "var(--paper)",
+          borderBottom: "1px solid var(--line-2)",
+        }}>
+          <div style={{ width: GUTTER_W, flexShrink: 0 }} />
+          {STAGES.map(s => (
+            <div key={s.id} style={{
+              width: COL_W, flexShrink: 0,
+              padding: "8px 4px 7px",
+              textAlign: "center",
+              borderLeft: "1px solid var(--line)",
+            }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: 8,
+                background: s.color, margin: "0 auto 3px",
+              }} />
+              <div className="mono" style={{
+                fontSize: 8.5, letterSpacing: 0.8, fontWeight: 700,
+                color: "var(--ink)",
+              }}>{s.short}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Body: time gutter + stage columns */}
+        <div style={{ display: "flex", position: "relative" }}>
+          {/* Time gutter */}
+          <div style={{ width: GUTTER_W, flexShrink: 0, position: "relative", height: TOTAL_H }}>
+            {HOURS.map(h => (
+              <div key={h.label} className="mono" style={{
+                position: "absolute",
+                top: minToTop(h.mins) - 5,
+                right: 6,
+                fontSize: 8.5, letterSpacing: 0.5,
+                color: "var(--muted)", fontWeight: 600,
+              }}>{h.label}</div>
+            ))}
+          </div>
+
+          {/* Stage columns */}
+          {STAGES.map(stage => {
+            const stageArtists = allDayArtists.filter(a => a.stage === stage.id);
+            return (
+              <div key={stage.id} style={{
+                width: COL_W, flexShrink: 0,
+                position: "relative", height: TOTAL_H,
+                borderLeft: "1px solid var(--line)",
+              }}>
+                {/* Hour grid lines */}
+                {HOURS.map(h => (
+                  <div key={h.label} style={{
+                    position: "absolute", left: 0, right: 0,
+                    top: minToTop(h.mins), height: 1,
+                    background: "var(--line)",
+                  }} />
+                ))}
+                {/* Set blocks */}
+                {stageArtists.map(a => {
+                  const start = toNightMin(a.start);
+                  const end = toNightMin(a.end);
+                  const top = minToTop(start);
+                  const height = Math.max(20, minToTop(end) - top);
+                  const active = matchesActive(a);
+                  const saved = state.saved.includes(a.id);
+                  const clash = !!conflictById[a.id];
+                  const matched = spotifyMatchedIds && spotifyMatchedIds.has && spotifyMatchedIds.has(a.id);
+                  // tier-3 (headliner) gets a stronger fill so anchors pop
+                  const fillAlpha = a.tier === 3 ? "40" : "26";
+                  return (
+                    <div key={a.id} onClick={() => setState({ ...state, artist: a.id })} style={{
+                      position: "absolute",
+                      top, left: 2, right: 2,
+                      height,
+                      background: `${stage.color}${active ? fillAlpha : "0c"}`,
+                      borderLeft: `3px solid ${active ? stage.color : stage.color + "55"}`,
+                      borderRadius: 4,
+                      padding: "3px 5px 3px 6px",
+                      cursor: "pointer",
+                      overflow: "hidden",
+                      opacity: active ? 1 : 0.28,
+                      boxShadow: clash && active ? "inset 0 0 0 1.5px var(--ember)" : "none",
+                      display: "flex", flexDirection: "column",
+                    }}>
+                      <div className="serif" style={{
+                        fontSize: 10.5, fontWeight: 700, lineHeight: 1.05,
+                        color: "var(--ink)",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        paddingRight: saved ? 9 : 0,
+                      }}>{a.name}</div>
+                      <div className="mono" style={{
+                        fontSize: 7.5, letterSpacing: 0.4,
+                        color: "var(--muted)", marginTop: 1,
+                      }}>{a.start}{height > 34 ? `–${a.end}` : ""}</div>
+                      {saved && (
+                        <span style={{
+                          position: "absolute", top: 2, right: 4,
+                          fontSize: 9, color: "var(--ember)", fontWeight: 800,
+                          lineHeight: 1,
+                        }}>★</span>
+                      )}
+                      {!saved && matched && height > 26 && (
+                        <span style={{
+                          position: "absolute", top: 3, right: 4,
+                          fontSize: 8, color: "#1DB954", fontWeight: 800,
+                          lineHeight: 1,
+                        }}>♫</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* NOW line spans across all columns */}
+          {nowTop != null && (
+            <div style={{
+              position: "absolute",
+              left: GUTTER_W, right: 0,
+              top: nowTop, height: 0,
+              borderTop: "2px solid var(--ember)",
+              boxShadow: "0 0 8px rgba(232,93,46,0.55)",
+              zIndex: 4,
+              pointerEvents: "none",
+            }}>
+              <span className="mono" style={{
+                position: "absolute",
+                left: -GUTTER_W + 4, top: -8,
+                fontSize: 7.5, letterSpacing: 0.6,
+                color: "#fff", fontWeight: 800,
+                background: "var(--ember)",
+                padding: "1px 4px", borderRadius: 3,
+              }}>NOW</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ConflictResolver({ conflicts, onKeep, onSplit }) {
