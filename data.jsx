@@ -328,6 +328,7 @@ const ARTISTS = [
   mk("n13", "Josh Baker b2b Kettama b2b Prospa","Breaks / House","neon",    2, "03:30", "05:30"),
   // SUN
   mk("n14", "Bad Beat",                "Techno",                 "neon",    3, "19:00", "20:15"),
+  mk("n21", "Frankie Bones",           "Breakbeat",              "neon",    3, "20:15", "21:30"),
   mk("n15", "Adiel",                   "Techno",                 "neon",    3, "21:30", "22:50"),
   mk("n16", "DJ Gigola",               "Techno",                 "neon",    3, "22:50", "00:10"),
   mk("n20", "999999999",               "Hard Techno / Gabber",   "neon",    3, "00:10", "01:30"),
