@@ -257,7 +257,7 @@ const ARTISTS = [
   mk("k5",  "Sofi Tukker",             "House",                  "kinetic", 1, "23:19", "00:30"),
   mk("k6",  "The Chainsmokers",        "Electro Pop",            "kinetic", 1, "00:32", "01:42"),
   mk("k7",  "FISHER",                  "Tech House",             "kinetic", 1, "01:47", "02:57"),
-  mk("k8",  "Porter Robinson",         "Electronic",             "kinetic", 1, "03:01", "04:11"),
+  mk("k8",  "Porter Robinson (DJ Set)","Electronic",             "kinetic", 1, "03:01", "04:11"),
   mk("k9",  "Charlotte de Witte",      "Techno",                 "kinetic", 1, "04:14", "05:29", "Belgian techno queen, mainstage rarity."),
   // SAT
   mk("k10", "AR/CO",                   "Live Electronic",        "kinetic", 2, "19:00", "20:00"),
@@ -268,7 +268,7 @@ const ARTISTS = [
   mk("k15", "John Summit",             "Tech House",             "kinetic", 2, "00:32", "01:42"),
   mk("k16", "Subtronics",              "Dubstep",                "kinetic", 2, "01:47", "02:57"),
   mk("k17", "Kaskade",                 "Progressive House",      "kinetic", 2, "03:01", "04:11"),
-  mk("k18", "Above & Beyond",          "Trance (Sunrise Set)",   "kinetic", 2, "04:14", "05:29", "Group therapy under the desert dawn."),
+  mk("k18", "Above & Beyond (Sunrise Set)","Trance",             "kinetic", 2, "04:14", "05:29", "Group therapy under the desert dawn."),
   // SUN
   mk("k19", "Trace",                   "DnB",                    "kinetic", 3, "19:00", "20:00"),
   mk("k20", "Ship Wrek",               "Bass",                   "kinetic", 3, "20:00", "21:00"),
@@ -278,7 +278,7 @@ const ARTISTS = [
   mk("k24", "Zedd",                    "Electro House",          "kinetic", 3, "00:32", "01:42"),
   mk("k25", "Martin Garrix",           "Big Room / Progressive", "kinetic", 3, "01:47", "02:57", "Dutch headliner. Animals-era anthems to melodic trance."),
   mk("k26", "Cloonee",                 "Tech House",             "kinetic", 3, "03:01", "04:11"),
-  mk("k27", "Armin van Buuren",        "Trance (Sunrise Set)",   "kinetic", 3, "04:14", "05:29", "ASOT captain. Sunrise trance ceremony."),
+  mk("k27", "Armin van Buuren (Sunrise Set)","Trance",           "kinetic", 3, "04:14", "05:29", "ASOT captain. Sunrise trance ceremony."),
 
   // ─────────────────────────── CIRCUIT GROUNDS ─────────────────────────
   // FRI
@@ -294,7 +294,7 @@ const ARTISTS = [
   mk("cg10","Level Up",                "Dubstep",                "circuit", 1, "04:30", "05:30"),
   // SAT
   mk("cg11","DJ Mandy",                "House",                  "circuit", 2, "19:00", "20:00"),
-  mk("cg12","ROZ",                     "House",                  "circuit", 2, "20:00", "21:15"),
+  mk("cg12","RØZ",                     "House",                  "circuit", 2, "20:00", "21:15"),
   mk("cg13","Kettama",                 "Rave / Breaks",          "circuit", 2, "21:15", "22:45"),
   mk("cg14","Sammy Virji",             "UK Garage",              "circuit", 2, "22:45", "00:15"),
   mk("cg15","Tiësto",                  "Big Room",               "circuit", 2, "00:15", "01:45"),
@@ -338,7 +338,6 @@ const ARTISTS = [
 
   // ─────────────────────────── COSMIC MEADOW ───────────────────────────
   // FRI
-  mk("c1",  "Max Dean b2b Luke Dean",  "Tech House",             "cosmic",  1, "17:00", "18:50"),
   mk("c2",  "Jackie Hollander",        "Tech House",             "cosmic",  1, "19:00", "19:55"),
   mk("c3",  "Roddy Lima",              "House",                  "cosmic",  1, "19:55", "20:55"),
   mk("c4",  "Westend",                 "Tech House",             "cosmic",  1, "20:55", "21:55"),
@@ -352,9 +351,9 @@ const ARTISTS = [
   mk("c11", "Frost Children",          "Electronic",             "cosmic",  2, "19:00", "20:15"),
   mk("c12", "Hannah Laing",            "Hard House / Techno",    "cosmic",  2, "20:15", "21:25"),
   mk("c13", "Snow Strippers",          "Hyperpop / Electronic",  "cosmic",  2, "21:25", "22:15"),
-  mk("c14", "VTSS",                    "Techno",                 "cosmic",  2, "22:15", "23:30"),
+  mk("c14", "VTSS (In The Round)",     "Techno",                 "cosmic",  2, "22:15", "23:30"),
   mk("c15", "The Prodigy",             "Breakbeat / Big Beat",   "cosmic",  2, "23:35", "00:35", "Firestarters. Legendary live set."),
-  mk("c16", "BUNT.",                   "Folktronica",            "cosmic",  2, "00:40", "02:10"),
+  mk("c16", "BUNT. (In The Round)",    "Folktronica",            "cosmic",  2, "00:40", "02:10"),
   mk("c17", "Interplanetary Criminal", "UK Bass",                "cosmic",  2, "02:10", "03:30"),
   mk("c18", "Malugi",                  "Techno",                 "cosmic",  2, "03:30", "04:30"),
   mk("c19", "DJ Gigola b2b MCR-T",     "Techno",                 "cosmic",  2, "04:30", "05:30"),
@@ -362,7 +361,7 @@ const ARTISTS = [
   mk("c20", "Gravagerz",               "Bass",                   "cosmic",  3, "19:00", "20:00"),
   mk("c21", "Nostalgix",               "Bass House",             "cosmic",  3, "20:00", "21:00"),
   mk("c22", "William Black",           "Melodic Bass",           "cosmic",  3, "21:00", "22:00"),
-  mk("c23", "San Holo",                "Melodic Bass",           "cosmic",  3, "22:00", "23:00"),
+  mk("c23", "San Holo (Wholesome Riddim Set)","Melodic Bass",    "cosmic",  3, "22:00", "23:00"),
   mk("c24", "Dabin",                   "Melodic Bass",           "cosmic",  3, "23:00", "00:05"),
   mk("c25", "Alison Wonderland",       "Future Bass",            "cosmic",  3, "00:05", "01:05"),
   mk("c26", "Seven Lions",             "Melodic Bass",           "cosmic",  3, "01:05", "02:20"),
@@ -372,7 +371,6 @@ const ARTISTS = [
 
   // ─────────────────────────── BIONIC JUNGLE ───────────────────────────
   // FRI
-  mk("b1",  "Heidi Lawden b2b Masha Mar","House",                "bionic",  1, "17:00", "19:00"),
   mk("b2",  "Stacy Christine",         "House",                  "bionic",  1, "19:00", "20:00"),
   mk("b3",  "The Carry Nation",        "House",                  "bionic",  1, "20:00", "21:30"),
   mk("b4",  "Massimiliano Pagliara",   "House",                  "bionic",  1, "21:30", "23:00"),
@@ -426,7 +424,7 @@ const ARTISTS = [
   mk("q23", "Rebūke",                  "Techno",                 "quantum", 3, "21:00", "22:00"),
   mk("q24", "Cristoph",                "Progressive House",      "quantum", 3, "22:00", "23:00"),
   mk("q25", "Eli & Fur",               "Melodic House",          "quantum", 3, "23:00", "00:00"),
-  mk("q26", "Tinlicker",               "Melodic House",          "quantum", 3, "00:00", "01:00"),
+  mk("q26", "Tinlicker (DJ Set)",      "Melodic House",          "quantum", 3, "00:00", "01:00"),
   mk("q27", "Cassian",                 "Melodic House",          "quantum", 3, "01:00", "02:15"),
   mk("q28", "Massano",                 "Melodic Techno",         "quantum", 3, "02:15", "03:30"),
   mk("q29", "Innellea",                "Melodic Techno",         "quantum", 3, "03:30", "04:30"),
@@ -434,7 +432,7 @@ const ARTISTS = [
 
   // ─────────────────────────── WASTELAND ───────────────────────────────
   // FRI
-  mk("w1",  "Domina",                  "Hardstyle",              "waste",   1, "19:00", "20:30"),
+  mk("w1",  "Dømina",                  "Hardstyle",              "waste",   1, "19:00", "20:30"),
   mk("w2",  "Serafina",                "Hardstyle",              "waste",   1, "20:30", "21:30"),
   mk("w3",  "Johannes Schuster",       "Hardstyle",              "waste",   1, "21:30", "22:30"),
   mk("w4",  "Adrian Mills",            "Hardstyle",              "waste",   1, "22:30", "23:30"),
@@ -450,10 +448,11 @@ const ARTISTS = [
   mk("w13", "The Saints",              "Hardcore",               "waste",   2, "21:30", "22:30"),
   mk("w14", "Rob Gee b2b Lenny Dee",   "Hardcore",               "waste",   2, "22:30", "23:30"),
   mk("w15", "Lady Faith b2b LNY TNZ",  "Hardstyle",              "waste",   2, "23:30", "00:30"),
-  mk("w16", "Code Black b2b Audiofreq b2b Toneshifterz","Hardstyle","waste",2, "00:30", "01:30"),
+  mk("w16", "Audiofreq b3b Code Black b3b Toneshifterz","Hardstyle","waste",2, "00:30", "01:30"),
   mk("w17", "Da Tweekaz",              "Hardstyle",              "waste",   2, "01:30", "02:30"),
   mk("w18", "Lil Texas",               "Hardcore",               "waste",   2, "02:30", "03:30"),
   mk("w19", "Mish",                    "Hardstyle",              "waste",   2, "03:30", "04:30"),
+  mk("w30", "Alyssa Jolee",            "Hardstyle",              "waste",   2, "04:30", "05:30"),
   // SUN
   mk("w20", "Sihk",                    "Hardstyle",              "waste",   3, "19:00", "20:30"),
   mk("w21", "Clawz",                   "Hardstyle",              "waste",   3, "20:30", "21:30"),
@@ -485,7 +484,7 @@ const ARTISTS = [
   mk("s14", "Wax Motif",               "Bass House",             "stereo",  2, "00:30", "01:45"),
   mk("s15", "Cid",                     "Tech House",             "stereo",  2, "01:45", "03:00"),
   mk("s16", "HNTR",                    "Bass House",             "stereo",  2, "03:00", "04:15"),
-  mk("s17", "Bolo",                    "Tech House",             "stereo",  2, "04:15", "05:30"),
+  mk("s17", "Bolo (Sunrise Set)",      "Tech House",             "stereo",  2, "04:15", "05:30"),
   // SUN
   mk("s18", "KLO",                     "Tech House",             "stereo",  3, "19:00", "20:00"),
   mk("s19", "Murphy's Law",            "Tech House",             "stereo",  3, "20:00", "21:15"),
@@ -507,7 +506,7 @@ const ARTISTS = [
   mk("bp26","Deathpact",               "Dubstep",                "basspod", 1, "23:30", "00:30"),
   mk("bp27","ATLiens",                 "Dubstep",                "basspod", 1, "00:30", "01:30"),
   mk("bp28","Kai Wachi",               "Dubstep",                "basspod", 1, "01:30", "02:30"),
-  mk("bp29","Adventure Club",          "Dubstep",                "basspod", 1, "02:30", "03:30"),
+  mk("bp29","Adventure Club (Throwback Set)","Dubstep",          "basspod", 1, "02:30", "03:30"),
   mk("bp30","Culture Shock",           "DnB",                    "basspod", 1, "03:30", "04:30"),
   mk("bp31","Cyclops",                 "Dubstep",                "basspod", 1, "04:30", "05:30"),
   // SAT
@@ -519,21 +518,21 @@ const ARTISTS = [
   mk("bp6", "Delta Heavy",             "DnB",                    "basspod", 2, "23:30", "00:30"),
   mk("bp7", "Getter",                  "Dubstep",                "basspod", 2, "00:30", "01:30"),
   mk("bp8", "Eptic b2b Space Laces",   "Dubstep",                "basspod", 2, "01:30", "02:30"),
-  mk("bp9", "Doctor P b2b Flux Pavilion b2b Funtcase","Dubstep", "basspod", 2, "02:30", "03:30"),
+  mk("bp9", "Doctor P b2b Flux Pavilion b3b Funtcase","Dubstep", "basspod", 2, "02:30", "03:30"),
   mk("bp10","Hol!",                    "Dubstep",                "basspod", 2, "03:30", "04:30"),
   mk("bp11","Mary Droppinz",           "Dubstep",                "basspod", 2, "04:30", "05:30"),
   // SUN
-  mk("bp12","Nightstalker",            "Dubstep",                "basspod", 3, "19:00", "19:50"),
+  mk("bp12","Nightstalker with MC Dino","Dubstep",               "basspod", 3, "19:00", "19:50"),
   mk("bp13","Sippy",                   "Dubstep",                "basspod", 3, "19:50", "20:40"),
   mk("bp14","Eazybaked",               "Bass",                   "basspod", 3, "20:40", "21:30"),
   mk("bp15","Infekt b2b Samplifire",   "Dubstep",                "basspod", 3, "21:30", "22:30"),
-  mk("bp32","A.M.C",                   "DnB",                    "basspod", 3, "22:30", "23:30"),
+  mk("bp32","A.M.C w/ Phantom",        "DnB",                    "basspod", 3, "22:30", "23:30"),
   mk("bp16","Virtual Riot",            "Dubstep",                "basspod", 3, "23:30", "00:30"),
   mk("bp17","Peekaboo",                "Dubstep",                "basspod", 3, "00:30", "01:30"),
   mk("bp18","Ahee b2b Liquid Stranger","Dubstep / Bass",         "basspod", 3, "01:30", "02:30"),
   mk("bp19","Whethan",                 "Electronic",             "basspod", 3, "02:30", "03:30"),
   mk("bp20","Boogie T b2b Distinct Motive","Dubstep",            "basspod", 3, "03:30", "04:30"),
-  mk("bp33","Aeon:Mode (Sunrise Set)", "Dubstep / Bass",         "basspod", 3, "04:30", "05:30"),
+  mk("bp33","Æon:Mode (Sunrise Set)",  "Dubstep / Bass",         "basspod", 3, "04:30", "05:30"),
 ];
 
 const DAYS = [
