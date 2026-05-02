@@ -1,7 +1,7 @@
-const CACHE   = 'vibestar-v102';
-const APP_VER = 'v102';
+﻿const CACHE   = 'vibestar-v103';
+const APP_VER = 'v103';
 
-// Own-origin app files — versioned to match what index.html requests.
+// Own-origin app files â€” versioned to match what index.html requests.
 // addAll is atomic so a missed own-origin file fails the install fast.
 const LOCAL = [
   './',
@@ -24,7 +24,7 @@ const LOCAL = [
   `./app.jsx?v=${APP_VER}`,
 ];
 
-// Third-party CDN scripts — pinned exact versions, content is immutable.
+// Third-party CDN scripts â€” pinned exact versions, content is immutable.
 // Precached so the app boots with zero connectivity at the EDC venue.
 // Each is caught individually so a CDN hiccup doesn't abort SW install.
 const CDN = [
@@ -37,7 +37,7 @@ const CDN = [
 
 const CDN_HOSTS = ['cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
-// Never intercept live API calls — let them fail naturally when offline.
+// Never intercept live API calls â€” let them fail naturally when offline.
 function isPassThrough(url) {
   return url.includes('accounts.spotify.com') ||
          url.includes('api.spotify.com')       ||
@@ -55,10 +55,10 @@ self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE).then(async c => {
-      // Own-origin critical path — atomic, fail-fast
+      // Own-origin critical path â€” atomic, fail-fast
       await c.addAll(LOCAL.map(u => new Request(u, { cache: 'no-store' })))
              .catch(err => console.warn('[sw] local precache fail', err));
-      // CDN — best-effort, each caught individually
+      // CDN â€” best-effort, each caught individually
       await Promise.all(CDN.map(u =>
         c.add(new Request(u, { mode: 'cors', credentials: 'omit' }))
          .catch(err => console.warn('[sw] cdn precache miss', u, err))
@@ -109,7 +109,7 @@ self.addEventListener('fetch', e => {
   );
 });
 
-// ── Push (server-driven) ──────────────────────────────────────
+// â”€â”€ Push (server-driven) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 self.addEventListener('push', e => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch {
