@@ -1,4 +1,4 @@
-// Lineup / schedule screen — day tabs, stage-striped timeline list
+﻿// Lineup / schedule screen — day tabs, stage-striped timeline list
 
 // "Legendary" moments — auto-detected from the data so vets can surface
 // the rare stuff (sunrise sets, B2Bs) without manual curation. Sunrise =
@@ -193,7 +193,7 @@ function NightWizard({ state, setState, onClose }) {
                     .sort((a, b) => toNightMin(a.start) - toNightMin(b.start));
                   if (!dayArtists.length) return [];
                   return [`${d.short} · ${d.name.toUpperCase()}`,
-                    ...dayArtists.map(a => `  ${a.start}  ${a.name}`), ""];
+                    ...dayArtists.map(a => `  ${fmt12(a.start)}  ${a.name}`), ""];
                 });
                 const text = [`My ${FESTIVAL_CONFIG.name} lineup (${ids.length} sets):`, "", ...lines].join("\n").trim();
                 if (navigator.share) { navigator.share({ title: "My EDC lineup", text }).catch(() => {}); }
@@ -268,7 +268,7 @@ function NightWizard({ state, setState, onClose }) {
                   <div key={a.id} style={{ display: "flex", gap: 10, marginBottom: 7, alignItems: "flex-start" }}>
                     {/* Time */}
                     <div className="mono" style={{ width: 36, flexShrink: 0, fontSize: 9, letterSpacing: 0.5, color: "var(--muted)", textAlign: "right", paddingTop: 11 }}>
-                      {a.start}
+                      {fmt12(a.start)}
                     </div>
                     {/* Block */}
                     <div style={{
@@ -284,7 +284,7 @@ function NightWizard({ state, setState, onClose }) {
                             {a.name}
                           </div>
                           <div className="mono" style={{ fontSize: 8.5, letterSpacing: 0.9, color: clash ? "rgba(247,237,224,0.5)" : "var(--muted)", marginTop: 3 }}>
-                            {stage.short} · {a.start}–{a.end}
+                            {stage.short} · {fmt12(a.start)}–{fmt12(a.end)}
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -326,7 +326,7 @@ function NightWizard({ state, setState, onClose }) {
                                 fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 0.8,
                                 color: "var(--ink)",
                               }}>
-                                + {f.name} {f.start} {fs.short}
+                                + {f.name} {fmt12(f.start)} {fs.short}
                               </button>
                             );
                           })}
@@ -847,8 +847,8 @@ function LineupScreen({ state, setState }) {
                 animation: isHighlighted ? "lineupFlash 1.8s ease-out" : undefined,
               }}>
               <div style={{ width: 46, flexShrink: 0 }}>
-                <div className="mono" style={{ fontSize: 13, letterSpacing: 0.5, fontWeight: 500 }}>{a.start}</div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: 1, color: "var(--muted)" }}>{a.end}</div>
+                <div className="mono" style={{ fontSize: 13, letterSpacing: 0.5, fontWeight: 500 }}>{fmt12(a.start)}</div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: 1, color: "var(--muted)" }}>{fmt12(a.end)}</div>
                 {clashWith && (
                   <div className="mono" title={`Overlaps with ${clashWith.join(", ")}`} style={{
                     marginTop: 4, fontSize: 8, letterSpacing: 0.8, fontWeight: 800,
@@ -1071,7 +1071,7 @@ function TimelineGrid({ day, allDayArtists, state, setState, matchesActive, conf
                       <div className="mono" style={{
                         fontSize: 7.5, letterSpacing: 0.4,
                         color: "var(--muted)", marginTop: 1,
-                      }}>{a.start}{height > 34 ? `–${a.end}` : ""}</div>
+                      }}>{fmt12(a.start)}{height > 34 ? `–${fmt12(a.end)}` : ""}</div>
                       {saved && (
                         <span style={{
                           position: "absolute", top: 2, right: 4,
@@ -1169,7 +1169,7 @@ function ConflictResolver({ conflicts, onKeep, onSplit }) {
             }}>
               <div className="serif" style={{ fontSize: 17, lineHeight: 1.05 }}>{art.name}</div>
               <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "rgba(247,237,224,0.55)", marginTop: 3 }}>
-                {stg.name.toUpperCase()} · {art.start}–{art.end}
+                {stg.name.toUpperCase()} · {fmt12(art.start)}–{fmt12(art.end)}
               </div>
               <button onClick={() => onKeep(art.id, i === 0 ? b.id : a.id)} style={{
                 marginTop: 8, width: "100%",
@@ -1353,7 +1353,7 @@ function printLineupPDF(state) {
         ${list.map(a => {
           const st = STAGES.find(s => s.id === a.stage);
           return `<tr>
-            <td class="time">${a.start}<span class="end">${a.end}</span></td>
+            <td class="time">${fmt12(a.start)}<span class="end">${fmt12(a.end)}</span></td>
             <td>
               <div class="name">${a.name.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>
               <div class="genre">${a.genre}</div>
@@ -1443,7 +1443,7 @@ async function copyScheduleText(state) {
       `${d.short} · ${d.name.toUpperCase()}`,
       ...artists.map(a => {
         const stage = STAGES.find(s => s.id === a.stage);
-        return `  ${a.start}  ${a.name}  @  ${stage ? stage.name : a.stage}`;
+        return `  ${fmt12(a.start)}  ${a.name}  @  ${stage ? stage.name : a.stage}`;
       }),
       "",
     ];
@@ -1638,10 +1638,10 @@ async function shareLineupImage(state) {
     // Time
     ctx.fillStyle = "#1a120d";
     ctx.font = '500 28px "Geist Mono", monospace';
-    ctx.fillText(a.start, 110, y + 32);
+    ctx.fillText(fmt12(a.start), 110, y + 32);
     ctx.fillStyle = "rgba(26,18,13,0.45)";
     ctx.font = '400 20px "Geist Mono", monospace';
-    ctx.fillText(a.end, 110, y + 60);
+    ctx.fillText(fmt12(a.end), 110, y + 60);
 
     // Name + stage
     ctx.fillStyle = "#1a120d";

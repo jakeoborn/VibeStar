@@ -1,4 +1,4 @@
-// Home / "Today" screen — now playing + schedule preview
+﻿// Home / "Today" screen — now playing + schedule preview
 
 // All festival timing constants come from FESTIVAL_CONFIG (data.jsx) so
 // the same code works for any festival once a config is loaded.
@@ -374,7 +374,7 @@ function computeAlerts(savedIds, day, timeStr) {
       out.push({
         id: `remind_${a.id}`, kind: "reminder",
         title: `${a.name} in ${minsAway} min`,
-        body: `${stage?.name || a.stage} · ${a.start}`,
+        body: `${stage?.name || a.stage} · ${fmt12(a.start)}`,
         time: timeStr, unread: true,
       });
     }
@@ -466,7 +466,7 @@ function PostFestivalRecap({ state, setState }) {
                         {a.name}
                       </div>
                       <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
-                        {stage ? stage.short : ""} · {a.start}–{a.end}
+                        {stage ? stage.short : ""} · {fmt12(a.start)}–{fmt12(a.end)}
                       </div>
                     </div>
                   </button>
@@ -823,7 +823,7 @@ function HomeScreen({ state, setState }) {
                   {current.name}
                 </div>
                 <div className="mono" style={{ fontSize: 11, letterSpacing: 1.4, opacity: 0.85, marginBottom: 22 }}>
-                  {current.genre.toUpperCase()} · {current.start}–{current.end}
+                  {current.genre.toUpperCase()} · {fmt12(current.start)}–{fmt12(current.end)}
                 </div>
 
                 {/* Progress */}
@@ -897,7 +897,7 @@ function HomeScreen({ state, setState }) {
                   {next.name}
                 </div>
                 <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
-                  {stageOf(next.stage).name.toUpperCase()} · {next.start}
+                  {stageOf(next.stage).name.toUpperCase()} · {fmt12(next.start)}
                 </div>
               </div>
               <button onClick={() => setState({ ...state, tab: "home", artist: next.id })} style={{
@@ -1045,7 +1045,7 @@ function HomeScreen({ state, setState }) {
                                 )}
                               </div>
                               <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
-                                {stage ? stage.short : ""} · {a.start}–{a.end}
+                                {stage ? stage.short : ""} · {fmt12(a.start)}–{fmt12(a.end)}
                               </div>
                             </div>
                           </button>
@@ -1176,7 +1176,7 @@ function LiveAcrossStrip({ strip, state, setState }) {
                     {artist.name}
                   </div>
                   <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
-                    {artist.start}–{artist.end}
+                    {fmt12(artist.start)}–{fmt12(artist.end)}
                   </div>
                 </>
               ) : upcoming ? (
@@ -1190,7 +1190,7 @@ function LiveAcrossStrip({ strip, state, setState }) {
                     {upcoming.name}
                   </div>
                   <div className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
-                    IN {minsUntil}m · {upcoming.start}
+                    IN {minsUntil}m · {fmt12(upcoming.start)}
                   </div>
                 </>
               ) : (
@@ -1328,7 +1328,7 @@ function PlanRow({ entry, state, setState }) {
             fontSize: 11, letterSpacing: 1,
             color: isLive ? stage.color : "var(--ink)",
             fontWeight: isLive ? 700 : 500,
-          }}>{a.start}</div>
+          }}>{fmt12(a.start)}</div>
           <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)" }}>
             {isLive ? "LIVE" : isPast ? "DONE" : minsUntil < 60 ? `${minsUntil}m` : `${Math.floor(minsUntil/60)}h${(minsUntil%60).toString().padStart(2,"0")}`}
           </div>
@@ -1489,7 +1489,7 @@ function DontMissStrip({ day, state, setState }) {
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
               }}>{a.name}</div>
               <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 4, textTransform: "uppercase" }}>
-                {stage?.short || ""} · {a.start}
+                {stage?.short || ""} · {fmt12(a.start)}
               </div>
             </button>
           );
@@ -1816,7 +1816,7 @@ function FriendLineupBanner({ state, setState }) {
                           {a.name}
                         </div>
                         <div className="mono" style={{ fontSize: 8, letterSpacing: 1, color: "var(--muted)", marginTop: 1 }}>
-                          {stage?.short} · {a.start}
+                          {stage?.short} · {fmt12(a.start)}
                         </div>
                       </div>
                       {isOverlap && (

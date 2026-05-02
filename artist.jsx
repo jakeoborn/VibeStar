@@ -1,4 +1,4 @@
-// Artist detail — shown as a modal-style pane when state.artist is set
+﻿// Artist detail — shown as a modal-style pane when state.artist is set
 
 // ── Setlist.fm ─────────────────────────────────────────────────
 // Free API key at https://api.setlist.fm — paste yours below.
@@ -745,7 +745,7 @@ function ArtistScreen({ state, setState }) {
 
         <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 6, alignItems: "center" }}>
           <Pill tone="outline" style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(8px)", borderColor: "rgba(255,255,255,0.3)" }}>
-            DAY {a.day} · {a.start}
+            DAY {a.day} · {fmt12(a.start)}
           </Pill>
           <ShareArtistButton artist={a} />
         </div>
@@ -789,7 +789,7 @@ function ArtistScreen({ state, setState }) {
           <div style={{ flex: 1 }}>
             <div className="serif" style={{ fontSize: 20, lineHeight: 1 }}>{stage.name}</div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
-              {DAYS.find(d => d.n === a.day).label} · {a.start}–{a.end}
+              {DAYS.find(d => d.n === a.day).label} · {fmt12(a.start)}–{fmt12(a.end)}
             </div>
             {saveCount != null && saveCount >= 2 && (
               <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: stage.color, marginTop: 5 }}>

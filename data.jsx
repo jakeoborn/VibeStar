@@ -247,6 +247,17 @@ const mk = (id, name, genre, stage, day, start, end, bio) => {
   };
 };
 
+// 24h "HH:MM" → 12h "H:MM AM/PM" for display. Sort/diff logic still uses raw a.start.
+function fmt12(t) {
+  if (!t || typeof t !== "string") return t;
+  const [hStr, mStr] = t.split(":");
+  const h = parseInt(hStr, 10);
+  if (isNaN(h)) return t;
+  const h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+  const ap  = h < 12 ? "AM" : "PM";
+  return `${h12}:${mStr} ${ap}`;
+}
+
 const ARTISTS = [
   // ─────────────────────────── KINETIC FIELD ───────────────────────────
   // FRI
@@ -343,7 +354,7 @@ const ARTISTS = [
   mk("c4",  "Westend",                 "Tech House",             "cosmic",  1, "20:55", "21:55"),
   mk("c5",  "Walker & Royce b2b VNSSA","Tech House",             "cosmic",  1, "21:55", "22:55"),
   mk("c6",  "Underworld",              "Electronica",            "cosmic",  1, "23:10", "00:10", "Born Slippy. Two decks, a mic, a legacy."),
-  mk("c7",  "Meduza",                  "House",                  "cosmic",  1, "00:25", "01:45"),
+  mk("c7",  "MEDUZA",                  "House",                  "cosmic",  1, "00:25", "01:45"),
   mk("c8",  "Notion",                  "Bass",                   "cosmic",  1, "01:47", "02:47"),
   mk("c9",  "MPH",                     "Bass House",             "cosmic",  1, "02:47", "04:02"),
   mk("c10", "San Pacho",               "Afrohouse",              "cosmic",  1, "04:02", "05:30"),
@@ -608,6 +619,6 @@ const ESSENTIALS = [
 
 Object.assign(window, {
   FESTIVAL, FESTIVAL_CONFIG, STAGES, AMENITIES, AVATAR_START, FRIENDS, ARTISTS,
-  DAYS, NOW, ALERTS, ESSENTIALS,
+  DAYS, NOW, ALERTS, ESSENTIALS, fmt12,
   FESTIVALS_REGISTRY, getActiveFestivalId, setActiveFestivalAndReload,
 });

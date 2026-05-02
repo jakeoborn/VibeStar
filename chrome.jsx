@@ -1,4 +1,4 @@
-// Screen shell + bottom tab nav + shared atoms
+﻿// Screen shell + bottom tab nav + shared atoms
 
 function Screen({ children, bg = "var(--paper)", pad = true, ink = "var(--ink)" }) {
   return (
@@ -444,7 +444,7 @@ function scheduleReminders(state, showLocal) {
     const stage = STAGES.find(s => s.id === a.stage);
     const handle = setTimeout(() => {
       showLocal(`${a.name} starts in ${leadMin} min`, {
-        body: `${stage?.name || ""} · ${a.start}`,
+        body: `${stage?.name || ""} · ${fmt12(a.start)}`,
         tag: `set-${a.id}`,
         data: { url: "/" },
       });
@@ -471,7 +471,7 @@ function loadAndReschedule(showLocal) {
       const lead = r.leadMin || 15;
       const handle = setTimeout(() => {
         showLocal(`${r.name} starts in ${lead} min`, {
-          body: `${r.stageName} · ${r.start}`,
+          body: `${r.stageName} · ${fmt12(r.start)}`,
           tag: `set-${r.id}`,
           data: { url: "/" },
         });

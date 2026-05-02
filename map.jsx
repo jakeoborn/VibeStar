@@ -1,4 +1,4 @@
-// Hybrid map — top-down navigation (default) + ground-level peek when a stage is selected.
+﻿// Hybrid map — top-down navigation (default) + ground-level peek when a stage is selected.
 // Designed to feel like a real wayfinding app: glanceable, easy to meet friends, easy to route.
 
 // ── Messaging ─────────────────────────────────────────────────
@@ -748,7 +748,7 @@ function useSavedSetReminders(savedIds, enabled) {
           try {
             const stage = STAGES.find(s => s.id === a.stage);
             new Notification(`${a.name} in ${Math.round(minsUntil)} min`, {
-              body: `${stage?.name || a.stage} · ${a.start}`,
+              body: `${stage?.name || a.stage} · ${fmt12(a.start)}`,
               tag: `set-${id}`,
               icon: "/og.svg",
             });
@@ -875,34 +875,26 @@ function WeatherStrip() {
   if (!w) return null;
   const label = WMO_LABELS[w.code] || "Conditions";
   const emoji = _weatherEmoji(w.code, !w.isDay);
-  const vibe = _weatherVibe(w);
   const isAlert = w.code >= 95 || w.windMph >= 25 || (w.code >= 61 && w.code <= 82);
   return (
     <div style={{
-      width: "100%", display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 11px", marginTop: 8, borderRadius: 12,
+      width: "100%", display: "flex", alignItems: "center", gap: 8,
+      padding: "5px 11px", marginTop: 6, borderRadius: 999,
       background: isAlert ? "rgba(232,93,46,0.10)" : "var(--paper-2)",
       border: `1px solid ${isAlert ? "rgba(232,93,46,0.45)" : "var(--line)"}`,
     }}>
-      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{emoji}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="mono" style={{
-          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 700,
-          color: isAlert ? "var(--ember)" : "var(--muted)", marginBottom: 1,
-        }}>LVMS · LIVE WEATHER</div>
-        <div className="serif" style={{
-          fontSize: 16, lineHeight: 1.05, letterSpacing: -0.2, color: "var(--ink)",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{vibe}</div>
-      </div>
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div className="mono" style={{
-          fontSize: 13, letterSpacing: 0.8, fontWeight: 800, color: "var(--ink)",
-        }}>{w.tempF}°F</div>
-        <div className="mono" style={{
-          fontSize: 9, letterSpacing: 1, fontWeight: 600, color: "var(--muted)", marginTop: 2,
-        }}>{w.windMph} MPH · {label.toUpperCase()}</div>
-      </div>
+      <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>{emoji}</span>
+      <span className="mono" style={{
+        fontSize: 8.5, letterSpacing: 1.2, fontWeight: 700, flexShrink: 0,
+        color: isAlert ? "var(--ember)" : "var(--muted)",
+      }}>LVMS</span>
+      <span style={{
+        flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 500, color: "var(--ink)",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>{w.tempF}°F · {label}</span>
+      <span className="mono" style={{
+        fontSize: 9, letterSpacing: 0.8, fontWeight: 600, color: "var(--muted)", flexShrink: 0,
+      }}>{w.windMph} MPH</span>
     </div>
   );
 }
@@ -927,33 +919,22 @@ function SunriseStrip({ avatar, onSelect }) {
 
   return (
     <button onClick={() => onSelect(kin.id)} style={{
-      width: "100%", display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 11px", marginTop: 8,
+      width: "100%", display: "flex", alignItems: "center", gap: 8,
+      padding: "5px 11px", marginTop: 6,
       background: "linear-gradient(90deg, #f59a36 0%, #e85d2e 60%, #a78bfa 100%)",
-      color: "#fff", border: "none", borderRadius: 12,
+      color: "#fff", border: "none", borderRadius: 999,
       cursor: "pointer", textAlign: "left",
-      boxShadow: "0 4px 14px rgba(245,154,54,0.35)",
+      boxShadow: "0 3px 10px rgba(245,154,54,0.30)",
     }}>
-      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>🌅</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="mono" style={{
-          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 800,
-          opacity: 0.85, marginBottom: 1,
-        }}>SUNRISE · KINETIC FIELD</div>
-        <div className="serif" style={{
-          fontSize: 16, lineHeight: 1.05, letterSpacing: -0.2,
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{isUp ? "Sun is up — head to the lotus" : "Hold the line for sunrise"}</div>
-      </div>
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div className="mono" style={{
-          fontSize: 11, letterSpacing: 1.2, fontWeight: 800,
-        }}>{isUp ? "NOW" : `${minsUntil}M`}</div>
-        <div className="mono" style={{
-          fontSize: 9, letterSpacing: 1, fontWeight: 600,
-          opacity: 0.85, marginTop: 2,
-        }}>{walkLabel}M WALK</div>
-      </div>
+      <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>🌅</span>
+      <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, fontWeight: 800, opacity: 0.92, flexShrink: 0 }}>SUNRISE</span>
+      <span style={{
+        flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 500,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>{isUp ? "Sun's up — head to the lotus" : "Hold the line"}</span>
+      <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1, fontWeight: 800, flexShrink: 0 }}>
+        {isUp ? "NOW" : `${minsUntil}M`} · {walkLabel}M
+      </span>
     </button>
   );
 }
@@ -967,65 +948,50 @@ function NextSetStrip({ savedIds, avatar, onSelect }) {
   const walk = computeWalkRange(avatar.x, avatar.y, stage, dist, NOW.time);
   const walkLabel = walk.lo === walk.hi ? `${walk.lo}` : `${walk.lo}–${walk.hi}`;
 
-  // "LIVE — 38m left" vs "STARTS 0h 24m" framing
+  // "LIVE — 38m" vs "IN 0h 24m" framing
   const headline = next.isLive
-    ? `LIVE · ${next.minsLeft}M LEFT`
+    ? `LIVE · ${next.minsLeft}M`
     : next.minsUntil < 60
         ? `IN ${next.minsUntil}M`
         : `IN ${Math.floor(next.minsUntil/60)}H ${next.minsUntil%60}M`;
-  // Walk vs start-time tension flag: if walk hi >= time-until-start, late
+  // Walk vs start-time tension flag
   const willBeLate = !next.isLive && walk.hi >= next.minsUntil && next.minsUntil > 0;
 
   return (
     <button onClick={() => onSelect(stage.id)} style={{
-      width: "100%", display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 11px", marginTop: 8,
+      width: "100%", display: "flex", alignItems: "center", gap: 9,
+      padding: "6px 10px", marginTop: 6,
       background: next.isLive ? "var(--ember)" : "var(--ink)",
       color: next.isLive ? "#fff" : "var(--paper)",
       border: "none", borderRadius: 12,
       cursor: "pointer", textAlign: "left",
-      boxShadow: next.isLive ? "0 4px 14px rgba(232,93,46,0.35)" : "0 2px 8px rgba(26,18,13,0.18)",
+      boxShadow: next.isLive ? "0 3px 10px rgba(232,93,46,0.30)" : "0 2px 6px rgba(26,18,13,0.15)",
     }}>
-      <div style={{
-        width: 6, alignSelf: "stretch", borderRadius: 3,
-        background: stage.color,
-      }}/>
+      <div style={{ width: 5, alignSelf: "stretch", borderRadius: 3, background: stage.color }}/>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="mono" style={{
-          fontSize: 8.5, letterSpacing: 1.4, fontWeight: 700,
-          opacity: 0.7, marginBottom: 1,
-        }}>
-          {next.isLive ? "★ NEXT UP — LIVE" : "★ NEXT UP"}
-        </div>
+          fontSize: 8, letterSpacing: 1.3, fontWeight: 700, opacity: 0.7, lineHeight: 1.1,
+        }}>{next.isLive ? "★ NEXT — LIVE" : "★ NEXT"}</div>
         <div className="serif" style={{
-          fontSize: 17, lineHeight: 1.05, letterSpacing: -0.2,
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{next.artist.name}</div>
-        <div className="mono" style={{
-          fontSize: 9, letterSpacing: 1.1, fontWeight: 600,
-          color: next.isLive ? "rgba(255,255,255,0.85)" : "rgba(247,237,224,0.7)",
-          marginTop: 2,
+          fontSize: 14.5, lineHeight: 1.15, letterSpacing: -0.2,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
-          {stage.name.toUpperCase()} · {next.artist.start}–{next.artist.end}
+          {next.artist.name}
+          <span className="mono" style={{ fontSize: 9, letterSpacing: 0.8, opacity: 0.6, marginLeft: 6 }}>
+            {stage.short} · {fmt12(next.artist.start)}
+          </span>
         </div>
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div className="mono" style={{
-          fontSize: 10, letterSpacing: 1.2, fontWeight: 800,
-        }}>{headline}</div>
-        <div className="mono" style={{
-          fontSize: 9, letterSpacing: 1, fontWeight: 600,
-          opacity: 0.75, marginTop: 2,
-        }}>
-          {walkLabel}M WALK
+        <div className="mono" style={{ fontSize: 10, letterSpacing: 1.1, fontWeight: 800, lineHeight: 1.1 }}>
+          {headline}
         </div>
-        {willBeLate && (
-          <div className="mono" style={{
-            fontSize: 8, letterSpacing: 1, fontWeight: 800,
-            color: "#fbbf24", marginTop: 2,
-          }}>⚠ MOVE NOW</div>
-        )}
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 0.9, fontWeight: 600,
+          opacity: willBeLate ? 1 : 0.7,
+          color: willBeLate ? "#fbbf24" : "inherit",
+          marginTop: 1,
+        }}>{walkLabel}M{willBeLate ? " ⚠" : ""}</div>
       </div>
     </button>
   );
@@ -1048,6 +1014,8 @@ function MapScreen({ state, setState }) {
   const [showHeat,   setShowHeat]   = React.useState(false);
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(false);
   const [myStatusStage, setMyStatusStage] = React.useState(() => getMyStatus()?.stage || null);
   const [crewLive, setCrewLive] = React.useState(false);
   const [crewSnap, setCrewSnap] = React.useState(() => sbGetPresSnap());
@@ -1259,14 +1227,14 @@ function MapScreen({ state, setState }) {
   return (
     <Screen bg="var(--paper)" ink="var(--ink)">
       {/* SEARCH HEADER */}
-      <div style={{ padding: "8px 12px", background: "var(--paper)", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ padding: "6px 12px 8px", background: "var(--paper)", borderBottom: "1px solid var(--line)", position: "relative" }}>
         <div style={{
-          display: "flex", alignItems: "center", gap: 8,
+          display: "flex", alignItems: "center", gap: 7,
           background: "var(--paper-2)",
-          borderRadius: 10, padding: "8px 10px",
+          borderRadius: 999, padding: "6px 6px 6px 11px",
           border: "1px solid var(--line)",
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="7"/><path d="M20 20 L16 16"/>
           </svg>
           <input
@@ -1275,45 +1243,18 @@ function MapScreen({ state, setState }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
-              flex: 1, background: "transparent", border: "none", outline: "none",
+              flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
               color: "var(--ink)", fontFamily: "Geist, sans-serif", fontSize: 13,
             }}
           />
-          <NotifyPill enabled={notifyEnabled} onChange={setNotifyEnabled} />
-          <button onClick={() => setShowLabels(s => !s)} title="Toggle landmark labels" style={{
-            background: showLabels ? "var(--ink)" : "var(--paper)",
-            color: showLabels ? "var(--paper)" : "var(--muted)",
-            border: showLabels ? "none" : "1px solid var(--line-2)",
-            borderRadius: 999, padding: "3px 8px",
-            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
-            cursor: "pointer",
-          }}>LABELS</button>
-          <button onClick={() => setShowHeat(s => !s)} style={{
-            background: showHeat ? "var(--ember)" : "var(--paper)",
-            color: showHeat ? "#fff" : "var(--muted)",
-            border: showHeat ? "none" : "1px solid var(--line-2)",
-            borderRadius: 999, padding: "3px 8px",
-            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
-            cursor: "pointer",
-          }}>CROWD</button>
-          <button onClick={() => {
-            if (compass) { setCompass(false); setCompassStatus("off"); }
-            else enableCompass();
-          }} title="Heading-up compass mode" style={{
-            display: "flex", alignItems: "center", gap: 4,
-            background: compass && compassStatus === "live" ? "var(--horizon)" : "var(--paper)",
-            color: compass && compassStatus === "live" ? "#fff" : "var(--muted)",
-            border: compass && compassStatus === "live" ? "none" : "1px solid var(--line-2)",
-            borderRadius: 999, padding: "3px 8px",
-            fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
-            cursor: "pointer",
-          }}>
-            <span style={{ fontSize: 10 }}>⌖</span>
-            {compass && compassStatus === "denied" ? "BLOCKED"
-              : compass && compassStatus === "unavailable" ? "N/A"
-              : compass && compassStatus === "locating" ? "FINDING…"
-              : "COMPASS"}
-          </button>
+          {liveAvatar?.offSite && (
+            <span title={`${liveAvatar.mi.toFixed(1)} mi from venue · showing demo`} className="mono" style={{
+              fontSize: 8.5, letterSpacing: 1.1, fontWeight: 700,
+              color: "#b8651b", background: "rgba(245,154,54,0.12)",
+              border: "1px solid rgba(245,154,54,0.4)",
+              padding: "2px 7px", borderRadius: 999, flexShrink: 0,
+            }}>{liveAvatar.mi.toFixed(0)}MI OFF</span>
+          )}
           <button onClick={() => setGpsLive(g => !g)} style={{
             display: "flex", alignItems: "center", gap: 5,
             background: gpsActive ? "var(--ember)" : "var(--paper)",
@@ -1321,7 +1262,7 @@ function MapScreen({ state, setState }) {
             border: gpsActive ? "none" : "1px solid var(--line-2)",
             borderRadius: 999, padding: "3px 9px",
             fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
-            cursor: "pointer",
+            cursor: "pointer", flexShrink: 0,
           }}>
             {gpsActive && (
               <span style={{
@@ -1331,43 +1272,94 @@ function MapScreen({ state, setState }) {
             )}
             {gpsLabel}
           </button>
+          <button onClick={() => setMenuOpen(o => !o)} aria-label="Map options" title="Options" style={{
+            background: menuOpen ? "var(--ink)" : "var(--paper)",
+            color: menuOpen ? "var(--paper)" : "var(--muted)",
+            border: menuOpen ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, width: 26, height: 22, padding: 0,
+            fontSize: 16, fontWeight: 700, cursor: "pointer", lineHeight: 1,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>⋯</button>
         </div>
-        {liveAvatar?.offSite && (
-          <div style={{
-            marginTop: 6, padding: "5px 10px", borderRadius: 8,
-            background: "rgba(245,154,54,0.12)", border: "1px solid rgba(245,154,54,0.4)",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#b8651b", fontWeight: 700 }}>
-              OFF-SITE · {liveAvatar.mi.toFixed(1)} MI FROM VENUE
-            </span>
-            <span style={{ fontSize: 10, color: "var(--muted)" }}>· showing demo position</span>
-          </div>
+
+        {/* Overflow menu popover */}
+        {menuOpen && (
+          <>
+            <div onClick={() => setMenuOpen(false)} style={{
+              position: "fixed", inset: 0, zIndex: 5,
+            }}/>
+            <div style={{
+              position: "absolute", top: 44, right: 12, zIndex: 6,
+              background: "var(--paper)", border: "1px solid var(--line-2)",
+              borderRadius: 12, padding: 5, minWidth: 220,
+              boxShadow: "0 10px 28px rgba(26,18,13,0.20)",
+            }}>
+              {[
+                { id: "notify", label: "🔔  Reminders",
+                  active: notifyEnabled,
+                  onToggle: async () => {
+                    if (typeof Notification === "undefined") return;
+                    if (Notification.permission === "denied") return;
+                    if (notifyEnabled) { writeNotifyEnabled(false); setNotifyEnabled(false); return; }
+                    let perm = Notification.permission;
+                    if (perm === "default") {
+                      try { perm = await Notification.requestPermission(); } catch { perm = "denied"; }
+                    }
+                    if (perm !== "granted") { setNotifyEnabled(false); return; }
+                    writeNotifyEnabled(true); setNotifyEnabled(true);
+                  },
+                },
+                { id: "compass", label: "⌖  Compass mode",
+                  active: compass && compassStatus === "live",
+                  onToggle: () => { if (compass) { setCompass(false); setCompassStatus("off"); } else enableCompass(); },
+                },
+                { id: "crowd",  label: "🔥  Crowd heatmap",   active: showHeat,   onToggle: () => setShowHeat(s => !s) },
+                { id: "labels", label: "🏷  Landmark labels", active: showLabels, onToggle: () => setShowLabels(s => !s) },
+              ].map(item => (
+                <div key={item.id} role="button" onClick={item.onToggle} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                }}>
+                  <span style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{item.label}</span>
+                  <span style={{
+                    width: 30, height: 18, borderRadius: 18,
+                    background: item.active ? "var(--ember)" : "var(--line-2)",
+                    position: "relative", flexShrink: 0, transition: "background 0.15s",
+                  }}>
+                    <span style={{
+                      position: "absolute", top: 2, left: item.active ? 14 : 2,
+                      width: 14, height: 14, borderRadius: 14,
+                      background: "#fff", transition: "left 0.18s",
+                    }}/>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
+
         {gpsLive && gpsStatus === "denied" && (
           <div style={{
-            marginTop: 6, padding: "5px 10px", borderRadius: 8,
+            marginTop: 6, padding: "4px 10px", borderRadius: 999,
             background: "rgba(193,74,74,0.10)", border: "1px solid rgba(193,74,74,0.35)",
           }}>
-            <span className="mono" style={{ fontSize: 9.5, letterSpacing: 1.3, color: "#c14a4a", fontWeight: 700 }}>
-              GPS DENIED · ENABLE LOCATION IN BROWSER SETTINGS
+            <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "#c14a4a", fontWeight: 700 }}>
+              GPS DENIED · ENABLE LOCATION IN BROWSER
             </span>
           </div>
         )}
 
-        {/* Find-nearest quick actions — tap to draw a route line to the
-            closest amenity of that type. Works at any festival as long as
-            AMENITIES are populated. */}
+        {/* Find-nearest quick actions — slim icon-only round buttons */}
         {!search && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
             {[
-              { type: "water",  label: "WATER",   emoji: "💧", color: "#38bdf8" },
-              { type: "med",    label: "MEDIC",   emoji: "✚",  color: "#f87171" },
-              { type: "toilet", label: "TOILET",  emoji: "🚻", color: "#94a3b8" },
-              { type: "charge", label: "CHARGE",  emoji: "⚡", color: "#facc15" },
-              { type: "locker", label: "LOCKER",  emoji: "🔒", color: "#a78bfa" },
+              { type: "water",  label: "Water",  emoji: "💧", color: "#38bdf8" },
+              { type: "med",    label: "Medic",  emoji: "✚",  color: "#f87171" },
+              { type: "toilet", label: "Toilet", emoji: "🚻", color: "#94a3b8" },
+              { type: "charge", label: "Charge", emoji: "⚡", color: "#facc15" },
+              { type: "locker", label: "Locker", emoji: "🔒", color: "#a78bfa" },
             ].map(c => (
-              <button key={c.type} onClick={() => {
+              <button key={c.type} title={c.label} aria-label={c.label} onClick={() => {
                 const matches = (typeof AMENITIES !== "undefined" ? AMENITIES : []).filter(a => a.type === c.type);
                 if (!matches.length) return;
                 const nearest = matches
@@ -1376,15 +1368,12 @@ function MapScreen({ state, setState }) {
                 setMeetTarget({ x: nearest.x, y: nearest.y, label: nearest.label, isAmenity: true });
                 setMeetMode(true);
               }} style={{
-                flex: 1, padding: "6px 6px", borderRadius: 999,
+                flex: 1, height: 30, borderRadius: 999,
                 background: "var(--paper-2)", border: `1px solid ${c.color}55`,
                 color: "var(--ink)", cursor: "pointer",
-                fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-              }}>
-                <span style={{ fontSize: 11 }}>{c.emoji}</span>
-                <span>{c.label}</span>
-              </button>
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14, padding: 0,
+              }}>{c.emoji}</button>
             ))}
           </div>
         )}
@@ -1486,9 +1475,9 @@ function MapScreen({ state, setState }) {
           position: "absolute", left: 10, right: 10, bottom: stage || meetMode ? 140 : 10,
           background: "var(--paper)",
           border: "1px solid var(--line-2)",
-          borderRadius: 14, padding: 8,
+          borderRadius: 14, padding: 6,
           boxShadow: "0 6px 20px rgba(26,18,13,0.12)",
-          display: "flex", alignItems: "center", gap: 8,
+          display: "flex", alignItems: "center", gap: 6,
           transition: "bottom 0.3s",
         }}>
           <button onClick={() => {
@@ -1497,46 +1486,32 @@ function MapScreen({ state, setState }) {
           }} style={{
             background: meetMode ? "var(--ember)" : "var(--ink)",
             color: "#fff",
-            border: "none", borderRadius: 999, padding: "7px 11px",
+            border: "none", borderRadius: 999, padding: "6px 11px",
             fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
             cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
           }}>{meetMode ? "× CANCEL" : "MEET UP"}</button>
-          <button onClick={() => setPingOpen(true)} title="Share your ping code or drop a pin from one" style={{
-            background: "var(--paper-2)", color: "var(--ink)",
-            border: "1px solid var(--line-2)", borderRadius: 999, padding: "7px 10px",
-            fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
-            cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-            display: "flex", alignItems: "center", gap: 4,
-          }}><span style={{ fontSize: 11 }}>◉</span>PING</button>
-          <button onClick={toggleCrewLive} title="Broadcast your location — crew sees your stage pin on the map" style={{
-            background: crewLive ? "var(--success)" : "var(--paper-2)",
-            color: crewLive ? "#fff" : "var(--ink)",
-            border: crewLive ? "none" : "1px solid var(--line-2)",
-            borderRadius: 999, padding: "7px 10px",
-            fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
-            cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-            display: "flex", alignItems: "center", gap: 4,
+          <button onClick={() => setMoreOpen(o => !o)} aria-label="More actions" title="Ping / Crew / I'm at" style={{
+            position: "relative",
+            background: moreOpen ? "var(--ink)" : "var(--paper-2)",
+            color: moreOpen ? "var(--paper)" : "var(--ink)",
+            border: moreOpen ? "none" : "1px solid var(--line-2)",
+            borderRadius: 999, width: 32, height: 26, padding: 0,
+            cursor: "pointer", flexShrink: 0,
+            fontSize: 16, fontWeight: 700, lineHeight: 1,
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <span style={{ width: 7, height: 7, borderRadius: 7, background: crewLive ? "#fff" : "var(--muted)", animation: crewLive ? "pulse 1.6s infinite" : "none" }}/>
-            CREW{crewFriends.length > 0 ? ` · ${crewFriends.length}` : ""}
+            ⋯
+            {(crewLive || myStatusStage) && (
+              <span style={{
+                position: "absolute", top: -2, right: -2,
+                width: 8, height: 8, borderRadius: 8,
+                background: crewLive
+                  ? "var(--success)"
+                  : (myStatusStage ? (STAGES.find(s => s.id === myStatusStage)?.color || "var(--ember)") : "var(--ember)"),
+                border: "1.5px solid var(--paper)",
+              }}/>
+            )}
           </button>
-          {(() => {
-            const ms = myStatusStage ? STAGES.find(s => s.id === myStatusStage) : null;
-            return (
-              <button onClick={() => setIAmAtOpen(true)} title="Broadcast your stage to friends" style={{
-                background: ms ? ms.color : "var(--paper-2)",
-                color: ms ? "#fff" : "var(--ink)",
-                border: ms ? "none" : "1px solid var(--line-2)",
-                borderRadius: 999, padding: "7px 10px",
-                fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
-                cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-                display: "flex", alignItems: "center", gap: 4,
-              }}>
-                <span style={{ fontSize: 11 }}>📍</span>
-                {ms ? ms.short : "I'M AT"}
-              </button>
-            );
-          })()}
           <div className="no-scrollbar" style={{ display: "flex", gap: 5, overflowX: "auto", flex: 1, scrollbarWidth: "none" }}>
             {friends.map(f => {
               const d = Math.round(Math.sqrt((f.x-avatar.x)**2 + (f.y-avatar.y)**2) * 1.8);
@@ -1598,6 +1573,68 @@ function MapScreen({ state, setState }) {
             })}
           </div>
         </div>
+
+        {/* More-actions popover (PING / CREW / I'M AT) */}
+        {moreOpen && (
+          <>
+            <div onClick={() => setMoreOpen(false)} style={{
+              position: "absolute", inset: 0, zIndex: 6,
+            }}/>
+            <div style={{
+              position: "absolute", left: 10, right: 10,
+              bottom: stage || meetMode ? 184 : 54, zIndex: 7,
+              background: "var(--paper)", border: "1px solid var(--line-2)",
+              borderRadius: 14, padding: 5,
+              boxShadow: "0 10px 28px rgba(26,18,13,0.20)",
+            }}>
+              <button onClick={() => { setPingOpen(true); setMoreOpen(false); }} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 11px", background: "transparent", border: "none",
+                borderRadius: 8, cursor: "pointer", color: "var(--ink)", textAlign: "left",
+              }}>
+                <span style={{ fontSize: 14, width: 18 }}>◉</span>
+                <span style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500, flex: 1 }}>Ping code</span>
+                <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", fontWeight: 700 }}>SHARE / DROP</span>
+              </button>
+              <button onClick={() => { toggleCrewLive(); setMoreOpen(false); }} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 11px",
+                background: crewLive ? "rgba(45,122,85,0.10)" : "transparent",
+                border: "none", borderRadius: 8, cursor: "pointer",
+                color: "var(--ink)", textAlign: "left",
+              }}>
+                <span style={{
+                  width: 14, height: 14, borderRadius: 14,
+                  background: crewLive ? "var(--success)" : "var(--line-2)",
+                  animation: crewLive ? "pulse 1.6s infinite" : "none",
+                }}/>
+                <span style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500, flex: 1 }}>
+                  Crew live{crewFriends.length > 0 ? ` · ${crewFriends.length}` : ""}
+                </span>
+                <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: crewLive ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+                  {crewLive ? "ON" : "OFF"}
+                </span>
+              </button>
+              {(() => {
+                const ms = myStatusStage ? STAGES.find(s => s.id === myStatusStage) : null;
+                return (
+                  <button onClick={() => { setIAmAtOpen(true); setMoreOpen(false); }} style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 10,
+                    padding: "9px 11px", background: "transparent", border: "none",
+                    borderRadius: 8, cursor: "pointer", color: "var(--ink)", textAlign: "left",
+                  }}>
+                    <span style={{ fontSize: 14, width: 18 }}>📍</span>
+                    <span style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500, flex: 1 }}>I'm at…</span>
+                    <span className="mono" style={{
+                      fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                      color: ms ? ms.color : "var(--muted)",
+                    }}>{ms ? ms.short : "PICK STAGE"}</span>
+                  </button>
+                );
+              })()}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Chat drawer — opens on friend tap (when not in meet mode) */}
@@ -2595,7 +2632,7 @@ function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArt
             <div className="serif" style={{ fontSize: 16, lineHeight: 1.05 }}>{nowAtStage.name}</div>
           </div>
           <div className="mono" style={{ fontSize: 9, letterSpacing: 1, opacity: 0.9, whiteSpace: "nowrap" }}>
-            {nowAtStage.start}–{nowAtStage.end}
+            {fmt12(nowAtStage.start)}–{fmt12(nowAtStage.end)}
           </div>
         </div>
       )}
@@ -2629,8 +2666,8 @@ function StageLineupSheet({ stage, walk, dist, peek, setPeek, onClose, onOpenArt
               opacity: live ? 1 : 0.92,
             }}>
               <div style={{ width: 52, flexShrink: 0 }}>
-                <div className="mono" style={{ fontSize: 11, letterSpacing: 0.3, fontWeight: 600, color: live ? stage.color : "var(--ink)" }}>{s.start}</div>
-                <div className="mono" style={{ fontSize: 8.5, letterSpacing: 0.8, color: "var(--muted)" }}>{s.end}</div>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: 0.3, fontWeight: 600, color: live ? stage.color : "var(--ink)" }}>{fmt12(s.start)}</div>
+                <div className="mono" style={{ fontSize: 8.5, letterSpacing: 0.8, color: "var(--muted)" }}>{fmt12(s.end)}</div>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="serif" style={{ fontSize: 17, lineHeight: 1.1, letterSpacing: -0.2 }}>{s.name}</div>

@@ -1,4 +1,4 @@
-// Main app — iOS frame + routing
+﻿// Main app — iOS frame + routing
 
 function spotifyTokenValid() {
   const token = localStorage.getItem("spotify_token");
@@ -273,7 +273,7 @@ function SearchModal({ onClose, onSelectArtist }) {
                     <div style={{ display: "flex", gap: 5, marginTop: 2, alignItems: "center" }}>
                       <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: stage.color, fontWeight: 600, textTransform: "uppercase" }}>{stage.short}</span>
                       <span style={{ color: "var(--muted)" }}>·</span>
-                      <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)" }}>{DAY_LABEL[a.day]} {a.start}–{a.end}</span>
+                      <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)" }}>{DAY_LABEL[a.day]} {fmt12(a.start)}–{fmt12(a.end)}</span>
                       <span style={{ color: "var(--muted)" }}>·</span>
                       <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", textTransform: "uppercase" }}>{a.genre}</span>
                     </div>

@@ -1,4 +1,4 @@
-// Spotify / Music + Me screens
+﻿// Spotify / Music + Me screens
 
 // ── Apple Music ───────────────────────────────────────────────
 // Requires an Apple Developer account + MusicKit identifier.
@@ -1525,7 +1525,7 @@ function SpotifyScreen({ state, setState }) {
                    onClick={() => setState({ ...state, tab: "home", artist: realId })}>
                 <div className="serif" style={{ fontSize: 18, lineHeight: 1.1 }}>{a.name}</div>
                 <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
-                  {stg.name} · DAY {a.day} · {a.start}
+                  {stg.name} · DAY {a.day} · {fmt12(a.start)}
                 </div>
               </div>
               <button onClick={() => toggleSave(state, setState, realId)} style={{
@@ -1562,7 +1562,7 @@ function SpotifyScreen({ state, setState }) {
                        onClick={() => setState({ ...state, tab: "home", artist: a.id })}>
                     <div className="serif" style={{ fontSize: 18, lineHeight: 1.1 }}>{a.name}</div>
                     <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", marginTop: 2, textTransform: "uppercase" }}>
-                      {stg.name} · DAY {a.day} · {a.start}
+                      {stg.name} · DAY {a.day} · {fmt12(a.start)}
                     </div>
                     {a._reason && (
                       <div style={{ fontSize: 11, fontStyle: "italic", color: "var(--horizon)", marginTop: 3, lineHeight: 1.3 }}>
@@ -2032,7 +2032,7 @@ function MeScreen({ state, setState }) {
                     <div style={{ position: "absolute", bottom: 6, left: 6, right: 6, color: "#fff", textAlign: "left" }} className="mono">
                       <div style={{ fontSize: 10, letterSpacing: 0.4, fontWeight: 700, lineHeight: 1.1, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                       <div style={{ fontSize: 8, letterSpacing: 1, opacity: 0.8 }}>
-                        {FESTIVAL_CONFIG.dayDates[a.day]?.short || ""} · {a.start}
+                        {FESTIVAL_CONFIG.dayDates[a.day]?.short || ""} · {fmt12(a.start)}
                       </div>
                     </div>
                   </button>
@@ -2101,7 +2101,7 @@ function FollowedNudge({ state, setState }) {
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--paper)" }}>{a.name}</div>
                   <div className="mono" style={{ fontSize: 8, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
-                    {st?.short} · DAY {a.day} · {a.start}
+                    {st?.short} · DAY {a.day} · {fmt12(a.start)}
                   </div>
                 </div>
                 <button onClick={() => handleSave(a)} style={{
