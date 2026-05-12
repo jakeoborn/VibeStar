@@ -1,4 +1,4 @@
-﻿const CACHE   = 'vibestar-v106';
+﻿const CACHE   = 'plursky-v106';
 const APP_VER = 'v106';
 
 // Own-origin app files â€” versioned to match what index.html requests.

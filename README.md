@@ -1,2 +1,2 @@
-# VibeStar
-Music Festival App
+# Plursky
+EDC Las Vegas 2026 festival companion app

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "vibestar",
+      "name": "plursky",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "serve", "-p", "5175", "."],
       "port": 5175

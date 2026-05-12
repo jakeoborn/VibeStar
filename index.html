@@ -85,7 +85,7 @@
 
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== 'vibestar-v106').map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== 'plursky-v106').map(k => caches.delete(k)))
       ).then(() =>
         navigator.serviceWorker.register('./sw.js?v=v106', { updateViaCache: 'none' })
           .then(reg => { try { reg.update(); } catch {} })
