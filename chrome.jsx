@@ -289,8 +289,12 @@ function useInstallPrompt() {
   const isStandalone =
     (typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)").matches) ||
     window.navigator.standalone === true;
+  // We ARE the native app — Capacitor doesn't set navigator.standalone or the
+  // display-mode media query, so without this guard the "Add to Home Screen"
+  // banner pitches users to install the app they're already inside.
+  const isNativeApp = !!window.Capacitor?.isNativePlatform?.();
 
-  const canInstall = !dismissed && !isStandalone && (deferred || isIOS);
+  const canInstall = !dismissed && !isStandalone && !isNativeApp && (deferred || isIOS);
 
   return {
     canInstall,
@@ -538,7 +542,9 @@ function NotificationsCard({ state }) {
           NOTIFICATIONS · UNSUPPORTED
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.4 }}>
-          Your browser doesn't support web notifications. Install Plursky to your home screen for the full experience.
+          {window.Capacitor?.isNativePlatform?.()
+            ? "Notifications aren't wired in this build yet — set-time reminders will land in a future update."
+            : "Your browser doesn't support web notifications. Install Plursky to your home screen for the full experience."}
         </div>
       </div>
     );
