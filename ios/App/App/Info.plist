@@ -49,5 +49,10 @@
 	<string>Plursky uses your location to show your position on the festival map and find the nearest stages.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Plursky is paper-and-ink only by design (see DESIGN.md). Lock the
+	     interface to Light so iOS doesn't auto-invert status bar / scroll
+	     indicators / form controls based on the user's system setting. -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

@@ -1365,6 +1365,7 @@ function ArtistScreen({ state, setState }) {
             onChange={e => handleNote(e.target.value)}
             placeholder="heard at Ultra 2024 · Alex recommended · must see"
             rows={2}
+            maxLength={500}
             style={{
               width: "100%", padding: "10px 12px", boxSizing: "border-box",
               background: "var(--paper-2)", border: "1px solid var(--line-2)",

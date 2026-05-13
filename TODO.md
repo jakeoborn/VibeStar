@@ -42,7 +42,8 @@ Ordered roughly in execution sequence — each step assumes the ones above it ar
   - User content (Other) — saved sets + notes — linked to user, for app functionality.
   - Location (Precise) — not linked to user, for app functionality, not used for tracking.
   - Diagnostics — None.
-- [ ] **App Store Connect listing** — name, subtitle, screenshots (6.5" + 6.7" iPhone — Plursky's `_useNakedFrame()` already renders full-bleed at those widths), category (Music or Entertainment), age rating, support URL, **privacy policy URL → `https://plursky.com/privacy`**.
+- [ ] **Working support email** — `privacy.html` and the App Store listing both point at `hello@plursky.com`. Confirm a real inbox receives mail there (DNS forward, Gmail/iCloud alias, etc.) **before submitting** — Apple sends test mail to it during review, and a bounced support address is a known fast-rejection.
+- [ ] **App Store Connect listing** — name, subtitle, screenshots (6.5" + 6.7" iPhone — Plursky's `_useNakedFrame()` already renders full-bleed at those widths), category (Music or Entertainment), age rating, support URL, **privacy policy URL → `https://plursky.com/privacy`**, support email → `hello@plursky.com`.
 - [ ] **Archive & upload** — Xcode → Product → Archive → Distribute App → App Store Connect → TestFlight.
 
 ---
