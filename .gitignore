@@ -18,3 +18,9 @@ ios/App/App/config.xml
 # Supabase CLI cache (created by `supabase link`)
 supabase/.temp/
 supabase/.branches/
+
+# Claude Code worktrees (per-agent isolated checkouts)
+.claude/worktrees/
+
+# Screenshot dev artifacts (real submission shots go through App Store Connect)
+screenshots/Simulator Screenshot*
