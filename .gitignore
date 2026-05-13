@@ -2,3 +2,15 @@
 .DS_Store
 Thumbs.db
 *.log
+
+# Node
+node_modules/
+dist/
+
+# Capacitor / iOS
+ios/App/App/public/
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml

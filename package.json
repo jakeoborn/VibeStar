@@ -1,0 +1,23 @@
+{
+  "name": "plursky",
+  "version": "0.0.1",
+  "private": true,
+  "description": "EDC Las Vegas 2026 festival companion app",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "cap:sync": "npm run build && npx cap sync ios",
+    "cap:open": "npx cap open ios",
+    "cap:build": "npm run cap:sync && npm run cap:open"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
