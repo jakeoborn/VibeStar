@@ -12,10 +12,9 @@ Ordered roughly in execution sequence — each step assumes the ones above it ar
   brew install supabase/tap/supabase                 # if not installed
   supabase login                                     # opens browser
   supabase link --project-ref pzoijbqsbbwyuyjinjtj
-  supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<paste from Supabase Dashboard → Settings → API → service_role key>
   supabase functions deploy delete-account
   ```
-  `SUPABASE_URL` + `SUPABASE_ANON_KEY` are populated automatically by `supabase link`. After deploy, verify with:
+  Do **not** run `supabase secrets set SUPABASE_*` — the `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` env vars are reserved and auto-injected into every Edge Function by the Supabase runtime. The CLI refuses them with "Env name cannot start with SUPABASE_" by design. After deploy, verify with:
   ```
   curl -i -X OPTIONS https://pzoijbqsbbwyuyjinjtj.functions.supabase.co/delete-account \
        -H "Origin: https://plursky.com"

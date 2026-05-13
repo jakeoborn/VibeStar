@@ -14,14 +14,15 @@
 //      get_artist_save_counts(); without (b) the user can still sign in.
 //
 // Deploy:
-//   supabase secrets set SUPABASE_URL=<your-url> \
-//                        SUPABASE_ANON_KEY=<anon> \
-//                        SUPABASE_SERVICE_ROLE_KEY=<service-role>
-//   supabase functions deploy delete-account --no-verify-jwt
+//   supabase functions deploy delete-account
 //
-// We pass --no-verify-jwt because we verify the JWT ourselves below; this
-// lets us return a clean 401 with a human-readable message instead of the
-// gateway's opaque 401.
+// The three env vars below (SUPABASE_URL, SUPABASE_ANON_KEY,
+// SUPABASE_SERVICE_ROLE_KEY) are reserved by the Supabase runtime and
+// auto-injected into every Edge Function — you do NOT (and cannot) set
+// them via `supabase secrets set`; the CLI refuses with "Env name cannot
+// start with SUPABASE_". `verify_jwt = false` lives in
+// supabase/config.toml so we can return our own clean 401 messages
+// instead of the gateway's opaque ones.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
