@@ -1,5 +1,179 @@
 # Plursky — To-Do List
 
+## ☕ MORNING PLAYBOOK — pick up here
+
+Everything below is paste-ready and ordered. Last verified all backend endpoints (Edge Function, privacy.html, Supabase REST) live + healthy as of midnight 2026-05-13.
+
+### Step 1 — re-archive (~5 min)
+
+Source change `2f94824` already pushed: iPad dropped, build bumped to 2. You just need to upload it.
+
+```
+1. Open ios/App/App.xcworkspace in Xcode (close + reopen if it was already
+   open — forces pbxproj reload).
+2. Top device dropdown -> "Any iOS Device (arm64)".
+3. Product -> Archive (~3 min).
+4. Organizer opens -> Distribute App -> App Store Connect -> Upload.
+5. Wait 10-30 min for Apple processing email.
+```
+
+### Step 2 — take 5 iPhone screenshots (~3 min)
+
+Already-booted iPhone 17 Pro Max simulator (UDID `2C7EC62E-BBED-41BB-ABD3-23388EB7F8FE`) has the latest Plursky build installed. Use Claude Desktop's computer-use to:
+
+1. Bring Simulator to front, focus iPhone 17 Pro Max.
+2. Launch Plursky if not already running.
+3. Tap through welcome wizard with any name.
+4. Capture these 5 tabs in order. Each shot = press `⌘S` in Simulator. Files save to `~/Desktop/Simulator Screenshot - … .png` at 1320×2868.
+
+   1. **HOME** — masthead, countdown card. (Reference: `screenshots/REFERENCE-home-tab.png`)
+   2. **LINEUP** — tap the **⊞ GRID** toggle in top-right first, then shot.
+   3. **MAP** — venue map view.
+   4. **MUSIC** — unconnected state showing "Match the lineup to your Spotify" is fine.
+   5. **ME** — tap "Cloud account" to **expand**, so the Sign in with Apple button is visible.
+
+5. Drag all 5 PNGs into App Store Connect → your app → iOS 6.9" Display slot.
+
+### Step 3 — Squarespace email forward (~5 min)
+
+```
+1. https://account.squarespace.com/domains -> plursky.com
+2. Email & G Suite (or Email Forwarding)
+3. + Add Forwarding Address
+   - from: hello       (just the prefix)
+   - to:   jakeoborn@yahoo.com
+4. Save. (Optional: add support -> same address as backup.)
+```
+
+Apple sends test mail to the public Support Email during review — must be live before submit.
+
+### Step 4 — fill the App Store Connect listing
+
+All paste-ready text in the section below (`📋 APP STORE LISTING TEXT — PASTE-READY`).
+
+Required toggles:
+- **Sign-In Required**: **No**
+- **Bundle ID**: `com.plursky.app`
+- **Build**: pick **Build 2** (uploaded above)
+- **Primary Category**: Music
+- **Secondary Category**: Entertainment
+- **Age Rating**: run questionnaire — all "None" except *Alcohol, Tobacco, or Drug References = Infrequent/Mild* and *User-Generated Content = Yes*. Expected outcome: **12+**.
+
+### Step 5 — Submit for Review
+
+When Build 2 finishes processing (you'll get an email), select it in the Build section, then **Add for Review** → **Submit**.
+
+Apple review takes ~24-48h. They will:
+- Test Sign in with Apple (Me → Cloud account)
+- Test DELETE ACCOUNT
+- Browse the lineup
+- Check the privacy policy URL
+- Send a test email to your support address
+
+---
+
+## 📋 APP STORE LISTING TEXT — PASTE-READY
+
+### Name
+```
+Plursky Live
+```
+
+### Subtitle (30 chars max — uses 29)
+```
+Festival companion - EDC 2026
+```
+
+### Promotional Text (170 chars max — uses 165; editable any time without resubmit)
+```
+Built for EDC Las Vegas 2026 - 250 artists, 9 stages, 3 nights. Spotify match, playlist builder, stage map, crew chat. Free, no ads, works offline at the festival.
+```
+
+### Description
+```
+Your last festival was chaos.
+
+Plursky fixes it. Built for EDC Las Vegas 2026, it turns 250 artists, nine stages, and three sleepless nights into a single clean plan you can hold in your hand.
+
+MATCH THE LINEUP TO YOUR TASTE
+Connect Spotify (PKCE - your token never leaves your device) and Plursky lights up every artist you already love across all three nights. Discovers deep cuts you didn't know you needed.
+
+BUILD YOUR PERSONAL PLAYLIST
+One tap turns your saved sets into a Spotify playlist sorted FRI to SAT to SUN by stage time. Walk in already knowing the songs.
+
+STAGE MAP + LIVE FRIENDS
+See your position, all nine stages, sunrise sets, last shuttle times - and your crew's pins in real time, scoped to a 6-character code only you share.
+
+CREW CHAT
+Group thread for whoever's holding the same code. Persistent (late joiners see the history), real-time, zero phone numbers required.
+
+OFFLINE-FIRST
+The Vegas desert eats LTE. Plursky precaches the full lineup, stage map, and your saved sets on first load - works fully offline once you're inside the festival.
+
+NO ADS, NO TRACKING, NO RESALE
+Plursky is free and stays free. We do not run ads, do not sell your data, and do not store your location anywhere - your GPS is used for the in-app map only.
+
+Privacy policy: plursky.com/privacy
+```
+
+### Keywords (100 chars max — uses 87)
+```
+lineup,vegas,rave,edm,schedule,dj sets,playlist,set times,plur,kandi,stage map,discover
+```
+
+### What's New
+```
+Initial release. Built for EDC Las Vegas 2026 - 250 artists, 9 stages, 3 nights. Spotify match, playlist build, stage map, crew chat, Sign in with Apple, offline-first.
+```
+
+### URLs
+- **Marketing URL**: `https://plursky.com`
+- **Support URL**: `https://plursky.com`
+- **Privacy Policy URL**: `https://plursky.com/privacy`
+- **Support Email** (public): `hello@plursky.com`
+
+### App Review Information
+- **Sign-In Required**: No
+- **Demo Account**: leave blank
+- **Contact Email** (internal — Apple only): `jakeoborn@yahoo.com`
+- **Contact Phone**: [your number]
+- **Notes for Reviewer**:
+  ```
+  Plursky is a free festival-companion app for EDC Las Vegas 2026 (May 15-17, 2026). No ads, no analytics, no third-party tracking. Works offline once content is precached.
+
+  CORE FEATURES (no account required):
+    - Lineup: browse all 250 artists across 9 stages, 3 nights
+    - Map: stage map with live GPS position (GPS used in-browser only, never sent to server)
+    - Save sets: tap a heart to save artists for offline reference
+    - Music tab: optional Spotify PKCE OAuth to match the lineup to your top artists. Read-only; tokens stay on device.
+
+  TO TEST SIGN IN WITH APPLE (Guideline 4.8):
+    1. Tap through the welcome wizard.
+    2. Bottom tab bar -> "ME".
+    3. Tap "Cloud account" card to expand.
+    4. Tap "Sign in with Apple" -> Face ID / Touch ID sheet appears.
+
+  TO TEST ACCOUNT DELETION (Guideline 5.1.1(v)):
+    After signing in (above), scroll to the bottom of the Cloud account card and tap "DELETE ACCOUNT" -> two-step inline confirm -> "YES, DELETE EVERYTHING". This calls a Supabase Edge Function that hard-deletes both the auth.users row and the user_data row server-side. No retention.
+
+  LOCATION USAGE:
+    Map tab uses CLLocationManager via the WebView (NSLocationWhenInUseUsageDescription set in Info.plist). Coordinates are used only to draw the user's dot on an in-app SVG map. Never transmitted to any server. See privacy policy at plursky.com/privacy.
+
+  The festival is upcoming so the Home tab shows a countdown view. During festival window (May 15-17, 2026) it shows real-time "Now playing" computed from the lineup data.
+  ```
+
+### App Privacy Questionnaire
+| Category | Declaration |
+|---|---|
+| Contact Info → Email Address | Linked to user · App Functionality |
+| Identifiers → User ID | Linked to user · App Functionality |
+| User Content → Other User Content | Linked to user · App Functionality (saved sets + notes + crew chat) |
+| Location → Precise Location | NOT linked to user · App Functionality · Not Used for Tracking |
+| Diagnostics | None |
+| Tracking | No |
+
+---
+
 ## 🚀 BEFORE FIRST APP STORE UPLOAD — hard blockers
 
 Ordered roughly in execution sequence — each step assumes the ones above it are done.
