@@ -163,7 +163,9 @@ async function sbSignInWithApple() {
       // User-cancellation should not surface as a scary error.
       const msg = e?.message || String(e);
       if (/canceled|cancelled|1001|1000/i.test(msg)) return { error: null, cancelled: true };
-      return { error: msg };
+      // Surface error code / type when available so App Review can quote
+      // back what specifically failed on their device.
+      return { error: msg, code: e?.code, type: e?.errorMessage || e?.name };
     }
   }
 
@@ -392,8 +394,17 @@ function AccountCard({ state, setState }) {
     try {
       const r = await sbSignInWithApple();
       if (r?.cancelled) return;
-      if (r?.error) setAppleErr(r.error);
+      if (r?.error) {
+        // Include error code / type when available so App Review can quote
+        // it back to us if this still fails on their device. Also log to
+        // console so Safari Web Inspector picks it up during live debug.
+        const detail = (r?.code || r?.type) ? ` [${r.code || r.type}]` : "";
+        const msg = `${r.error}${detail}`;
+        try { console.error("[plursky:apple-signin]", r); } catch {}
+        setAppleErr(msg);
+      }
     } catch (e) {
+      try { console.error("[plursky:apple-signin]", e); } catch {}
       setAppleErr(e?.message || "Sign in failed");
     } finally {
       setAppleBusy(false);
@@ -622,9 +633,22 @@ function AccountCard({ state, setState }) {
                 <div style={{
                   background: "rgba(248,113,113,0.10)",
                   border: "1px solid rgba(248,113,113,0.45)",
-                  borderRadius: 10, padding: "8px 12px", marginBottom: 10,
+                  borderRadius: 10, padding: "10px 12px", marginBottom: 10,
                   fontSize: 12, color: "#c14a4a", lineHeight: 1.45,
-                }}>{appleErr}</div>
+                }}>
+                  <div style={{ marginBottom: 6, fontWeight: 600 }}>
+                    Sign in with Apple unavailable
+                  </div>
+                  <div style={{ marginBottom: 8, opacity: 0.85, fontSize: 11, wordBreak: "break-word" }}>
+                    {appleErr}
+                  </div>
+                  <div className="mono" style={{
+                    fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
+                    color: "var(--ink)",
+                  }}>
+                    USE EMAIL MAGIC LINK BELOW ↓
+                  </div>
+                </div>
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                 <div style={{ flex: 1, height: 1, background: "var(--line-2)" }}/>
