@@ -709,6 +709,265 @@ function IAmAtSheet({ onClose, initialStage, onStatusSet }) {
   );
 }
 
+// ── Share Location sheet ─────────────────────────────────────
+// Front door for broadcasting *anything* about your location to crew —
+// replaces the old one-tap "Crew live" toggle with a Fi-style consent
+// moment. Bundles: big start/stop pill, what's-shared checklist (GPS
+// + stage), battery cost callout, and an AllTrails-style auto-expire
+// picker so sharing dies on its own.
+
+// Next sunrise epoch (UTC ms) computed from FESTIVAL_CONFIG.sunTimes.
+// Falls back to festival end if we're past the last sunrise of the run.
+function _nextSunriseEpochMs() {
+  const now = Date.now();
+  const dayKeys = Object.keys(FESTIVAL_CONFIG.dayDates || {}).sort();
+  for (const k of dayKeys) {
+    const d = FESTIVAL_CONFIG.dayDates[k];
+    const rise = (FESTIVAL_CONFIG.sunTimes?.[k]?.rise) || "05:30";
+    const [h, m] = rise.split(":").map(Number);
+    const epoch = (d.midnightUtc || 0) + h * 3600000 + m * 60000;
+    if (epoch > now + 60000) return epoch;       // at least a minute out
+  }
+  return FESTIVAL_CONFIG.endMs || (now + 4 * 3600000);
+}
+
+const _SHARE_EXPIRY_OPTIONS = [
+  { key: "1h",       label: "1H",       compute: () => Date.now() + 60 * 60 * 1000 },
+  { key: "4h",       label: "4H",       compute: () => Date.now() + 4 * 60 * 60 * 1000 },
+  { key: "sunrise",  label: "SUNRISE",  compute: _nextSunriseEpochMs },
+  { key: "festival", label: "FESTIVAL", compute: () => FESTIVAL_CONFIG.endMs || (Date.now() + 24 * 3600000) },
+];
+
+function _expiryKeyFromState(shareState) {
+  if (!shareState?.expiresAt) return "4h";
+  const remain = shareState.expiresAt - Date.now();
+  if (remain < 90 * 60 * 1000) return "1h";
+  if (remain < 5 * 60 * 60 * 1000) return "4h";
+  if (shareState.expiresAt < (FESTIVAL_CONFIG.endMs || Infinity) - 60000) return "sunrise";
+  return "festival";
+}
+
+function ShareLocationSheet({
+  onClose, shareState, crewCount, crewCode,
+  gpsPos, gpsStatus, myStatusStage,
+  onSave, onStop,
+}) {
+  const [includeGps,   setIncludeGps]   = React.useState(shareState?.includeGps   ?? true);
+  const [includeStage, setIncludeStage] = React.useState(shareState?.includeStage ?? true);
+  const [expiryKey,    setExpiryKey]    = React.useState(() => _expiryKeyFromState(shareState));
+
+  const active = !!shareState?.active &&
+                 (!shareState?.expiresAt || shareState.expiresAt > Date.now());
+  const isDenied      = gpsStatus === "denied";
+  const isUnavailable = gpsStatus === "unavailable";
+  const canShareGps   = !isDenied && !isUnavailable;
+  const stage         = myStatusStage ? STAGES.find(s => s.id === myStatusStage) : null;
+
+  const handleStart = () => {
+    if (!includeGps && !includeStage) return;
+    const opt = _SHARE_EXPIRY_OPTIONS.find(o => o.key === expiryKey) || _SHARE_EXPIRY_OPTIONS[1];
+    onSave({
+      active: true,
+      includeGps: includeGps && canShareGps,
+      includeStage,
+      expiresAt: opt.compute(),
+    });
+    onClose();
+  };
+
+  const handleStop = () => {
+    onStop();
+    onClose();
+  };
+
+  const _fmtRemaining = () => {
+    if (!shareState?.expiresAt) return "";
+    const mins = Math.max(0, Math.round((shareState.expiresAt - Date.now()) / 60000));
+    if (mins < 60) return `${mins}m left`;
+    return `${Math.round(mins / 60)}h left`;
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(13,10,8,0.55)",
+      zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460,
+        background: "var(--paper)", color: "var(--ink)",
+        borderRadius: "16px 16px 0 0",
+        padding: "16px 18px 28px",
+        boxShadow: "0 -8px 32px rgba(0,0,0,0.35)",
+        maxHeight: "90vh", overflowY: "auto",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: 1.5, fontWeight: 800 }}>SHARE WITH CREW</span>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "none", color: "var(--muted)",
+            fontSize: 18, cursor: "pointer", lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        {/* Crew context line */}
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", fontWeight: 700,
+          marginBottom: 12,
+        }}>
+          {crewCode
+            ? <>● {crewCount || 0} IN CREW · {crewCode}</>
+            : <>NO CREW YET — JOIN ONE FIRST</>
+          }
+        </div>
+
+        {/* Big status pill — visual anchor */}
+        <div style={{
+          background: active ? "var(--ember)" : "var(--paper-2)",
+          color: active ? "#fff" : "var(--ink)",
+          border: active ? "none" : "1px solid var(--line-2)",
+          borderRadius: 14, padding: "14px 16px",
+          display: "flex", alignItems: "center", gap: 10,
+          marginBottom: 14,
+        }}>
+          <span style={{
+            width: 12, height: 12, borderRadius: 12,
+            background: active ? "rgba(255,255,255,0.92)" : "var(--line-2)",
+            animation: active ? "pulse 1.6s infinite" : "none",
+          }}/>
+          <span className="serif" style={{ fontSize: 17, flex: 1 }}>
+            {active ? "Sharing now" : "Not sharing"}
+          </span>
+          {active && (
+            <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, opacity: 0.85 }}>
+              {_fmtRemaining()}
+            </span>
+          )}
+        </div>
+
+        {/* What's shared */}
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700,
+          marginBottom: 8,
+        }}>WHAT'S SHARED</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          <label style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 10,
+            background: "var(--paper-2)",
+            cursor: canShareGps ? "pointer" : "not-allowed",
+            opacity: canShareGps ? 1 : 0.55,
+          }}>
+            <input type="checkbox"
+              checked={includeGps && canShareGps}
+              disabled={!canShareGps}
+              onChange={(e) => setIncludeGps(e.target.checked)}
+              style={{ accentColor: "var(--ember)", width: 16, height: 16 }}
+            />
+            <span style={{ fontSize: 18 }}>📍</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500 }}>My GPS location</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                {gpsStatus === "live" && gpsPos
+                  ? `LIVE · ±${Math.round(gpsPos.accuracy || 0)}m`
+                  : gpsStatus === "locating" ? "FINDING…"
+                  : gpsStatus === "denied"   ? "DENIED IN BROWSER"
+                  : gpsStatus === "unavailable" ? "UNSUPPORTED"
+                  : "OFF"}
+              </div>
+            </div>
+          </label>
+
+          <label style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 10,
+            background: "var(--paper-2)", cursor: "pointer",
+          }}>
+            <input type="checkbox"
+              checked={includeStage}
+              onChange={(e) => setIncludeStage(e.target.checked)}
+              style={{ accentColor: "var(--ember)", width: 16, height: 16 }}
+            />
+            <span style={{ fontSize: 18 }}>🎪</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500 }}>Current stage</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2 }}>
+                {stage ? stage.name.toUpperCase() : "NOT SET — TAP “I'M AT” FIRST"}
+              </div>
+            </div>
+          </label>
+        </div>
+
+        {/* GPS-denied inline banner */}
+        {includeGps && isDenied && (
+          <div style={{
+            padding: "8px 11px", borderRadius: 999,
+            background: "rgba(193,74,74,0.10)", border: "1px solid rgba(193,74,74,0.35)",
+            marginBottom: 12,
+          }}>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "#c14a4a", fontWeight: 700 }}>
+              GPS DENIED · ENABLE LOCATION IN BROWSER
+            </span>
+          </div>
+        )}
+
+        {/* Auto-expire picker */}
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700,
+          marginBottom: 8,
+        }}>AUTO-EXPIRE AFTER</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {_SHARE_EXPIRY_OPTIONS.map(opt => {
+            const on = expiryKey === opt.key;
+            return (
+              <button key={opt.key} onClick={() => setExpiryKey(opt.key)} style={{
+                flex: 1, padding: "8px 4px", borderRadius: 999,
+                background: on ? "var(--ink)" : "var(--paper-2)",
+                color: on ? "var(--paper)" : "var(--ink)",
+                border: on ? "none" : "1px solid var(--line-2)",
+                fontFamily: "Geist Mono, monospace", fontSize: 9,
+                letterSpacing: 1.1, fontWeight: 700, cursor: "pointer",
+              }}>{opt.label}</button>
+            );
+          })}
+        </div>
+
+        {/* Battery callout */}
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 1.1, color: "var(--muted)",
+          marginBottom: 14, textAlign: "center",
+        }}>
+          ⚡ USES ~1% MORE BATTERY PER HOUR
+        </div>
+
+        {/* Primary CTA */}
+        {active ? (
+          <button onClick={handleStop} style={{
+            width: "100%", padding: "12px 16px", borderRadius: 999,
+            background: "var(--paper-2)", color: "var(--ink)",
+            border: "1px solid var(--line-2)", cursor: "pointer",
+            fontFamily: "Geist Mono, monospace", fontSize: 10,
+            letterSpacing: 1.3, fontWeight: 700,
+          }}>STOP SHARING</button>
+        ) : (
+          <button onClick={handleStart}
+            disabled={(!includeGps || !canShareGps) && !includeStage}
+            style={{
+              width: "100%", padding: "12px 16px", borderRadius: 999,
+              background: ((!includeGps || !canShareGps) && !includeStage)
+                ? "var(--paper-2)" : "var(--ember)",
+              color: ((!includeGps || !canShareGps) && !includeStage)
+                ? "var(--muted)" : "#fff",
+              border: "none",
+              cursor: ((!includeGps || !canShareGps) && !includeStage) ? "default" : "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 10,
+              letterSpacing: 1.3, fontWeight: 700,
+            }}>START SHARING</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Saved-set reminders ──────────────────────────────────────
 // 15-min-before reminder hook. Fires a Web Notification when a saved set
 // is about to start. Two layers:
@@ -1033,10 +1292,22 @@ function MapScreen({ state, setState }) {
   });
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
+  const [shareOpen, setShareOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
   const [myStatusStage, setMyStatusStage] = React.useState(() => getMyStatus()?.stage || null);
-  const [crewLive, setCrewLive] = React.useState(false);
+  // shareState replaces the legacy `crewLive` boolean — single source of
+  // truth for "what am I broadcasting and until when". Persisted so the
+  // share survives app reloads but always respects the expiresAt watchdog.
+  const [shareState, setShareState] = React.useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("plursky_share_state") || "null");
+      if (s && s.expiresAt && s.expiresAt <= Date.now()) return null; // expired
+      return s;
+    } catch { return null; }
+  });
+  const isSharing = !!shareState?.active &&
+                    (!shareState?.expiresAt || shareState.expiresAt > Date.now());
   const [crewSnap, setCrewSnap] = React.useState(() => sbGetPresSnap());
   const crewName = React.useMemo(() => {
     try { return localStorage.getItem("plursky_display_name") || localStorage.getItem("user_name") || ""; } catch { return ""; }
@@ -1187,15 +1458,50 @@ function MapScreen({ state, setState }) {
       }).filter(Boolean);
   }, [crewSnap, myPresId]);
 
-  const toggleCrewLive = () => {
-    if (crewLive) {
-      sbPresenceLeave();
-      setCrewLive(false);
-    } else {
-      sbPresenceJoin({ name: crewName || "Anon", stageId: myStatusStage || STAGES[0].id });
-      setCrewLive(true);
-    }
-  };
+  // Persist shareState whenever it changes (or clear it when nulled).
+  React.useEffect(() => {
+    try {
+      if (shareState) localStorage.setItem("plursky_share_state", JSON.stringify(shareState));
+      else localStorage.removeItem("plursky_share_state");
+    } catch {}
+  }, [shareState]);
+
+  // Drive Supabase presence from shareState. Joining is once-per-active-cycle
+  // so we don't churn the channel on every GPS tick; pos/stage updates flow
+  // through dedicated effects below.
+  React.useEffect(() => {
+    if (!isSharing) { sbPresenceLeave(); return; }
+    const stageId = shareState.includeStage ? (myStatusStage || STAGES[0].id) : null;
+    const gps = (shareState.includeGps && gpsPos)
+      ? { lat: gpsPos.lat, lng: gpsPos.lng, accuracy: gpsPos.accuracy }
+      : undefined;
+    sbPresenceJoin({ name: crewName || "Anon", stageId, gps });
+    return () => { /* leave handled by the next effect run or unmount */ };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSharing]);
+
+  // GPS heartbeat — re-broadcast position as it changes while sharing.
+  React.useEffect(() => {
+    if (!isSharing || !shareState?.includeGps || !gpsPos) return;
+    sbPresenceUpdate({ gps: { lat: gpsPos.lat, lng: gpsPos.lng, accuracy: gpsPos.accuracy } });
+  }, [isSharing, shareState?.includeGps, gpsPos?.lat, gpsPos?.lng, gpsPos?.accuracy]);
+
+  // Stage updates flow through too — selecting a new stage in "I'm at"
+  // re-broadcasts without needing to re-open the share sheet.
+  React.useEffect(() => {
+    if (!isSharing || !shareState?.includeStage) return;
+    sbPresenceUpdate({ stageId: myStatusStage || STAGES[0].id });
+  }, [isSharing, shareState?.includeStage, myStatusStage]);
+
+  // Auto-expiry watchdog. Schedules a one-shot timer for the remaining
+  // window so we wake exactly when sharing should stop, without polling.
+  React.useEffect(() => {
+    if (!shareState?.active || !shareState.expiresAt) return;
+    const remaining = shareState.expiresAt - Date.now();
+    if (remaining <= 0) { setShareState(null); return; }
+    const id = setTimeout(() => setShareState(null), Math.min(remaining, 2147483000));
+    return () => clearTimeout(id);
+  }, [shareState?.active, shareState?.expiresAt]);
 
   const stage = selectedStage ? STAGES.find(s => s.id === selectedStage) : null;
   const nowAtStage = stage ? ARTISTS.find(a => a.stage === stage.id && a.day === NOW.day) : null;
@@ -1533,11 +1839,11 @@ function MapScreen({ state, setState }) {
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             ⋯
-            {(crewLive || myStatusStage) && (
+            {(isSharing || myStatusStage) && (
               <span style={{
                 position: "absolute", top: -2, right: -2,
                 width: 8, height: 8, borderRadius: 8,
-                background: crewLive
+                background: isSharing
                   ? "var(--success)"
                   : (myStatusStage ? (STAGES.find(s => s.id === myStatusStage)?.color || "var(--ember)") : "var(--ember)"),
                 border: "1.5px solid var(--paper)",
@@ -1628,23 +1934,23 @@ function MapScreen({ state, setState }) {
                 <span style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500, flex: 1 }}>Ping code</span>
                 <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", fontWeight: 700 }}>SHARE / DROP</span>
               </button>
-              <button onClick={() => { toggleCrewLive(); setMoreOpen(false); }} style={{
+              <button onClick={() => { setShareOpen(true); setMoreOpen(false); }} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 10,
                 padding: "9px 11px",
-                background: crewLive ? "rgba(45,122,85,0.10)" : "transparent",
+                background: isSharing ? "rgba(45,122,85,0.10)" : "transparent",
                 border: "none", borderRadius: 8, cursor: "pointer",
                 color: "var(--ink)", textAlign: "left",
               }}>
                 <span style={{
                   width: 14, height: 14, borderRadius: 14,
-                  background: crewLive ? "var(--success)" : "var(--line-2)",
-                  animation: crewLive ? "pulse 1.6s infinite" : "none",
+                  background: isSharing ? "var(--success)" : "var(--line-2)",
+                  animation: isSharing ? "pulse 1.6s infinite" : "none",
                 }}/>
                 <span style={{ fontFamily: "Geist", fontSize: 13, fontWeight: 500, flex: 1 }}>
-                  Crew live{crewFriends.length > 0 ? ` · ${crewFriends.length}` : ""}
+                  Share with crew{crewFriends.length > 0 ? ` · ${crewFriends.length}` : ""}
                 </span>
-                <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: crewLive ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
-                  {crewLive ? "ON" : "OFF"}
+                <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: isSharing ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+                  {isSharing ? "ON" : "OFF"}
                 </span>
               </button>
               {(() => {
@@ -1718,12 +2024,25 @@ function MapScreen({ state, setState }) {
           onClose={() => setIAmAtOpen(false)}
           onStatusSet={(stageId) => {
             setMyStatusStage(stageId);
-            if (crewLive) sbPresenceUpdate(stageId);
-            else {
-              sbPresenceJoin({ name: crewName || "Anon", stageId });
-              setCrewLive(true);
-            }
+            // If already sharing, the dedicated stage-update effect will
+            // re-broadcast on the next render. We no longer auto-start
+            // broadcasting from "I'm at" — the user goes through the
+            // Share With Crew sheet's consent moment for that.
           }}
+        />
+      )}
+
+      {shareOpen && (
+        <ShareLocationSheet
+          shareState={shareState}
+          crewCount={crewFriends.length}
+          crewCode={sbGetOrCreateGroupCode?.() || ""}
+          gpsPos={gpsPos}
+          gpsStatus={gpsStatus}
+          myStatusStage={myStatusStage}
+          onClose={() => setShareOpen(false)}
+          onSave={(s) => setShareState(s)}
+          onStop={() => setShareState(null)}
         />
       )}
     </Screen>

@@ -668,7 +668,7 @@ function _presNotify() {
   _presCbs.forEach(fn => { try { fn(s); } catch {} });
 }
 
-function sbPresenceJoin({ name, stageId }) {
+function sbPresenceJoin({ name, stageId, gps }) {
   if (!_sb) return;
   _presMyId = _myPresId();
   const color = _presColor(_presMyId);
@@ -691,15 +691,22 @@ function sbPresenceJoin({ name, stageId }) {
       if (status === "SUBSCRIBED") {
         let pingCode;
         try { pingCode = localStorage.getItem("ping_code") || undefined; } catch {}
-        await _presCh.track({ name, stageId, color, ts: Date.now(), pingCode });
+        // `gps` is { lat, lng, accuracy } when the user opts into live-location
+        // sharing in the Share With Crew sheet; otherwise undefined and clients
+        // fall back to rendering just the stageId.
+        await _presCh.track({ name, stageId, color, ts: Date.now(), pingCode, gps });
       }
     });
 }
 
-async function sbPresenceUpdate(stageId) {
+// Accepts either a plain stageId (legacy, kept so old call sites still work)
+// or a partial { stageId?, gps? } update merged onto the current state.
+async function sbPresenceUpdate(arg) {
   if (!_presCh || !_presMyId) return;
   const cur = (_presCh.presenceState()[_presMyId] || [])[0];
-  if (cur) await _presCh.track({ ...cur, stageId, ts: Date.now() });
+  if (!cur) return;
+  const patch = typeof arg === "string" ? { stageId: arg } : (arg || {});
+  await _presCh.track({ ...cur, ...patch, ts: Date.now() });
 }
 
 // Re-join presence on the channel matching the current crew code. Called
