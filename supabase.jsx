@@ -1138,17 +1138,104 @@ async function sbCrewFetchMessages(code, limit = 50) {
   return (data || []).slice().reverse(); // ascending for render
 }
 
+// ─── Offline outbox ─────────────────────────────────────────────
+// Persistent queue for outgoing writes that survives dead-zone moments
+// at the festival. Scoped to crew_messages — DM broadcasts and presence
+// pings are ephemeral by design, so they stay best-effort. Drains on:
+//   • app load (if navigator.onLine)
+//   • window 'online' event
+//   • 30-second safety-net interval (catches phones that miss the event)
+const OUTBOX_KEY = "plursky_outbox_v1";
+
+function sbOutboxList() {
+  try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); } catch { return []; }
+}
+function sbOutboxAdd(entry) {
+  const list = sbOutboxList();
+  list.push({
+    id: Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+    ts: Date.now(),
+    attempts: 0,
+    ...entry,
+  });
+  try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch {}
+}
+function sbOutboxRemove(id) {
+  const list = sbOutboxList().filter(e => e.id !== id);
+  try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch {}
+}
+function sbOutboxBumpAttempts(id) {
+  const list = sbOutboxList();
+  const e = list.find(x => x.id === id);
+  if (e) { e.attempts = (e.attempts || 0) + 1; }
+  try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch {}
+}
+
+// Raw insert that does NOT re-queue on failure. Used by the drainer to
+// avoid an infinite re-queue loop.
+async function _sbCrewInsertRaw(code, pid, name, body) {
+  if (!_sb) return { error: "no_supabase" };
+  try {
+    const { error } = await _sb.from("crew_messages").insert({
+      crew_code: code, sender_pid: pid, sender_name: name || "Friend", body,
+    });
+    return { error: error?.message || null };
+  } catch (e) {
+    return { error: e?.message || "network" };
+  }
+}
+
+let _outboxDraining = false;
+async function sbOutboxDrain() {
+  if (_outboxDraining) return;
+  _outboxDraining = true;
+  try {
+    const list = sbOutboxList();
+    for (const e of list) {
+      if (e.type !== "crew_msg") continue;
+      const { error } = await _sbCrewInsertRaw(e.code, e.pid, e.name, e.body);
+      if (!error) {
+        sbOutboxRemove(e.id);
+      } else {
+        sbOutboxBumpAttempts(e.id);
+        // Stop on first failure — likely still offline. Try again later.
+        break;
+      }
+    }
+  } finally {
+    _outboxDraining = false;
+  }
+}
+
+let _outboxInitialized = false;
+function sbOutboxInit() {
+  if (typeof window === "undefined" || _outboxInitialized) return;
+  _outboxInitialized = true;
+  // Initial drain shortly after boot once Supabase has had a tick to init.
+  setTimeout(() => { if (navigator.onLine) sbOutboxDrain(); }, 800);
+  window.addEventListener("online", () => sbOutboxDrain());
+  // Safety-net poll — covers cases where the browser misses the 'online'
+  // event (iOS Safari has been observed to do this when waking from sleep).
+  setInterval(() => { if (navigator.onLine) sbOutboxDrain(); }, 30000);
+}
+
 async function sbCrewSendMessage(code, pid, name, body) {
-  if (!_sb || !code) return { error: "no_supabase" };
+  if (!code) return { error: "no_code" };
   const trimmed = (body || "").trim().slice(0, 500);
   if (!trimmed) return { error: "empty" };
-  const { error } = await _sb.from("crew_messages").insert({
-    crew_code: code,
-    sender_pid: pid,
-    sender_name: name || "Friend",
-    body: trimmed,
-  });
-  return { error: error?.message || null };
+  // No Supabase yet — queue and let the drainer pick it up later.
+  if (!_sb) {
+    sbOutboxAdd({ type: "crew_msg", code, pid, name, body: trimmed });
+    return { error: "queued" };
+  }
+  const { error } = await _sbCrewInsertRaw(code, pid, name, trimmed);
+  if (error) {
+    // Likely offline or Supabase blip. Persist for retry; caller still
+    // sees an error so the optimistic stub can mark itself accordingly,
+    // but the message isn't lost.
+    sbOutboxAdd({ type: "crew_msg", code, pid, name, body: trimmed });
+  }
+  return { error };
 }
 
 // Subscribe to INSERTs scoped to a crew_code. Calls onMessage(row) for each
@@ -1545,4 +1632,5 @@ Object.assign(window, {
   FriendsCard, CrewCard,
   sbGetOrCreateGroupCode, sbGroupJoin, sbGroupLeave, sbGroupUpdate, sbGetCrewCount,
   sbCrewFetchMessages, sbCrewSendMessage, sbCrewSubscribeMessages,
+  sbOutboxList, sbOutboxDrain, sbOutboxInit,
 });

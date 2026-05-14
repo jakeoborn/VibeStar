@@ -339,6 +339,11 @@ function App() {
     window.plurskyOpenOnboarding = () => setShowOnboarding(true);
     return () => { delete window.plurskyOpenOnboarding; };
   }, []);
+  // Drain the outbox (queued crew messages from offline moments) on mount,
+  // on reconnect, and every 30s. Idempotent — safe to call once at startup.
+  React.useEffect(() => {
+    try { sbOutboxInit?.(); } catch {}
+  }, []);
   const { perm: notifPerm, showLocal } = useNotifications();
   const [state, setState] = React.useState(() => {
     let saved;
