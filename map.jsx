@@ -2696,9 +2696,67 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       mapRef.current = map;
 
-      // Style-dependent layers (route line, 3D buildings) get torn down on
-      // setStyle(), so we re-add them every time a new style finishes loading.
+      // GeoJSON Polygon with a huge outer ring + a hole at the LVMS festival
+      // footprint. Painted opaque on top of the basemap, this "removes
+      // everything that isn't EDC" — Vegas Boulevard, surrounding parking
+      // lots, casinos, the airport, etc. all get masked. The festival
+      // footprint shows through the hole.
+      const edcClipFeature = () => {
+        const b = FESTIVAL_CONFIG.venue.festivalBounds;
+        return {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              // Outer ring (CCW per MapLibre convention for outer)
+              [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
+              // Inner ring (CW) — the LVMS festival footprint
+              [
+                [b.west, b.north], [b.east, b.north],
+                [b.east, b.south], [b.west, b.south],
+                [b.west, b.north],
+              ],
+            ],
+          },
+        };
+      };
+      // Polygon of *just* the festival footprint, used as a `within` filter
+      // to constrain the 3D building extrusion layer.
+      const festivalFootprint = () => {
+        const b = FESTIVAL_CONFIG.venue.festivalBounds;
+        return {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [b.west, b.north], [b.east, b.north],
+              [b.east, b.south], [b.west, b.south],
+              [b.west, b.north],
+            ]],
+          },
+        };
+      };
+
+      // Style-dependent layers (clip mask, 3D buildings, route line) get torn
+      // down on setStyle(), so we re-add them every time a new style finishes
+      // loading. Clip layer goes first so all subsequent overlays paint on
+      // top of it.
       const setupOverlayLayers = () => {
+        if (!map.getSource("edc-clip")) {
+          map.addSource("edc-clip", { type: "geojson", data: edcClipFeature() });
+        }
+        if (!map.getLayer("edc-clip")) {
+          map.addLayer({
+            id: "edc-clip",
+            type: "fill",
+            source: "edc-clip",
+            paint: {
+              "fill-color": "#0a0618",          // deep night-sky, matches RealMap bg
+              "fill-opacity": 1,
+              "fill-antialias": true,
+            },
+          });
+        }
         if (!map.getSource("route")) {
           map.addSource("route", {
             type: "geojson",
@@ -2717,9 +2775,9 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
             },
           });
         }
-        // 3D building extrusions — only on vector styles. The Liberty style
-        // ships a `building` source-layer in the OMT schema; raster satellite
-        // styles don't, so the addLayer would no-op (try/catch protects).
+        // 3D building extrusions — only on vector styles. Filtered to inside
+        // the festival footprint so surrounding casino + airport buildings
+        // don't extrude through our clip mask.
         if (!map.getLayer("plursky-3d-buildings")) {
           try {
             const sources = map.getStyle().sources || {};
@@ -2731,6 +2789,7 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
                 "source-layer": "building",
                 type: "fill-extrusion",
                 minzoom: 13,
+                filter: ["within", festivalFootprint()],
                 paint: {
                   "fill-extrusion-color": [
                     "interpolate", ["linear"], ["coalesce", ["get", "render_height"], 5],
