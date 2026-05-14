@@ -1347,6 +1347,41 @@ async function sbLiveShareFetch(token) {
   return data;
 }
 
+// ─── Poll / vote message protocol ─────────────────────────────
+// Polls and votes piggyback on crew_messages so we don't need a new
+// table — keeps the surface small for App Store review. Format:
+//
+//   poll:  [POLL abc12345] <question> || <opt1> || <opt2> || …
+//   vote:  [VOTE abc12345] <option label>
+//
+// Each user's *latest* vote wins (changing your mind is normal at
+// 3 AM). Vote messages are filtered out of the regular thread render
+// since they'd be repetitive noise.
+const POLL_RE = /^\[POLL ([a-z0-9]{6,12})\]\s+(.+?)\s+\|\|\s+(.+)$/;
+const VOTE_RE = /^\[VOTE ([a-z0-9]{6,12})\]\s+(.+)$/;
+
+function _parsePoll(body) {
+  const m = POLL_RE.exec(body || "");
+  if (!m) return null;
+  const opts = m[3].split("||").map(s => s.trim()).filter(Boolean);
+  if (opts.length < 2) return null;
+  return { id: m[1], question: m[2].trim(), options: opts };
+}
+function _parseVote(body) {
+  const m = VOTE_RE.exec(body || "");
+  if (!m) return null;
+  return { pollId: m[1], option: m[2].trim() };
+}
+function _newPollId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+function _formatPollBody(id, question, options) {
+  return `[POLL ${id}] ${question} || ${options.join(" || ")}`;
+}
+function _formatVoteBody(pollId, option) {
+  return `[VOTE ${pollId}] ${option}`;
+}
+
 function CrewChat({ code, myPid, myName }) {
   const [msgs,   setMsgs]   = React.useState([]);
   const [input,  setInput]  = React.useState("");
@@ -1396,6 +1431,59 @@ function CrewChat({ code, myPid, myName }) {
     const el = threadRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs.length]);
+
+  // Polls + vote tallies derived from msgs. Each user's *latest* VOTE
+  // wins, ordered by created_at. Polls and votes are filtered out of
+  // the regular message list at render time so the thread stays tidy.
+  const pollState = React.useMemo(() => {
+    const polls = {};
+    msgs.forEach(m => {
+      const p = _parsePoll(m.body);
+      if (p) polls[p.id] = {
+        ...p, author_pid: m.sender_pid, author_name: m.sender_name, ts: m.created_at,
+        votes: polls[p.id]?.votes || {},
+      };
+    });
+    msgs.forEach(m => {
+      const v = _parseVote(m.body);
+      if (!v) return;
+      if (!polls[v.pollId]) return; // orphan vote (poll not yet seen)
+      polls[v.pollId].votes[m.sender_pid] = { option: v.option, ts: m.created_at, name: m.sender_name };
+    });
+    return polls;
+  }, [msgs]);
+
+  // Inline poll-creator state. Default question matches the most common
+  // festival use case; user can edit before sending.
+  const [pollOpen, setPollOpen] = React.useState(false);
+  const [pollQ,    setPollQ]    = React.useState("Which stage next?");
+  const [pollStageIds, setPollStageIds] = React.useState([]);
+
+  const stagesById = React.useMemo(() => {
+    const map = {};
+    (window.STAGES || []).forEach(s => { map[s.id] = s; });
+    return map;
+  }, []);
+
+  const togglePollStage = (id) => {
+    setPollStageIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const sendPoll = async () => {
+    const q = pollQ.trim().slice(0, 120);
+    const opts = pollStageIds.map(id => stagesById[id]?.name).filter(Boolean);
+    if (!q || opts.length < 2) return;
+    const id = _newPollId();
+    const body = _formatPollBody(id, q, opts);
+    setPollOpen(false);
+    setPollStageIds([]);
+    await sendBody(body, null);
+  };
+
+  const castVote = async (pollId, option) => {
+    if (busy) return;
+    await sendBody(_formatVoteBody(pollId, option), null);
+  };
 
   const sendBody = async (body, replaceStubId) => {
     setBusy(true);
@@ -1468,7 +1556,88 @@ function CrewChat({ code, myPid, myName }) {
             <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>Be the first to drop a message.</div>
           </div>
         ) : msgs.map(m => {
+          // Hide raw VOTE messages — their data is reflected in the poll
+          // tally card. Poll messages render as a special card.
+          if (_parseVote(m.body)) return null;
+          const parsedPoll = _parsePoll(m.body);
           const mine = m.sender_pid === myPid;
+          if (parsedPoll) {
+            const live = pollState[parsedPoll.id];
+            const tally = {};
+            let totalVotes = 0;
+            parsedPoll.options.forEach(opt => { tally[opt] = 0; });
+            const myVote = live?.votes?.[myPid]?.option;
+            if (live) {
+              Object.values(live.votes).forEach(v => {
+                if (tally[v.option] != null) { tally[v.option] += 1; totalVotes += 1; }
+              });
+            }
+            return (
+              <div key={m.id} style={{
+                background: "var(--paper-2)", borderRadius: 14,
+                padding: "12px 14px", margin: "4px 0",
+                border: "1px solid var(--line)",
+              }}>
+                <div className="mono" style={{
+                  fontSize: 8.5, letterSpacing: 1.2, color: "var(--muted)",
+                  fontWeight: 700, marginBottom: 6,
+                }}>
+                  POLL · {(m.sender_name || "Friend").toUpperCase()}
+                </div>
+                <div className="serif" style={{ fontSize: 16, marginBottom: 10 }}>
+                  {parsedPoll.question}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {parsedPoll.options.map(opt => {
+                    const count = tally[opt] || 0;
+                    const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+                    const onMine = myVote === opt;
+                    return (
+                      <button key={opt} onClick={() => castVote(parsedPoll.id, opt)} style={{
+                        position: "relative", overflow: "hidden",
+                        padding: "8px 12px", borderRadius: 10,
+                        background: "var(--paper)",
+                        border: onMine ? "1px solid var(--ember)" : "1px solid var(--line-2)",
+                        cursor: "pointer", textAlign: "left",
+                        display: "flex", alignItems: "center", gap: 8,
+                        color: "var(--ink)",
+                      }}>
+                        {/* Fill bar background (count proportion) */}
+                        <div style={{
+                          position: "absolute", left: 0, top: 0, bottom: 0,
+                          width: `${pct}%`,
+                          background: onMine ? "rgba(232,93,46,0.16)" : "rgba(123,61,154,0.12)",
+                          transition: "width 0.3s",
+                        }}/>
+                        <span style={{
+                          position: "relative", width: 14, height: 14, borderRadius: 14,
+                          border: onMine ? "4px solid var(--ember)" : "1.5px solid var(--line-2)",
+                          background: onMine ? "var(--paper)" : "transparent",
+                          flexShrink: 0,
+                        }}/>
+                        <span style={{ position: "relative", flex: 1, fontFamily: "Geist", fontSize: 13, fontWeight: 500 }}>
+                          {opt}
+                        </span>
+                        <span className="mono" style={{
+                          position: "relative",
+                          fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
+                          color: count > 0 ? "var(--ink)" : "var(--muted)",
+                        }}>
+                          {count > 0 ? `${count} · ${pct}%` : "—"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mono" style={{
+                  fontSize: 8, letterSpacing: 0.8, color: "var(--muted)",
+                  marginTop: 8, textAlign: "right",
+                }}>
+                  {totalVotes} {totalVotes === 1 ? "VOTE" : "VOTES"} · {fmtTime(m.created_at)}
+                </div>
+              </div>
+            );
+          }
           return (
             <div key={m.id} style={{
               display: "flex", flexDirection: "column",
@@ -1498,7 +1667,68 @@ function CrewChat({ code, myPid, myName }) {
           );
         })}
       </div>
+      {pollOpen && (
+        <div style={{
+          background: "var(--paper-2)", border: "1px solid var(--line-2)",
+          borderRadius: 12, padding: "10px 12px", marginBottom: 8,
+          display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700 }}>
+            NEW POLL
+          </div>
+          <input value={pollQ} onChange={e => setPollQ(e.target.value)} maxLength={120}
+            style={{
+              padding: "8px 10px", borderRadius: 8,
+              background: "var(--paper)", border: "1px solid var(--line-2)",
+              fontFamily: "Geist", fontSize: 13, color: "var(--ink)", outline: "none",
+            }}/>
+          <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.1, color: "var(--muted)", fontWeight: 700 }}>
+            PICK 2–6 STAGES
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+            {(window.STAGES || []).map(s => {
+              const on = pollStageIds.includes(s.id);
+              return (
+                <button key={s.id} onClick={() => togglePollStage(s.id)} style={{
+                  padding: "6px 4px", borderRadius: 8,
+                  background: on ? s.color : "var(--paper)",
+                  color: on ? "#fff" : "var(--ink)",
+                  border: on ? "none" : "1px solid var(--line-2)",
+                  fontFamily: "Geist Mono, monospace", fontSize: 8, letterSpacing: 0.8,
+                  fontWeight: on ? 700 : 500, cursor: "pointer",
+                }}>{s.short}</button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => { setPollOpen(false); setPollStageIds([]); }} style={{
+              flex: 1, padding: "8px 10px", borderRadius: 999,
+              background: "var(--paper)", color: "var(--ink)",
+              border: "1px solid var(--line-2)", cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+            }}>CANCEL</button>
+            <button
+              disabled={!pollQ.trim() || pollStageIds.length < 2 || pollStageIds.length > 6 || busy}
+              onClick={sendPoll} style={{
+              flex: 1, padding: "8px 10px", borderRadius: 999,
+              background: pollQ.trim() && pollStageIds.length >= 2 && pollStageIds.length <= 6 ? "var(--ember)" : "var(--paper)",
+              color: pollQ.trim() && pollStageIds.length >= 2 && pollStageIds.length <= 6 ? "#fff" : "var(--muted)",
+              border: pollQ.trim() && pollStageIds.length >= 2 && pollStageIds.length <= 6 ? "none" : "1px solid var(--line-2)",
+              cursor: pollQ.trim() && pollStageIds.length >= 2 && pollStageIds.length <= 6 ? "pointer" : "default",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+            }}>SEND POLL</button>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => setPollOpen(o => !o)} title="Create a poll" aria-label="Poll" style={{
+          padding: "9px 11px", borderRadius: 10,
+          background: pollOpen ? "var(--ink)" : "var(--paper-2)",
+          color: pollOpen ? "var(--paper)" : "var(--ink)",
+          border: pollOpen ? "none" : "1px solid var(--line-2)",
+          cursor: "pointer",
+          fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.1, fontWeight: 700,
+        }}>📊</button>
         <input
           ref={inputRef}
           type="text" value={input} maxLength={500}
