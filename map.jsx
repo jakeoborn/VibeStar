@@ -1012,6 +1012,11 @@ function MapScreen({ state, setState }) {
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
   const [showHeat,   setShowHeat]   = React.useState(false);
+  // "Real map (BETA)" — MapLibre overlay experiment. Persisted so toggling
+  // survives reloads; default OFF so v1.0 users see the same SVG map.
+  const [realMap, setRealMap] = React.useState(() => {
+    try { return localStorage.getItem("plursky_real_map") === "1"; } catch { return false; }
+  });
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -1315,6 +1320,11 @@ function MapScreen({ state, setState }) {
                 },
                 { id: "crowd",  label: "🔥  Crowd heatmap",   active: showHeat,   onToggle: () => setShowHeat(s => !s) },
                 { id: "labels", label: "🏷  Landmark labels", active: showLabels, onToggle: () => setShowLabels(s => !s) },
+                { id: "realmap", label: "🌎  Real map (BETA)", active: realMap, onToggle: () => {
+                  const next = !realMap;
+                  setRealMap(next);
+                  try { localStorage.setItem("plursky_real_map", next ? "1" : "0"); } catch {}
+                } },
               ].map(item => (
                 <div key={item.id} role="button" onClick={item.onToggle} style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -1431,16 +1441,24 @@ function MapScreen({ state, setState }) {
           cursor: "pointer", zIndex: 4, transition: "bottom 0.3s",
           fontSize: 22,
         }}>🚗</button>
-        <TopDownMap
-          avatar={avatar} heading={heading} friends={friends} stages={STAGES}
-          saved={state.saved} showLabels={showLabels} showHeat={showHeat}
-          compass={compass && compassStatus === "live"}
-          compassHeading={compassHeading}
-          selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
-          crewFriends={crewFriends}
-          onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
-          onClick={handleMapClick}
-        />
+        {realMap ? (
+          <RealMap
+            avatar={avatar} stages={STAGES}
+            selected={selectedStage} meetTarget={meetTarget}
+            onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
+          />
+        ) : (
+          <TopDownMap
+            avatar={avatar} heading={heading} friends={friends} stages={STAGES}
+            saved={state.saved} showLabels={showLabels} showHeat={showHeat}
+            compass={compass && compassStatus === "live"}
+            compassHeading={compassHeading}
+            selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
+            crewFriends={crewFriends}
+            onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
+            onClick={handleMapClick}
+          />
+        )}
 
         {/* Ground-level peek window (picture-in-picture) */}
         {stage && peek && (
@@ -1818,6 +1836,401 @@ function StageIcon({ id, cx, cy, r, on, color }) {
     <circle cx={cx} cy={cy} r={r} fill={color} opacity={op}/>
     <circle cx={cx} cy={cy} r={r*0.38} fill={W}/>
   </g>);
+}
+
+// ─── Map styles (kept simple, all free / no token required) ──────
+const REAL_MAP_STYLES = {
+  stylized: {
+    label: "STYLIZED",
+    url: "https://tiles.openfreemap.org/styles/liberty",
+  },
+  satellite: {
+    label: "SATELLITE",
+    // Inline raster style: Esri World Imagery tiles, free for non-commercial.
+    // If commercial use becomes a concern, swap to Mapbox/MapTiler satellite.
+    style: {
+      version: 8,
+      sources: {
+        sat: {
+          type: "raster",
+          tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: "Imagery © Esri, Maxar",
+        },
+      },
+      layers: [{ id: "sat", type: "raster", source: "sat" }],
+    },
+  },
+};
+
+// Inject the keyframes/classes we use on map markers exactly once.
+// Lives in the document head so swapping the map style doesn't drop it.
+function _ensureRealMapStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("plursky-realmap-styles")) return;
+  const el = document.createElement("style");
+  el.id = "plursky-realmap-styles";
+  el.textContent = [
+    "@keyframes plursky-stage-pulse {",
+    "  0%,100% { transform: scale(1); }",
+    "  50%     { transform: scale(1.35); }",
+    "}",
+    "@keyframes plursky-halo-pulse {",
+    "  0%   { transform: scale(0.7); opacity: 0.55; }",
+    "  100% { transform: scale(2.2); opacity: 0; }",
+    "}",
+    ".plursky-stage-selected { animation: plursky-stage-pulse 1.6s ease-in-out infinite; }",
+    ".plursky-avatar-halo {",
+    "  position: absolute; top: 50%; left: 50%;",
+    "  width: 40px; height: 40px; margin: -20px 0 0 -20px;",
+    "  border-radius: 999px; background: rgba(245,154,54,0.55);",
+    "  animation: plursky-halo-pulse 2.2s ease-out infinite;",
+    "  pointer-events: none;",
+    "}",
+  ].join("\n");
+  document.head.appendChild(el);
+}
+
+// ─── MapLibre lazy loader ───────────────────────────────────────
+// Loaded only when the user toggles the "Real map (BETA)" experiment.
+// Adds ~330KB of JS to the page, so we keep it off the initial bundle.
+let _mapLibrePromise = null;
+function _loadMapLibre() {
+  if (typeof window === "undefined") return Promise.reject(new Error("no window"));
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (_mapLibrePromise) return _mapLibrePromise;
+  _mapLibrePromise = new Promise((resolve, reject) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
+    document.head.appendChild(css);
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js";
+    s.onload = () => window.maplibregl ? resolve(window.maplibregl) : reject(new Error("maplibregl missing"));
+    s.onerror = () => reject(new Error("script load failed"));
+    document.head.appendChild(s);
+  });
+  return _mapLibrePromise;
+}
+
+// Inverse of gpsToMap. Given a 100-space (x, y) inside the LVMS infield,
+// return (lat, lng). Same 3-point affine, solved in the other direction.
+function mapToGps(x, y) {
+  const A = MAP_AFFINE.x;  // [ax, ay, cx]
+  const B = MAP_AFFINE.y;  // [bx, by, cy]
+  const det = A[0]*B[1] - A[1]*B[0];
+  const lat = ( B[1]*(x - A[2]) - A[1]*(y - B[2])) / det;
+  const lng = (-B[0]*(x - A[2]) + A[0]*(y - B[2])) / det;
+  return { lat, lng };
+}
+
+// ─── RealMap ────────────────────────────────────────────────────
+// MapLibre-based festival map. Real LVMS geography, native pinch-zoom
+// and pan, tilted pitch for a 3D feel. Stage markers + avatar + route
+// line are overlay layers projected from the existing 100-space x/y
+// via mapToGps(). Behind the "Real map (BETA)" toggle in the More menu;
+// when off, MapScreen falls back to the SVG TopDownMap.
+function RealMap({ avatar, stages, selected, meetTarget, onPickStage }) {
+  const containerRef = React.useRef(null);
+  const mapRef = React.useRef(null);
+  const stageMarkersRef = React.useRef({});
+  const avatarMarkerRef = React.useRef(null);
+  const onPickStageRef = React.useRef(onPickStage);
+  const [loaded, setLoaded] = React.useState(false);
+  const [err, setErr] = React.useState(null);
+  const [styleKey, setStyleKey] = React.useState(() => {
+    try { return localStorage.getItem("plursky_real_map_style") || "stylized"; } catch { return "stylized"; }
+  });
+
+  React.useEffect(() => { onPickStageRef.current = onPickStage; }, [onPickStage]);
+
+  // Init MapLibre once on mount
+  React.useEffect(() => {
+    _ensureRealMapStyles();
+    let cancelled = false;
+    _loadMapLibre().then((maplibregl) => {
+      if (cancelled || !containerRef.current) return;
+      const center = FESTIVAL_CONFIG.gps;
+      const initialStyle = REAL_MAP_STYLES[styleKey] || REAL_MAP_STYLES.stylized;
+      const map = new maplibregl.Map({
+        container: containerRef.current,
+        style: initialStyle.style || initialStyle.url,
+        center: [center.lng, center.lat],
+        zoom: 15.4,
+        pitch: 55,
+        bearing: 0,
+        attributionControl: false,
+      });
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+      mapRef.current = map;
+
+      // Style-dependent layers (route line, 3D buildings) get torn down on
+      // setStyle(), so we re-add them every time a new style finishes loading.
+      const setupOverlayLayers = () => {
+        if (!map.getSource("route")) {
+          map.addSource("route", {
+            type: "geojson",
+            data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+          });
+        }
+        if (!map.getLayer("route")) {
+          map.addLayer({
+            id: "route", type: "line", source: "route",
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: {
+              "line-color": "#e85d2e",
+              "line-width": 4,
+              "line-opacity": 0.9,
+              "line-dasharray": [2, 1.5],
+            },
+          });
+        }
+        // 3D building extrusions — only on vector styles. The Liberty style
+        // ships a `building` source-layer in the OMT schema; raster satellite
+        // styles don't, so the addLayer would no-op (try/catch protects).
+        if (!map.getLayer("plursky-3d-buildings")) {
+          try {
+            const sources = map.getStyle().sources || {};
+            const omtSrc = Object.keys(sources).find(id => sources[id].type === "vector");
+            if (omtSrc) {
+              map.addLayer({
+                id: "plursky-3d-buildings",
+                source: omtSrc,
+                "source-layer": "building",
+                type: "fill-extrusion",
+                minzoom: 13,
+                paint: {
+                  "fill-extrusion-color": [
+                    "interpolate", ["linear"], ["coalesce", ["get", "render_height"], 5],
+                    0,  "#3a2a55",
+                    20, "#5b3d7a",
+                    60, "#7b4d9a",
+                  ],
+                  "fill-extrusion-height": ["coalesce", ["get", "render_height"], 5],
+                  "fill-extrusion-base":   ["coalesce", ["get", "render_min_height"], 0],
+                  "fill-extrusion-opacity": 0.78,
+                },
+              });
+            }
+          } catch {}
+        }
+      };
+
+      // One-shot setup that runs after the first style finishes loading.
+      // Markers (DOM overlays) persist across setStyle(), so we add them once.
+      map.on("load", () => {
+        if (cancelled) return;
+
+        // Constrain panning to the festival footprint + small buffer so users
+        // can't accidentally pan to Reno.
+        const b = FESTIVAL_CONFIG.venue.festivalBounds;
+        map.setMaxBounds([[b.west - 0.008, b.south - 0.008], [b.east + 0.008, b.north + 0.008]]);
+
+        // Stage markers — dot + floating label
+        stages.forEach(s => {
+          const { lat, lng } = mapToGps(s.x, s.y);
+          const dot = document.createElement("div");
+          dot.className = "plursky-stage-marker";
+          dot.style.cssText =
+            "width:24px;height:24px;border-radius:999px;cursor:pointer;" +
+            `background:${s.color};` +
+            "border:2px solid rgba(255,255,255,0.95);" +
+            `box-shadow:0 0 18px ${s.color}aa,0 2px 8px rgba(0,0,0,0.5);`;
+          dot.title = s.name;
+          dot.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onPickStageRef.current && onPickStageRef.current(s.id);
+          });
+          stageMarkersRef.current[s.id] = new maplibregl.Marker({ element: dot })
+            .setLngLat([lng, lat])
+            .addTo(map);
+
+          const labelEl = document.createElement("div");
+          labelEl.style.cssText =
+            "background:rgba(6,4,18,0.88);color:#fff;" +
+            "border:1px solid rgba(255,255,255,0.22);" +
+            "padding:3px 9px;border-radius:999px;" +
+            "font-family:'Geist Mono',monospace;font-size:9px;" +
+            "letter-spacing:1.2px;font-weight:700;white-space:nowrap;" +
+            "pointer-events:none;transform:translate(0,-34px);";
+          labelEl.textContent = s.name.toUpperCase();
+          new maplibregl.Marker({ element: labelEl, anchor: "center" })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        });
+
+        // Avatar — outer halo (pulse animation) + inner amber dot
+        const avWrap = document.createElement("div");
+        avWrap.style.cssText = "position:relative;width:18px;height:18px;pointer-events:none;";
+        const halo = document.createElement("div");
+        halo.className = "plursky-avatar-halo";
+        const avDot = document.createElement("div");
+        avDot.style.cssText =
+          "position:absolute;inset:0;border-radius:999px;" +
+          "background:#f59a36;border:2px solid rgba(255,255,255,0.95);" +
+          "box-shadow:0 0 16px rgba(245,154,54,0.9),0 2px 6px rgba(0,0,0,0.5);";
+        avWrap.appendChild(halo);
+        avWrap.appendChild(avDot);
+        const avLatLng = mapToGps(avatar.x, avatar.y);
+        avatarMarkerRef.current = new maplibregl.Marker({ element: avWrap })
+          .setLngLat([avLatLng.lng, avLatLng.lat])
+          .addTo(map);
+
+        setupOverlayLayers();
+        setLoaded(true);
+      });
+
+      // Every time a NEW style finishes loading (after setStyle), re-add the
+      // route line + 3D buildings. Markers persist; layers don't.
+      map.on("styledata", () => {
+        if (cancelled || !mapRef.current) return;
+        setupOverlayLayers();
+      });
+
+      map.on("error", (e) => {
+        if (cancelled) return;
+        const msg = (e && e.error && e.error.message) || "tile load failed";
+        // Tile fetch errors fire constantly while panning out-of-bounds;
+        // only surface the first one.
+        setErr(prev => prev || msg);
+      });
+    }).catch(e => {
+      if (!cancelled) setErr(e.message || "library failed to load");
+    });
+
+    return () => {
+      cancelled = true;
+      if (mapRef.current) {
+        try { mapRef.current.remove(); } catch {}
+        mapRef.current = null;
+      }
+      stageMarkersRef.current = {};
+      avatarMarkerRef.current = null;
+    };
+  }, []);
+
+  // Avatar follows GPS / demo position
+  React.useEffect(() => {
+    if (!loaded || !avatarMarkerRef.current) return;
+    const { lat, lng } = mapToGps(avatar.x, avatar.y);
+    avatarMarkerRef.current.setLngLat([lng, lat]);
+  }, [loaded, avatar.x, avatar.y]);
+
+  // Selected stage pulses via CSS animation. flyTo cinematically swings the
+  // camera in toward the marker — the single biggest "amazing" gain for one
+  // line of map code.
+  React.useEffect(() => {
+    if (!loaded) return;
+    Object.entries(stageMarkersRef.current).forEach(([id, marker]) => {
+      const el = marker.getElement();
+      el.classList.toggle("plursky-stage-selected", id === selected);
+    });
+    if (!selected || !mapRef.current) return;
+    const s = stages.find(st => st.id === selected);
+    if (!s) return;
+    const { lat, lng } = mapToGps(s.x, s.y);
+    mapRef.current.flyTo({
+      center: [lng, lat],
+      zoom: 16.6,
+      pitch: 58,
+      duration: 1400,
+      essential: true,
+    });
+  }, [loaded, selected, stages]);
+
+  // Swap the basemap style when the user toggles Stylized / Satellite.
+  // styledata listener re-adds overlay layers; markers persist across swaps.
+  React.useEffect(() => {
+    if (!loaded || !mapRef.current) return;
+    const cfg = REAL_MAP_STYLES[styleKey];
+    if (!cfg) return;
+    try {
+      mapRef.current.setStyle(cfg.style || cfg.url);
+    } catch (e) { /* swallow — initial-load races sometimes */ }
+  }, [loaded, styleKey]);
+
+  // Route line: avatar → selected stage / meet target
+  React.useEffect(() => {
+    if (!loaded || !mapRef.current) return;
+    const target = meetTarget || (selected ? stages.find(s => s.id === selected) : null);
+    const src = mapRef.current.getSource("route");
+    if (!src) return;
+    if (!target) {
+      src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: [] } });
+      return;
+    }
+    const a = mapToGps(avatar.x, avatar.y);
+    const t = mapToGps(target.x, target.y);
+    src.setData({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [[a.lng, a.lat], [t.lng, t.lat]] },
+    });
+  }, [loaded, avatar.x, avatar.y, selected, meetTarget, stages]);
+
+  const pickStyle = (k) => {
+    setStyleKey(k);
+    try { localStorage.setItem("plursky_real_map_style", k); } catch {}
+  };
+
+  return (
+    <div style={{
+      position: "absolute", inset: 0, overflow: "hidden",
+      background: "#060412",
+    }}>
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }}/>
+
+      {/* Style switcher — Stylized / Satellite. Top-right, above the map. */}
+      {loaded && (
+        <div style={{
+          position: "absolute", top: 10, right: 10, zIndex: 4,
+          display: "flex", background: "rgba(6,4,18,0.78)",
+          border: "1px solid rgba(255,255,255,0.18)",
+          borderRadius: 999, padding: 3, gap: 2,
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}>
+          {Object.entries(REAL_MAP_STYLES).map(([k, cfg]) => {
+            const on = styleKey === k;
+            return (
+              <button key={k} onClick={() => pickStyle(k)} style={{
+                background: on ? "var(--ember)" : "transparent",
+                color: "#fff", border: "none",
+                padding: "5px 11px", borderRadius: 999,
+                fontFamily: "'Geist Mono',monospace", fontSize: 9,
+                letterSpacing: 1.3, fontWeight: 700,
+                cursor: "pointer", transition: "background 0.15s",
+              }}>{cfg.label}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {!loaded && !err && (
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "rgba(255,255,255,0.7)",
+          fontFamily: "'Geist Mono',monospace", fontSize: 10, letterSpacing: 1.3,
+        }}>LOADING MAP…</div>
+      )}
+      {err && (
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          color: "#f87171",
+          fontFamily: "'Geist Mono',monospace", fontSize: 10, letterSpacing: 1.3,
+          gap: 6, padding: 20, textAlign: "center",
+        }}>
+          <div>MAP ERROR</div>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 9, maxWidth: 240 }}>{err}</div>
+          <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 8, marginTop: 4 }}>
+            Tip: turn off "Real map (BETA)" in the More menu to fall back to the SVG map.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---- CROWD HEATMAP ----
