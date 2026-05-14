@@ -2829,7 +2829,13 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
             },
             geometry: {
               type: "Polygon",
-              coordinates: _ngonPolygon(lat, lng, r, d.sides, d.rot),
+              coordinates: _shapePolygon(lat, lng, {
+                sides: d.sides,
+                radius: r,
+                rot: d.rot,
+                altInner: d.altInner,
+                aspect: d.aspect,
+              }),
             },
           };
         }),
@@ -2990,6 +2996,16 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
             },
           });
         }
+        // Hide basemap text labels (Speedway Boulevard, Las Vegas Motor
+        // Speedway, etc.) so they don't render *through* our opaque clip
+        // mask. MapLibre renders symbol/text layers in a separate pass
+        // that ignores fill layers above them, so this is the only fix.
+        try {
+          (map.getStyle().layers || []).forEach((lyr) => {
+            if (lyr.type === "symbol") map.setLayoutProperty(lyr.id, "visibility", "none");
+          });
+        } catch {}
+
         // 3D building extrusions — only on vector styles. Filtered to inside
         // the festival footprint so surrounding casino + airport buildings
         // don't extrude through our clip mask.
