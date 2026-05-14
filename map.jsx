@@ -3150,8 +3150,45 @@ function RealMap({
             type: "fill",
             source: "edc-clip",
             paint: {
-              "fill-color": "#0a0618",          // deep night-sky, matches RealMap bg
+              // Plursky `--night` — warmer than the prior cold #0a0618 so
+              // stage-color ground zones (added below) read against a
+              // Plursky-palette ground instead of a generic dark void.
+              "fill-color": "#1a1030",
               "fill-opacity": 1,
+              "fill-antialias": true,
+            },
+          });
+        }
+
+        // Plursky-native stage zone glows — soft circular fills around each
+        // stage in its color. Replaces the EDC poster's wayfinding job
+        // ("this whole area belongs to Kinetic") in a way that's computed
+        // from stage GPS rather than a copyrighted raster.
+        const stageZonesData = () => ({
+          type: "FeatureCollection",
+          features: stages.map((s) => {
+            const { lat, lng } = mapToGps(s.x, s.y);
+            return {
+              type: "Feature",
+              properties: { id: s.id, color: s.color },
+              geometry: {
+                type: "Polygon",
+                coordinates: _shapePolygon(lat, lng, { sides: 36, radius: 60 }),
+              },
+            };
+          }),
+        });
+        if (!map.getSource("stage-zones")) {
+          map.addSource("stage-zones", { type: "geojson", data: stageZonesData() });
+        }
+        if (!map.getLayer("stage-zones")) {
+          map.addLayer({
+            id: "stage-zones",
+            source: "stage-zones",
+            type: "fill",
+            paint: {
+              "fill-color":   ["get", "color"],
+              "fill-opacity": 0.14,
               "fill-antialias": true,
             },
           });
@@ -3258,39 +3295,6 @@ function RealMap({
           map.on("mouseleave", "stages-3d", () => { map.getCanvas().style.cursor = ""; });
         }
 
-        // EDC 2026 festival map overlay — Insomniac's official poster art
-        // pinned to LVMS festivalBounds corners. Jake gave explicit
-        // permission to ship (2026-05-14); when/if Insomniac requests
-        // removal, swap edc-map-overlay.png for a Plursky-original SVG
-        // redraw — the source + layer wiring below stays identical.
-        if (!map.getSource("edc-poster")) {
-          const b = FESTIVAL_CONFIG.venue.festivalBounds;
-          map.addSource("edc-poster", {
-            type: "image",
-            url: "./edc-map-overlay.png",
-            coordinates: [
-              [b.west, b.north],
-              [b.east, b.north],
-              [b.east, b.south],
-              [b.west, b.south],
-            ],
-          });
-        }
-        if (!map.getLayer("edc-poster")) {
-          map.addLayer({
-            id: "edc-poster",
-            type: "raster",
-            source: "edc-poster",
-            paint: {
-              // 0.55 opacity so the poster reads as a *texture cue* on the
-              // ground rather than dominating the 3D scene. The multi-tier
-              // stage pillars + grandstand + Plursky-painted basemap do the
-              // visual heavy lifting; the poster adds character on top.
-              "raster-opacity": 0.55,
-              "raster-fade-duration": 200,
-            },
-          });
-        }
         if (!map.getSource("route")) {
           map.addSource("route", {
             type: "geojson",

@@ -18,12 +18,6 @@ const COPY = [
   'icon-192.png',
   'icon-512.png',
   'og.svg',
-  // EDC 2026 festival-map raster overlay (georeferenced onto LVMS in the
-  // Real Map BETA). GitHub Pages serves this from the repo root for the
-  // website, but Capacitor builds the iOS bundle from dist/ — so the
-  // file MUST be copied here, otherwise the Mapbox image source 404s
-  // on iPhone and the poster never appears on top of the satellite.
-  'edc-map-overlay.png',
 ];
 
 await rm(dist, { recursive: true, force: true });
