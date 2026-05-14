@@ -1861,7 +1861,7 @@ function MeScreen({ state, setState }) {
   // Build identity from Spotify profile when available, else fall back to user-set name
   const [profile, setProfile] = React.useState(getSpotifyProfileSync);
   const [localName, setLocalName] = React.useState(() => {
-    try { return localStorage.getItem("plursky_display_name") || ""; } catch { return ""; }
+    try { return localStorage.getItem("plursky_display_name") || localStorage.getItem("user_name") || ""; } catch { return ""; }
   });
   React.useEffect(() => {
     if (state.spotifyConnected && !profile) {
@@ -1869,12 +1869,11 @@ function MeScreen({ state, setState }) {
     }
   }, [state.spotifyConnected]);
 
-  const hasName = !!(profile?.name || localName);
-  const displayName = profile?.name || localName || "Set your name";
-  const initial = hasName ? (displayName.match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase() : "?";
-  const subline = profile
-    ? `${profile.product === "premium" ? "PREMIUM" : "FREE"} · ${profile.country || "—"}`
-    : (hasName ? FESTIVAL_CONFIG.shortName.toUpperCase() : "TAP TO PERSONALIZE");
+  // Resolve display name from Spotify profile → display_name → user_name
+  // (matches Runbuds-style identity: serif name + ping chip + tagline).
+  const rawName = profile?.name || localName || "";
+  const displayName = rawName || "—";
+  const initial = rawName ? (rawName.match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase() : "?";
   const promptName = () => {
     const next = (window.prompt("Your name (shown to crew & on this screen):", localName || "") || "").trim();
     if (!next) return;
@@ -1882,47 +1881,185 @@ function MeScreen({ state, setState }) {
     setLocalName(next);
   };
 
+  // Ping code (e.g. SAGE) — exported on window by map.jsx
+  const pingCode = (typeof window.getMyPingCode === "function" ? window.getMyPingCode() : "PLUR");
+
+  // Deterministic ping color from code → palette token. Stays in the
+  // desert-dawn family (ember/flare/horizon/sky/success). Avatar circle
+  // + ping chip dot pull from this so identity reads consistent.
+  const PING_PALETTE = ["var(--ember)", "var(--flare)", "var(--horizon)", "var(--sky)", "var(--success)"];
+  let pingHash = 0;
+  for (let i = 0; i < pingCode.length; i++) pingHash = (pingHash * 31 + pingCode.charCodeAt(i)) >>> 0;
+  const pingColor = PING_PALETTE[pingHash % PING_PALETTE.length];
+
+  // Live crew count from Supabase Realtime presence (0 if not connected)
+  const [crewCount, setCrewCount] = React.useState(() => {
+    try {
+      const snap = window.sbGetPresSnap?.() || {};
+      const mine = window.sbGetMyPresId?.();
+      return Object.keys(snap).filter(id => id !== mine).length;
+    } catch { return 0; }
+  });
+  React.useEffect(() => {
+    if (typeof window.sbOnPresenceChange !== "function") return;
+    return window.sbOnPresenceChange(snap => {
+      try {
+        const mine = window.sbGetMyPresId?.();
+        setCrewCount(Object.keys(snap).filter(id => id !== mine).length);
+      } catch {}
+    });
+  }, []);
+
+  // Stats — kept locally per the spec; intentionally cheap, not precious.
+  const setsCaught = state.saved.filter(id => {
+    const a = ARTISTS.find(x => x.id === id);
+    return a && NOW.day && a.day <= NOW.day;
+  }).length;
+  const daysHere = NOW.day || 0;
+  const savedCount = state.saved.length;
+
+  // Tagline — "DAY N OF EDC LV 2026" once the festival is live, otherwise
+  // a pre-festival countdown line with the date range.
+  const tagline = daysHere
+    ? `DAY ${daysHere} OF EDC LV 2026`
+    : "EDC LV 2026 · MAY 15–17";
+
   return (
     <Screen bg="var(--paper)">
       <div style={{ padding: "8px 20px" }}>
         <TopBar title={<span>Me</span>} sub={FESTIVAL_CONFIG.shortName.toUpperCase()} tight />
       </div>
       <ScrollBody style={{ padding: "10px 20px 24px" }}>
-        {/* Profile */}
+        {/* ── 1. Identity card (Runbuds-modeled) ───────────────────
+            Centered avatar in the user's ping color, serif name,
+            ping-code chip in mono caps, festival-day tagline. */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 14, padding: 16,
-          background: "var(--paper-2)", borderRadius: 16, marginBottom: 18,
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "18px 16px 20px", marginBottom: 16,
         }}>
-          {profile?.image ? (
-            <img src={profile.image} alt="" style={{
-              width: 60, height: 60, borderRadius: 60, flexShrink: 0,
-              objectFit: "cover", border: "2px solid var(--ember)",
-            }}/>
-          ) : (
-            <div style={{
-              width: 60, height: 60, borderRadius: 60,
-              background: "linear-gradient(135deg, var(--ember), var(--horizon))",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "Instrument Serif, serif", fontSize: 26, color: "#fff",
-              flexShrink: 0,
-            }}>{initial}</div>
-          )}
           <div
-            style={{ flex: 1, minWidth: 0, cursor: profile ? "default" : "pointer" }}
             onClick={profile ? undefined : promptName}
+            style={{
+              width: 78, height: 78, borderRadius: 999,
+              background: profile?.image ? "transparent" : pingColor,
+              border: "3px solid #fff",
+              boxShadow: "0 2px 8px rgba(26,18,13,0.18)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              overflow: "hidden",
+              cursor: profile ? "default" : "pointer",
+              marginBottom: 10,
+            }}
           >
-            <div className="serif" style={{ fontSize: 22, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: hasName ? "var(--ink)" : "var(--muted)" }}>
-              {displayName}
-            </div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 3 }}>
-              {subline}
-            </div>
-            {profile && (
-              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.2, color: "#1DB954", marginTop: 4, fontWeight: 700 }}>
-                ✓ SPOTIFY LINKED
-              </div>
+            {profile?.image ? (
+              <img src={profile.image} alt="" style={{
+                width: "100%", height: "100%", objectFit: "cover",
+              }}/>
+            ) : (
+              <span className="serif" style={{
+                fontSize: 36, color: "#fff", lineHeight: 1,
+                textShadow: "0 1px 2px rgba(26,18,13,0.25)",
+              }}>{initial}</span>
             )}
           </div>
+          <div
+            className="serif"
+            onClick={rawName ? undefined : promptName}
+            style={{
+              fontSize: 28, lineHeight: 1.05, color: rawName ? "var(--ink)" : "var(--muted)",
+              textAlign: "center", marginBottom: 8,
+              cursor: rawName ? "default" : "pointer",
+            }}
+          >
+            {displayName}
+          </div>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            background: "var(--paper-2)", borderRadius: 999, padding: "4px 10px",
+            marginBottom: 8,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: 999, background: pingColor,
+              display: "inline-block",
+            }}/>
+            <span className="mono" style={{
+              fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color: "var(--ink)",
+            }}>PING · {pingCode}</span>
+          </div>
+          <div className="mono" style={{
+            fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color: "var(--muted)",
+          }}>{tagline}</div>
+        </div>
+
+        {/* ── 2. Three-stat row (Forest-modeled) ───────────────────
+            Sets caught (saved sets whose day has passed/is today),
+            crew (live presence count), days here (NOW.day). */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+          background: "var(--paper-2)", border: "1px solid var(--line)",
+          borderRadius: 14, padding: "14px 4px", marginBottom: 18,
+        }}>
+          {[
+            { n: setsCaught, label: "SETS CAUGHT" },
+            { n: crewCount,  label: "CREW" },
+            { n: daysHere,   label: "DAYS HERE" },
+          ].map((s, i) => (
+            <div key={s.label} style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              borderLeft: i === 0 ? "none" : "1px solid var(--line)",
+              padding: "2px 6px",
+            }}>
+              <div className="serif" style={{ fontSize: 28, lineHeight: 1, color: "var(--ink)", marginBottom: 6 }}>
+                {s.n}
+              </div>
+              <div className="mono" style={{
+                fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color: "var(--muted)",
+                textAlign: "center",
+              }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── 3. 4-card grid (komoot-modeled) ──────────────────────
+            Quick jumps to Saved, Memories (stub), Crew (stub),
+            Badges (stub). 2x2 square-ish cells with emoji + count. */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10,
+          marginBottom: 22,
+        }}>
+          {[
+            { key: "saved",    label: "SAVED",    count: savedCount, icon: "★",
+              onClick: () => setState(st => ({ ...st, tab: "lineup" })) },
+            { key: "memories", label: "MEMORIES", count: 0,           icon: "◐",
+              onClick: () => alert("Memories — coming soon") },
+            { key: "crew",     label: "CREW",     count: crewCount,   icon: "☷",
+              onClick: () => alert("See Crew below") },
+            { key: "badges",   label: "BADGES",   count: 0,           icon: "✦",
+              onClick: () => alert("Badges — coming soon") },
+          ].map(card => (
+            <button key={card.key} onClick={card.onClick} style={{
+              position: "relative",
+              background: "var(--paper-2)", border: "1px solid var(--line)",
+              borderRadius: 14, padding: 14, minHeight: 96,
+              display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "space-between",
+              textAlign: "left", cursor: "pointer",
+              fontFamily: "inherit", color: "var(--ink)",
+            }}>
+              <div style={{
+                position: "absolute", top: 12, right: 14,
+                fontSize: 18, lineHeight: 1, color: "var(--muted)",
+              }}>{card.icon}</div>
+              <div/>
+              <div>
+                <div className="serif" style={{ fontSize: 22, lineHeight: 1, color: "var(--ink)" }}>
+                  {card.count}
+                </div>
+                <div className="mono" style={{
+                  fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color: "var(--muted)",
+                  marginTop: 4,
+                }}>{card.label}</div>
+              </div>
+            </button>
+          ))}
         </div>
 
         {/* Music — primary entry to SpotifyScreen now that the Music tab is

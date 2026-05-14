@@ -4222,4 +4222,4 @@ function MessageDrawer({ friend, myPresId, avatarStage, saved = [], onClose, onS
   );
 }
 
-Object.assign(window, { MapScreen });
+Object.assign(window, { MapScreen, getMyPingCode });
