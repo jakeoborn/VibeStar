@@ -593,96 +593,54 @@ function AccountCard({ state, setState }) {
 
       {configured && !sbUser && (
         <>
-          {/* Email magic link — Spotify is connected separately on the Music tab */}
-          {phase === "sent" ? (
+          {/* Sign in with Apple — sole sign-in method as of v1.0(7). Email
+              magic link was removed at Jake's request after two App Review
+              rejections that centered on the Apple flow. The underlying
+              sbSignIn(email) helper stays in code for a future restore. */}
+          <button onClick={handleApple} disabled={appleBusy} style={{
+            width: "100%", marginBottom: appleErr ? 6 : 0,
+            background: appleBusy ? "#444" : "#000",
+            color: "#fff",
+            border: "none", borderRadius: 10, padding: "11px 14px",
+            cursor: appleBusy ? "default" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            fontFamily: "Geist, sans-serif", fontSize: 14, fontWeight: 500,
+          }}>
+            {appleBusy ? (
+              <span style={{
+                width: 14, height: 14, borderRadius: 14,
+                border: "2px solid rgba(255,255,255,0.35)",
+                borderTopColor: "#fff",
+                animation: "spin 0.8s linear infinite",
+                display: "inline-block",
+              }}/>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 814 1000" fill="white">
+                <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663.1 0 541.8c0-207.5 133.4-317.1 264.5-317.1 70.4 0 128.9 45.5 173 45.5 42.9 0 109.9-48.1 190.5-48.1C500.1 222.2 620.9 240.3 788.1 340.9zM530.4 220.5c-20.1-29.7-47.1-66.8-97.3-66.8-12.1 0-24.2 2.3-35.7 5.1-7.1 1.8-14.1 3.9-21.3 3.9-1.9 0-3.8-.1-5.7-.3 11.4-57.7 56.4-143.4 122.3-180.5 27.9-15.7 59-26.2 91.9-26.2 2.9 0 5.8.1 8.7.3-1 56.1-23.8 117.3-63 164.5z"/>
+              </svg>
+            )}
+            {appleBusy ? "Signing in…" : "Sign in with Apple"}
+          </button>
+          {appleErr && (
             <div style={{
-              padding: "12px 14px", background: "rgba(45,122,85,0.1)",
-              border: "1px solid var(--success)", borderRadius: 10,
-              fontSize: 13, color: "var(--success)", lineHeight: 1.5,
+              background: "rgba(248,113,113,0.10)",
+              border: "1px solid rgba(248,113,113,0.45)",
+              borderRadius: 10, padding: "10px 12px", marginTop: 10,
+              fontSize: 12, color: "#c14a4a", lineHeight: 1.45,
             }}>
-              Magic link sent to <strong>{email}</strong>.<br/>
-              Check your email and tap the link — this tab will sign you in automatically.
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>
+                Couldn't sign in with Apple
+              </div>
+              <div style={{ marginBottom: 8, opacity: 0.85, fontSize: 11, wordBreak: "break-word" }}>
+                {appleErr}
+              </div>
+              <button onClick={handleApple} className="mono" style={{
+                background: "var(--ink)", color: "var(--paper)",
+                border: "none", borderRadius: 999,
+                padding: "5px 11px", cursor: "pointer",
+                fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+              }}>TRY AGAIN</button>
             </div>
-          ) : (
-            <>
-              <button onClick={handleApple} disabled={appleBusy} style={{
-                width: "100%", marginBottom: appleErr ? 6 : 10,
-                background: appleBusy ? "#444" : "#000",
-                color: "#fff",
-                border: "none", borderRadius: 10, padding: "11px 14px",
-                cursor: appleBusy ? "default" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                fontFamily: "Geist, sans-serif", fontSize: 14, fontWeight: 500,
-              }}>
-                {appleBusy ? (
-                  <span style={{
-                    width: 14, height: 14, borderRadius: 14,
-                    border: "2px solid rgba(255,255,255,0.35)",
-                    borderTopColor: "#fff",
-                    animation: "spin 0.8s linear infinite",
-                    display: "inline-block",
-                  }}/>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 814 1000" fill="white">
-                    <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663.1 0 541.8c0-207.5 133.4-317.1 264.5-317.1 70.4 0 128.9 45.5 173 45.5 42.9 0 109.9-48.1 190.5-48.1C500.1 222.2 620.9 240.3 788.1 340.9zM530.4 220.5c-20.1-29.7-47.1-66.8-97.3-66.8-12.1 0-24.2 2.3-35.7 5.1-7.1 1.8-14.1 3.9-21.3 3.9-1.9 0-3.8-.1-5.7-.3 11.4-57.7 56.4-143.4 122.3-180.5 27.9-15.7 59-26.2 91.9-26.2 2.9 0 5.8.1 8.7.3-1 56.1-23.8 117.3-63 164.5z"/>
-                  </svg>
-                )}
-                {appleBusy ? "Signing in…" : "Sign in with Apple"}
-              </button>
-              {appleErr && (
-                <div style={{
-                  background: "rgba(248,113,113,0.10)",
-                  border: "1px solid rgba(248,113,113,0.45)",
-                  borderRadius: 10, padding: "10px 12px", marginBottom: 10,
-                  fontSize: 12, color: "#c14a4a", lineHeight: 1.45,
-                }}>
-                  <div style={{ marginBottom: 6, fontWeight: 600 }}>
-                    Sign in with Apple unavailable
-                  </div>
-                  <div style={{ marginBottom: 8, opacity: 0.85, fontSize: 11, wordBreak: "break-word" }}>
-                    {appleErr}
-                  </div>
-                  <div className="mono" style={{
-                    fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
-                    color: "var(--ink)",
-                  }}>
-                    USE EMAIL MAGIC LINK BELOW ↓
-                  </div>
-                </div>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <div style={{ flex: 1, height: 1, background: "var(--line-2)" }}/>
-                <span className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: "var(--muted)" }}>OR</span>
-                <div style={{ flex: 1, height: 1, background: "var(--line-2)" }}/>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => { setEmail(e.target.value); setPhase("idle"); }}
-                  onKeyDown={e => e.key === "Enter" && handleSignIn()}
-                  placeholder="email magic link…"
-                  style={{
-                    flex: 1,
-                    background: "var(--paper-2)", border: `1px solid ${phase === "error" ? "#f87171" : "var(--line-2)"}`,
-                    borderRadius: 10, padding: "10px 12px",
-                    fontFamily: "Geist, sans-serif", fontSize: 14, color: "var(--ink)", outline: "none",
-                  }}
-                />
-                <button onClick={handleSignIn} disabled={phase === "sending" || !email.trim()} style={{
-                  background: email.trim() ? "var(--ink)" : "var(--paper-2)",
-                  color: email.trim() ? "var(--paper)" : "var(--muted)",
-                  border: "none", borderRadius: 10, padding: "10px 14px", cursor: email.trim() ? "pointer" : "default",
-                  fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
-                  whiteSpace: "nowrap", transition: "all .15s",
-                }}>
-                  {phase === "sending" ? "…" : "SEND LINK"}
-                </button>
-              </div>
-              {phase === "error" && (
-                <div style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}>{errMsg}</div>
-              )}
-            </>
           )}
         </>
       )}
