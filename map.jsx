@@ -2709,7 +2709,11 @@ function RealMap({
         style: initialStyle.style || initialStyle.url,
         center: [center.lng, center.lat],
         zoom: 15.4,
-        pitch: 55,
+        // Subtle 30° tilt — the flat EDC poster overlay reads cleanly at
+        // this pitch (like a paper map on a table), and the 3D stage
+        // pillars still rise visibly. flyTo lifts to 55° for the
+        // cinematic Pokémon-Go-style zoom-in when a stage is tapped.
+        pitch: 30,
         bearing: 0,
         attributionControl: false,
       });
