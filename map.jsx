@@ -2145,9 +2145,18 @@ function MapScreen({ state, setState }) {
           <RealMap
             avatar={avatar} stages={STAGES}
             crewFriends={crewFriends}
+            saved={state.saved}
             showHeat={showHeat}
-            selected={selectedStage} meetTarget={meetTarget}
+            compass={compass && compassStatus === "live"}
+            compassHeading={compassHeading}
+            selected={selectedStage}
+            meetMode={meetMode} meetTarget={meetTarget}
             onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
+            onMapClick={(xy) => {
+              if (!meetMode) return;
+              const names = meetGroup.map(id => friends.find(f => f.id === id)?.name).filter(Boolean);
+              setMeetTarget({ x: xy.x, y: xy.y, label: names.length ? `Meet ${names.join(" + ")}` : "Meet here" });
+            }}
           />
         ) : (
           <TopDownMap
@@ -2662,13 +2671,21 @@ function mapToGps(x, y) {
 // line are overlay layers projected from the existing 100-space x/y
 // via mapToGps(). Behind the "Real map (BETA)" toggle in the More menu;
 // when off, MapScreen falls back to the SVG TopDownMap.
-function RealMap({ avatar, stages, crewFriends = [], showHeat = false, selected, meetTarget, onPickStage }) {
+function RealMap({
+  avatar, stages, crewFriends = [], saved = [],
+  showHeat = false, compass = false, compassHeading = 0,
+  selected, meetMode = false, meetTarget, onPickStage, onMapClick,
+}) {
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);
   const stageMarkersRef = React.useRef({});
   const avatarMarkerRef = React.useRef(null);
+  const meetMarkerRef = React.useRef(null);
+  const savedStarMarkersRef = React.useRef({});
   const friendMarkersRef = React.useRef({}); // id -> { marker, lastSig }
   const onPickStageRef = React.useRef(onPickStage);
+  const onMapClickRef = React.useRef(onMapClick);
+  const meetModeRef = React.useRef(meetMode);
   const [loaded, setLoaded] = React.useState(false);
   const [err, setErr] = React.useState(null);
   const [styleKey, setStyleKey] = React.useState(() => {
@@ -2676,6 +2693,8 @@ function RealMap({ avatar, stages, crewFriends = [], showHeat = false, selected,
   });
 
   React.useEffect(() => { onPickStageRef.current = onPickStage; }, [onPickStage]);
+  React.useEffect(() => { onMapClickRef.current  = onMapClick;  }, [onMapClick]);
+  React.useEffect(() => { meetModeRef.current    = meetMode;    }, [meetMode]);
 
   // Init MapLibre once on mount
   React.useEffect(() => {
@@ -3148,6 +3167,21 @@ function RealMap({ avatar, stages, crewFriends = [], showHeat = false, selected,
         setupOverlayLayers();
       });
 
+      // Map-canvas click → in meet mode, drop a pin at the clicked GPS,
+      // converted back to 100-space x/y so the existing meet-target
+      // state machine in MapScreen accepts it. Ignored when not in meet
+      // mode (stage clicks have their own handler on the stages-3d layer).
+      map.on("click", (e) => {
+        if (!meetModeRef.current || !onMapClickRef.current) return;
+        // Skip if a stage was clicked — the stages-3d layer handler covers it.
+        const hits = map.queryRenderedFeatures(e.point, { layers: ["stages-3d"] });
+        if (hits && hits.length) return;
+        const ll = e.lngLat;
+        const xy = mapToGps && (typeof gpsToMap === "function") ? gpsToMap(ll.lat, ll.lng) : null;
+        if (!xy) return;
+        onMapClickRef.current({ x: Math.max(2, Math.min(98, xy.x)), y: Math.max(2, Math.min(98, xy.y)) });
+      });
+
       map.on("error", (e) => {
         if (cancelled) return;
         const msg = (e && e.error && e.error.message) || "tile load failed";
@@ -3168,6 +3202,8 @@ function RealMap({ avatar, stages, crewFriends = [], showHeat = false, selected,
       stageMarkersRef.current = {};
       avatarMarkerRef.current = null;
       friendMarkersRef.current = {};
+      savedStarMarkersRef.current = {};
+      meetMarkerRef.current = null;
     };
   }, []);
 
@@ -3260,6 +3296,100 @@ function RealMap({ avatar, stages, crewFriends = [], showHeat = false, selected,
       essential: true,
     });
   }, [loaded, selected, stages]);
+
+  // Compass bearing — rotate the map so the user's facing direction is "up"
+  // when compass mode is active. Easing keeps it from feeling robotic.
+  React.useEffect(() => {
+    if (!loaded || !mapRef.current) return;
+    try {
+      mapRef.current.easeTo({
+        bearing: compass ? -compassHeading : 0,
+        duration: 220,
+      });
+    } catch {}
+  }, [loaded, compass, compassHeading]);
+
+  // Meet pin — ember pulse marker at meetTarget GPS. Reuses the existing
+  // .plursky-avatar-halo CSS keyframe for the pulse animation.
+  React.useEffect(() => {
+    if (!loaded || !mapRef.current || !window.maplibregl) return;
+    if (!meetTarget) {
+      if (meetMarkerRef.current) {
+        try { meetMarkerRef.current.remove(); } catch {}
+        meetMarkerRef.current = null;
+      }
+      return;
+    }
+    const { lat, lng } = mapToGps(meetTarget.x, meetTarget.y);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (!meetMarkerRef.current) {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:relative;width:22px;height:22px;pointer-events:none;";
+      const halo = document.createElement("div");
+      halo.className = "plursky-avatar-halo";
+      halo.style.background = "rgba(232,93,46,0.55)";
+      const dot = document.createElement("div");
+      dot.style.cssText =
+        "position:absolute;inset:0;border-radius:999px;" +
+        "background:var(--ember,#e85d2e);border:2px solid rgba(255,255,255,0.95);" +
+        "box-shadow:0 0 18px rgba(232,93,46,0.85),0 2px 6px rgba(0,0,0,0.55);";
+      wrap.appendChild(halo);
+      wrap.appendChild(dot);
+      meetMarkerRef.current = new window.maplibregl.Marker({ element: wrap })
+        .setLngLat([lng, lat])
+        .addTo(mapRef.current);
+    } else {
+      meetMarkerRef.current.setLngLat([lng, lat]);
+    }
+  }, [loaded, meetTarget?.x, meetTarget?.y]);
+
+  // Saved-set gold ★ markers — small star DOM pin floating above each
+  // stage pillar whose lineup has an upcoming saved set today. Mirrors
+  // the SVG TopDownMap's savedByStage logic.
+  React.useEffect(() => {
+    if (!loaded || !mapRef.current || !window.maplibregl) return;
+    const live = savedStarMarkersRef.current;
+    const seen = new Set();
+    const now = window.NOW || {};
+    const nowMin = (typeof toNightMin === "function" && now.time) ? toNightMin(now.time) : 0;
+    const byStage = {};
+    saved.forEach(id => {
+      const a = window.ARTISTS?.find(x => x.id === id);
+      if (!a || a.day !== now.day) return;
+      const sM = toNightMin(a.start), eM = toNightMin(a.end);
+      if (eM <= nowMin) return; // already over
+      const cur = byStage[a.stage];
+      if (!cur || sM - nowMin < cur.minsUntil) {
+        byStage[a.stage] = { artist: a, minsUntil: sM - nowMin };
+      }
+    });
+    Object.keys(byStage).forEach(stageId => {
+      const s = stages.find(st => st.id === stageId);
+      if (!s) return;
+      seen.add(stageId);
+      const { lat, lng } = mapToGps(s.x, s.y);
+      if (!live[stageId]) {
+        const el = document.createElement("div");
+        el.style.cssText =
+          "width:20px;height:20px;border-radius:999px;background:rgba(13,8,4,0.92);" +
+          "border:1.5px solid #fbbf24;display:flex;align-items:center;justify-content:center;" +
+          "color:#fbbf24;font-family:'Geist Mono',monospace;font-size:13px;font-weight:900;" +
+          "box-shadow:0 0 12px rgba(251,191,36,0.5),0 2px 6px rgba(0,0,0,0.5);" +
+          "transform:translate(14px,-14px);pointer-events:none;";
+        el.textContent = "★";
+        live[stageId] = new window.maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat([lng, lat]).addTo(mapRef.current);
+      } else {
+        live[stageId].setLngLat([lng, lat]);
+      }
+    });
+    Object.keys(live).forEach(stageId => {
+      if (!seen.has(stageId)) {
+        try { live[stageId].remove(); } catch {}
+        delete live[stageId];
+      }
+    });
+  }, [loaded, saved, stages]);
 
   // Crowd heatmap visibility + data refresh. Toggles the layer on/off based
   // on the showHeat prop; re-computes density on a 60s tick so the heat
