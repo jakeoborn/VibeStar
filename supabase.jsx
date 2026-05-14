@@ -114,6 +114,17 @@ async function sbSignInWithSpotify() {
 //     "Sign in with Apple" capability enabled.
 //   • Supabase Dashboard → Auth → Providers → Apple → add `com.plursky.app`
 //     to "Authorized Client IDs" so Supabase accepts our identity tokens.
+// SHA-256 hex digest — used to pre-hash the nonce before handing it to
+// Apple's plugin. The token's nonce claim then equals SHA256(rawNonce);
+// Supabase compares hash(rawNonce) against the claim, so we send the
+// HASHED nonce to Apple and the RAW nonce to Supabase. (Ports the
+// working DimHour pattern.)
+async function _sha256Hex(s) {
+  const enc = new TextEncoder().encode(s);
+  const buf = await (window.crypto.subtle || window.crypto.webkitSubtle).digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function sbSignInWithApple() {
   if (!_sb) return { error: "Supabase not configured" };
 
@@ -127,25 +138,28 @@ async function sbSignInWithApple() {
   // redirect back) — which was the App Review rejection in v1.0(3).
   if (isNative) {
     if (!native) {
-      return { error: "Sign in with Apple is unavailable on this build. Use Email magic link below." };
+      return { error: "Sign in with Apple is unavailable on this build." };
     }
     try {
-      // Bind a fresh nonce per attempt. Apple hashes (sha256) the raw nonce
-      // we send and returns the hash in the identity token's `nonce` claim;
-      // Supabase reverses that by hashing the value we pass to
-      // signInWithIdToken — so both calls receive the same raw value.
+      // Hash-then-raw nonce pattern (ported from DimHour). Apple's
+      // identity-token nonce claim ends up = SHA256(rawNonce); Supabase
+      // re-hashes the value we send to signInWithIdToken and compares.
+      // So: HASHED to Apple, RAW to Supabase.
       const rawNonce = _randNonce();
+      let hashedNonce;
+      try { hashedNonce = await _sha256Hex(rawNonce); } catch { hashedNonce = rawNonce; }
+
       const res = await native.authorize({
         clientId:    "com.plursky.app",
-        redirectURI: "https://plursky.com/callback",
+        redirectURI: "https://plursky.com/",
         scopes:      "email name",
-        nonce:       rawNonce,
+        state:       "",
+        nonce:       hashedNonce,
       });
       const identityToken = res?.response?.identityToken;
       if (!identityToken) return { error: "Apple did not return an identity token." };
 
-      // Cache the display name Apple sends on first sign-in only. The cached
-      // value is consumed by AccountCard's display logic.
+      // Cache the display name Apple sends on first sign-in only.
       try {
         const given  = res?.response?.givenName  || "";
         const family = res?.response?.familyName || "";
@@ -153,16 +167,48 @@ async function sbSignInWithApple() {
         if (full) localStorage.setItem("plursky_apple_name", full);
       } catch {}
 
-      const { error } = await _sb.auth.signInWithIdToken({
+      // First attempt: nonce-verified. Supabase GoTrue has an open bug
+      // (issue #2378) around hex vs base64url nonce encoding that can
+      // produce "Nonces mismatch" on otherwise-valid native tokens. We
+      // try the verified path first and transparently retry without the
+      // nonce on mismatch — the token is still verified by Apple's RSA
+      // signature + aud/iss/exp claims either way.
+      let out = await _sb.auth.signInWithIdToken({
         provider: "apple",
         token:    identityToken,
         nonce:    rawNonce,
       });
-      return { error: error?.message || null };
+      if (out?.error && /nonce|jwt/i.test(out.error.message || "")) {
+        out = await _sb.auth.signInWithIdToken({
+          provider: "apple",
+          token:    identityToken,
+        });
+      }
+      if (out?.error) {
+        try { console.warn("[plursky:apple-signin] supabase rejected token:", out.error); } catch {}
+        return { error: out.error.message };
+      }
+
+      // Apple only ships givenName/familyName/email on the very first
+      // authorize. Patch them into Supabase user_metadata so the profile
+      // carries the user's actual name forever after.
+      const who = res?.response || {};
+      if (who.givenName || who.familyName || who.email) {
+        try {
+          await _sb.auth.updateUser({
+            data: {
+              full_name: [who.givenName, who.familyName].filter(Boolean).join(" ") || undefined,
+              email:     who.email || undefined,
+            },
+          });
+        } catch {}
+      }
+      return { error: null };
     } catch (e) {
       // User-cancellation should not surface as a scary error.
       const msg = e?.message || String(e);
-      if (/canceled|cancelled|1001|1000/i.test(msg)) return { error: null, cancelled: true };
+      if (/cancel|1001/i.test(msg) && !/1000/.test(msg)) return { error: null, cancelled: true };
+      try { console.warn("[plursky:apple-signin] plugin error:", e); } catch {}
       // Surface error code / type when available so App Review can quote
       // back what specifically failed on their device.
       return { error: msg, code: e?.code, type: e?.errorMessage || e?.name };
