@@ -866,6 +866,29 @@ function ArtistScreen({ state, setState }) {
           ))}
         </div>
 
+        {/* Bio — moved above the stage card so it sits in the initial
+            viewport (was getting pushed below the fold by the new stat
+            row + chip nav). AudioDB extended bio follows when available. */}
+        <div id="artist-section-bio" className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: tadb?.bio ? 8 : 16, textWrap: "pretty" }}>
+          {a.bio}
+        </div>
+        {tadb?.bio && tadb.bio.length > 60 && (
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)", marginBottom: 16 }}>
+            {tadb.bio.slice(0, 320)}{tadb.bio.length > 320 ? "…" : ""}
+            {(tadb.mood || tadb.style || tadb.country) && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {[tadb.mood, tadb.style, tadb.country].filter(Boolean).map(tag => (
+                  <span key={tag} className="mono" style={{
+                    fontSize: 8, letterSpacing: 1, padding: "3px 8px",
+                    background: "var(--paper-2)", border: "1px solid var(--line-2)",
+                    borderRadius: 999, color: "var(--muted)",
+                  }}>{tag.toUpperCase()}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Stage & time */}
         <div style={{
           display: "flex", alignItems: "center", gap: 12,
@@ -901,27 +924,6 @@ function ArtistScreen({ state, setState }) {
             }}>SCHEDULE</button>
           </div>
         </div>
-
-        {/* Bio — inline bio first, then AudioDB extended bio if available */}
-        <div id="artist-section-bio" className="serif" style={{ fontSize: 20, lineHeight: 1.35, marginBottom: tadb?.bio ? 8 : 14, textWrap: "pretty" }}>
-          {a.bio}
-        </div>
-        {tadb?.bio && tadb.bio.length > 60 && (
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)", marginBottom: 14 }}>
-            {tadb.bio.slice(0, 320)}{tadb.bio.length > 320 ? "…" : ""}
-            {(tadb.mood || tadb.style || tadb.country) && (
-              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                {[tadb.mood, tadb.style, tadb.country].filter(Boolean).map(tag => (
-                  <span key={tag} className="mono" style={{
-                    fontSize: 8, letterSpacing: 1, padding: "3px 8px",
-                    background: "var(--paper-2)", border: "1px solid var(--line-2)",
-                    borderRadius: 999, color: "var(--muted)",
-                  }}>{tag.toUpperCase()}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Social search links */}
         <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
