@@ -1857,6 +1857,103 @@ function PackListCard() {
   );
 }
 
+// Me+ / Plenty of Fish-modeled badges section. Festival milestones
+// derived from state.saved + ARTISTS data, no new infra. Earned badges
+// render full-color; locked stay greyed out with their unlock criteria
+// visible so users know what to chase.
+function BadgesSection({ state }) {
+  const saved = state.saved || [];
+  const savedArtists = saved
+    .map(id => window.ARTISTS?.find(a => a.id === id))
+    .filter(Boolean);
+  const stageCount = new Set(savedArtists.map(a => a.stage)).size;
+  const headlinerCount = savedArtists.filter(a => a.tier === 3).length;
+  const byStage = (stageId) => savedArtists.filter(a => a.stage === stageId).length;
+  // Hours of music saved across all nights
+  const totalMin = savedArtists.reduce((acc, a) => {
+    const s = window.toNightMin?.(a.start) || 0;
+    const e = window.toNightMin?.(a.end) || 0;
+    return acc + Math.max(0, e - s);
+  }, 0);
+  const hasSunriseSet = savedArtists.some(a => {
+    const s = window.toNightMin?.(a.start) || 0;
+    return s >= 18 * 60; // 02:00+ in night-min space = sunrise-adjacent
+  });
+
+  const BADGES = [
+    { id: "first-save",    icon: "✦", name: "First Save",       desc: "Save your first set",                earned: savedArtists.length >= 1 },
+    { id: "all-stages",    icon: "◉", name: "All 9 Stages",     desc: "Save a set from every stage",        earned: stageCount >= 9 },
+    { id: "five-stages",   icon: "◍", name: "Five Stages",      desc: "Save sets across 5+ stages",         earned: stageCount >= 5 },
+    { id: "headliner",     icon: "★", name: "Headliner Hunter", desc: "Save 3+ tier-3 headliner sets",      earned: headlinerCount >= 3 },
+    { id: "sunrise",       icon: "☀", name: "Sunrise Survivor", desc: "Save a set running past 2 AM",       earned: hasSunriseSet },
+    { id: "ten-deep",      icon: "▤", name: "Ten Deep",         desc: "10+ saved sets across the run",      earned: savedArtists.length >= 10 },
+    { id: "twenty-deep",   icon: "▥", name: "Twenty Deep",      desc: "20+ saved sets across the run",      earned: savedArtists.length >= 20 },
+    { id: "trance-fam",    icon: "△", name: "Trance Family",    desc: "Save 3+ Quantum Valley sets",        earned: byStage("quantum") >= 3 },
+    { id: "house-heads",   icon: "⬡", name: "House Heads HQ",   desc: "Save 3+ Neon Garden sets",           earned: byStage("neon") >= 3 },
+    { id: "techno-vault",  icon: "▣", name: "Techno Vault",     desc: "Save 3+ Circuit Grounds sets",       earned: byStage("circuit") >= 3 },
+    { id: "bass-faithful", icon: "◆", name: "Bass Faithful",    desc: "Save 3+ Basspod or Wasteland sets",  earned: (byStage("basspod") + byStage("waste")) >= 3 },
+    { id: "marathon",      icon: "⌬", name: "Marathon",         desc: "6+ hours of saved music",            earned: totalMin >= 360 },
+    { id: "thirty-years",  icon: "✺", name: "30 Years Crew",    desc: "Plursky for EDC LV 2026's 30th",     earned: true },
+  ];
+
+  const earned = BADGES.filter(b => b.earned);
+  const locked = BADGES.filter(b => !b.earned);
+
+  const cardStyle = (on) => ({
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "10px 12px", borderRadius: 12,
+    background: on ? "var(--paper-2)" : "var(--paper)",
+    border: on ? "1px solid var(--line)" : "1px dashed var(--line-2)",
+    opacity: on ? 1 : 0.55,
+  });
+  const iconCircle = (on) => ({
+    width: 36, height: 36, borderRadius: 999,
+    background: on ? "linear-gradient(135deg, var(--ember), var(--horizon))" : "var(--paper-2)",
+    color: on ? "#fff" : "var(--muted)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: "Instrument Serif, serif", fontSize: 17, flexShrink: 0,
+    border: on ? "none" : "1px solid var(--line-2)",
+  });
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: 1.4, fontWeight: 700, color: "var(--ink)" }}>
+          BADGES
+        </span>
+        <span className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)" }}>
+          {earned.length} of {BADGES.length} EARNED
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {earned.map(b => (
+          <div key={b.id} style={cardStyle(true)}>
+            <div style={iconCircle(true)}>{b.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="serif" style={{ fontSize: 16, lineHeight: 1.15 }}>{b.name}</div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                EARNED · {b.desc.toUpperCase()}
+              </div>
+            </div>
+          </div>
+        ))}
+        {locked.map(b => (
+          <div key={b.id} style={cardStyle(false)}>
+            <div style={iconCircle(false)}>{b.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="serif" style={{ fontSize: 16, lineHeight: 1.15, color: "var(--muted)" }}>{b.name}</div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.1, color: "var(--muted)", marginTop: 2 }}>
+                LOCKED · {b.desc.toUpperCase()}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Runbuds-modeled History/Records section. Lives on the Me page below
 // the 4-card grid. History rows = per-night recap (sets caught, total
 // minutes, top stage color stripe). Records = derived superlatives
@@ -2100,6 +2197,26 @@ function MeScreen({ state, setState }) {
   }).length;
   const daysHere = NOW.day || 0;
   const savedCount = state.saved.length;
+  // Earned-badge count for the 4-card grid badge — cheap derivation mirroring
+  // BadgesSection's logic. Always at least 1 (the "30 Years Crew" auto-earn).
+  const badgesEarnedCount = React.useMemo(() => {
+    const savedArtists = state.saved.map(id => ARTISTS.find(x => x.id === id)).filter(Boolean);
+    const stages = new Set(savedArtists.map(a => a.stage));
+    const heads  = savedArtists.filter(a => a.tier === 3).length;
+    const byStg  = (id) => savedArtists.filter(a => a.stage === id).length;
+    let n = 1; // 30 Years Crew always
+    if (savedArtists.length >= 1) n++;
+    if (savedArtists.length >= 10) n++;
+    if (savedArtists.length >= 20) n++;
+    if (stages.size >= 5) n++;
+    if (stages.size >= 9) n++;
+    if (heads >= 3) n++;
+    if (byStg("quantum") >= 3) n++;
+    if (byStg("neon") >= 3) n++;
+    if (byStg("circuit") >= 3) n++;
+    if (byStg("basspod") + byStg("waste") >= 3) n++;
+    return n;
+  }, [state.saved]);
 
   // Tagline — "DAY N OF EDC LV 2026" once the festival is live, otherwise
   // a pre-festival countdown line with the date range.
@@ -2216,8 +2333,10 @@ function MeScreen({ state, setState }) {
               onClick: () => alert("Memories — coming soon") },
             { key: "crew",     label: "CREW",     count: crewCount,   icon: "☷",
               onClick: () => alert("See Crew below") },
-            { key: "badges",   label: "BADGES",   count: 0,           icon: "✦",
-              onClick: () => alert("Badges — coming soon") },
+            { key: "badges",   label: "BADGES",   count: badgesEarnedCount, icon: "✦",
+              onClick: () => {
+                document.getElementById("plursky-badges-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              } },
           ].map(card => (
             <button key={card.key} onClick={card.onClick} style={{
               position: "relative",
@@ -2250,6 +2369,13 @@ function MeScreen({ state, setState }) {
             stat grid. History = per-day saved-set count + time + top
             stage; Records = derived best-of stats from saved data. */}
         <HistoryRecordsSection state={state} />
+
+        {/* ── Badges (Me+ / Plenty of Fish-modeled) ─────────────────
+            Festival milestones earned from saved-set behavior. Earned
+            badges full-color; locked ones grayed with their unlock
+            criteria visible so users know what to chase. */}
+        <div id="plursky-badges-anchor"/>
+        <BadgesSection state={state} />
 
         {/* Music — primary entry to SpotifyScreen now that the Music tab is
             gone (v92 fold). Connect status is the headline; tapping opens
