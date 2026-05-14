@@ -2696,6 +2696,77 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       mapRef.current = map;
 
+      // Flexible polygon generator around (lat,lng) with optional
+      // alternating inner/outer radii (for star/flower/gear shapes) and
+      // non-uniform XY scaling (for rectangles + ovals). Equirectangular
+      // at local lat for longitude correction — accurate at festival scale.
+      const _shapePolygon = (lat, lng, opts) => {
+        const EARTH = 6378137;
+        const out = [];
+        const lngScale = 1 / Math.cos((lat * Math.PI) / 180);
+        const rot = ((opts.rot || 0) * Math.PI) / 180;
+        const ax = (opts.aspect && opts.aspect[0]) || 1;
+        const ay = (opts.aspect && opts.aspect[1]) || 1;
+        const innerMult = opts.altInner;     // alternate inner-radius for star/gear/petal shapes
+        for (let i = 0; i <= opts.sides; i++) {
+          const a = (i / opts.sides) * 2 * Math.PI + rot;
+          const r = (innerMult != null && i % 2 === 1) ? opts.radius * innerMult : opts.radius;
+          const dx = r * Math.cos(a) * ax;
+          const dy = r * Math.sin(a) * ay;
+          const dLat = (dy / EARTH) * (180 / Math.PI);
+          const dLng = (dx / EARTH) * (180 / Math.PI) * lngScale;
+          out.push([lng + dLng, lat + dLat]);
+        }
+        return [out];
+      };
+
+      // Per-stage silhouette tuned to match Plursky's StageIcon SVG art
+      // (each stage's iconic shape on the SVG TopDownMap) — lotus for
+      // Kinetic, pyramid for Quantum, dome for Bionic, 6-petal bloom for
+      // Stereo, sunburst for Cosmic, hex grid for Neon, industrial gear
+      // for Wasteland, diamond speaker for Bass Pod, hangar rectangle
+      // for Circuit. Heights are exaggerated for visual impact at the
+      // festival's zoom range; mainstage Kinetic dwarfs side stages.
+      const STAGE_3D_DESIGN = {
+        kinetic: { sides: 16, radius: 40, height: 220, rot:  0, altInner: 0.42 }, // 8-petal lotus
+        quantum: { sides:  3, radius: 30, height: 135, rot: 30 },                  // trance pyramid
+        bionic:  { sides: 24, radius: 24, height:  85, rot:  0 },                  // jungle dome
+        stereo:  { sides: 12, radius: 22, height:  78, rot: 15, altInner: 0.55 }, // 6-petal bloom
+        cosmic:  { sides: 12, radius: 28, height: 105, rot:  0, altInner: 0.62 }, // sun + rays
+        neon:    { sides:  6, radius: 26, height:  92, rot:  0 },                  // hexagon
+        waste:   { sides: 16, radius: 24, height: 105, rot:  0, altInner: 0.62 }, // 8-point gear
+        basspod: { sides:  4, radius: 22, height:  88, rot: 45 },                  // diamond speaker
+        circuit: { sides:  4, radius: 30, height: 140, rot:  0, aspect: [1.4, 0.9] }, // hangar
+      };
+      const _designFor = (id) => STAGE_3D_DESIGN[id] || { sides: 24, radius: 22, height: 80, rot: 0 };
+
+      // Per-stage 3D pillar geometry. Selected stage gets +60% height,
+      // +20% footprint, and higher opacity for the Pokémon-Go-gym "you
+      // tapped this one" pop.
+      const stagesExtrusionData = (selectedId) => ({
+        type: "FeatureCollection",
+        features: stages.map((s) => {
+          const { lat, lng } = mapToGps(s.x, s.y);
+          const d   = _designFor(s.id);
+          const sel = s.id === selectedId;
+          const r   = d.radius * (sel ? 1.2 : 1.0);
+          const h   = d.height * (sel ? 1.6 : 1.0);
+          return {
+            type: "Feature",
+            properties: {
+              id: s.id,
+              color: s.color,
+              height: h,
+              opacity: sel ? 0.95 : 0.82,
+            },
+            geometry: {
+              type: "Polygon",
+              coordinates: _ngonPolygon(lat, lng, r, d.sides, d.rot),
+            },
+          };
+        }),
+      });
+
       // GeoJSON Polygon with a huge outer ring + a hole at the LVMS festival
       // footprint. Painted opaque on top of the basemap, this "removes
       // everything that isn't EDC" — Vegas Boulevard, surrounding parking
@@ -2757,6 +2828,33 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
             },
           });
         }
+        // 3D STAGE PILLARS — the headline visual. Each stage becomes a
+        // colored cylinder rising out of the poster (Pokémon-Go gym vibe).
+        // Tap = onPickStage. Selected stage updates via setData on the
+        // GeoJSON source (no DOM marker class flipping needed).
+        if (!map.getSource("stages-3d")) {
+          map.addSource("stages-3d", { type: "geojson", data: stagesExtrusionData(null) });
+        }
+        if (!map.getLayer("stages-3d")) {
+          map.addLayer({
+            id: "stages-3d",
+            source: "stages-3d",
+            type: "fill-extrusion",
+            paint: {
+              "fill-extrusion-color":   ["get", "color"],
+              "fill-extrusion-height":  ["get", "height"],
+              "fill-extrusion-base":    0,
+              "fill-extrusion-opacity": ["get", "opacity"],
+            },
+          });
+          map.on("click", "stages-3d", (e) => {
+            const f = e.features && e.features[0];
+            if (f && onPickStageRef.current) onPickStageRef.current(f.properties.id);
+          });
+          map.on("mouseenter", "stages-3d", () => { map.getCanvas().style.cursor = "pointer"; });
+          map.on("mouseleave", "stages-3d", () => { map.getCanvas().style.cursor = ""; });
+        }
+
         // EDC 2026 festival map overlay — Insomniac's official poster art
         // pinned to LVMS festivalBounds corners. Jake gave explicit
         // permission to ship (2026-05-14); when/if Insomniac requests
@@ -2846,25 +2944,11 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
         const b = FESTIVAL_CONFIG.venue.festivalBounds;
         map.setMaxBounds([[b.west - 0.008, b.south - 0.008], [b.east + 0.008, b.north + 0.008]]);
 
-        // Stage markers — dot + floating label
+        // Stage labels — DOM markers anchored above each 3D pillar. The
+        // pillar geometry itself (with click handler) lives in the
+        // stages-3d fill-extrusion layer above; this just floats the name.
         stages.forEach(s => {
           const { lat, lng } = mapToGps(s.x, s.y);
-          const dot = document.createElement("div");
-          dot.className = "plursky-stage-marker";
-          dot.style.cssText =
-            "width:24px;height:24px;border-radius:999px;cursor:pointer;" +
-            `background:${s.color};` +
-            "border:2px solid rgba(255,255,255,0.95);" +
-            `box-shadow:0 0 18px ${s.color}aa,0 2px 8px rgba(0,0,0,0.5);`;
-          dot.title = s.name;
-          dot.addEventListener("click", (e) => {
-            e.stopPropagation();
-            onPickStageRef.current && onPickStageRef.current(s.id);
-          });
-          stageMarkersRef.current[s.id] = new maplibregl.Marker({ element: dot })
-            .setLngLat([lng, lat])
-            .addTo(map);
-
           const labelEl = document.createElement("div");
           labelEl.style.cssText =
             "background:rgba(6,4,18,0.88);color:#fff;" +
@@ -2872,9 +2956,9 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
             "padding:3px 9px;border-radius:999px;" +
             "font-family:'Geist Mono',monospace;font-size:9px;" +
             "letter-spacing:1.2px;font-weight:700;white-space:nowrap;" +
-            "pointer-events:none;transform:translate(0,-34px);";
+            "pointer-events:none;transform:translate(0,-60px);";
           labelEl.textContent = s.name.toUpperCase();
-          new maplibregl.Marker({ element: labelEl, anchor: "center" })
+          stageMarkersRef.current[s.id] = new maplibregl.Marker({ element: labelEl, anchor: "center" })
             .setLngLat([lng, lat])
             .addTo(map);
         });
@@ -2996,16 +3080,18 @@ function RealMap({ avatar, stages, crewFriends = [], selected, meetTarget, onPic
     });
   }, [loaded, crewFriends]);
 
-  // Selected stage pulses via CSS animation. flyTo cinematically swings the
-  // camera in toward the marker — the single biggest "amazing" gain for one
-  // line of map code.
+  // Selected stage refreshes the 3D extrusion source so the chosen pillar
+  // grows + brightens, and flyTo cinematically swings the camera in.
   React.useEffect(() => {
-    if (!loaded) return;
-    Object.entries(stageMarkersRef.current).forEach(([id, marker]) => {
-      const el = marker.getElement();
-      el.classList.toggle("plursky-stage-selected", id === selected);
-    });
-    if (!selected || !mapRef.current) return;
+    if (!loaded || !mapRef.current) return;
+    // Re-fire the geojson with the new selectedId so the per-stage height/
+    // opacity/radius updates flow through. The source's setData replaces
+    // the FeatureCollection in place — no marker re-creation needed.
+    const src = mapRef.current.getSource("stages-3d");
+    if (src && mapRef.current._plurskyExtrusionData) {
+      src.setData(mapRef.current._plurskyExtrusionData(selected));
+    }
+    if (!selected) return;
     const s = stages.find(st => st.id === selected);
     if (!s) return;
     const { lat, lng } = mapToGps(s.x, s.y);
