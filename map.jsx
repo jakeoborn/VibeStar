@@ -3099,21 +3099,40 @@ function RealMap({
         if (!map.getSource("stages-3d")) {
           map.addSource("stages-3d", { type: "geojson", data: stagesExtrusionData(null) });
         }
+        // Split into TWO layers (base + main) because
+        // fill-extrusion-opacity is a uniform paint property in MapLibre
+        // — it does NOT accept data expressions. Each layer has a
+        // constant opacity matching its tier, with a filter selecting
+        // the right features. Color/height/base remain data-driven from
+        // the same single source.
+        if (!map.getLayer("stages-3d-base")) {
+          map.addLayer({
+            id: "stages-3d-base",
+            source: "stages-3d",
+            type: "fill-extrusion",
+            filter: ["==", ["get", "tier"], "base"],
+            paint: {
+              "fill-extrusion-color":   ["get", "color"],
+              "fill-extrusion-height":  ["get", "height"],
+              "fill-extrusion-base":    ["get", "base"],
+              "fill-extrusion-opacity": 0.45,
+            },
+          });
+        }
         if (!map.getLayer("stages-3d")) {
           map.addLayer({
             id: "stages-3d",
             source: "stages-3d",
             type: "fill-extrusion",
+            filter: ["==", ["get", "tier"], "main"],
             paint: {
               "fill-extrusion-color":   ["get", "color"],
               "fill-extrusion-height":  ["get", "height"],
-              // tier="base" sits at base=0, tier="main" sits on top of the
-              // base. Driven from feature properties so a single layer
-              // renders both tiers (cheaper than two layers + 2× draw).
               "fill-extrusion-base":    ["get", "base"],
-              "fill-extrusion-opacity": ["get", "opacity"],
+              "fill-extrusion-opacity": 0.88,
             },
           });
+          // Tap target lives on the visible upper structure only.
           map.on("click", "stages-3d", (e) => {
             const f = e.features && e.features[0];
             if (f && onPickStageRef.current) onPickStageRef.current(f.properties.id);
