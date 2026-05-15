@@ -155,23 +155,23 @@
     })();
   </script>
 
-  <script type="text/babel" src="ios-frame.jsx?v=v117"></script>
-  <script type="text/babel" src="data.jsx?v=v117"></script>
-  <script type="text/babel" src="supabase.jsx?v=v117"></script>
-  <script type="text/babel" src="chrome.jsx?v=v117"></script>
-  <script type="text/babel" src="home.jsx?v=v117"></script>
-  <script type="text/babel" src="map.jsx?v=v117"></script>
-  <script type="text/babel" src="lineup.jsx?v=v117"></script>
-  <script type="text/babel" src="artist.jsx?v=v117"></script>
-  <script type="text/babel" src="spotify.jsx?v=v117"></script>
-  <script type="text/babel" src="app.jsx?v=v117"></script>
+  <script type="text/babel" src="ios-frame.jsx?v=v118"></script>
+  <script type="text/babel" src="data.jsx?v=v118"></script>
+  <script type="text/babel" src="supabase.jsx?v=v118"></script>
+  <script type="text/babel" src="chrome.jsx?v=v118"></script>
+  <script type="text/babel" src="home.jsx?v=v118"></script>
+  <script type="text/babel" src="map.jsx?v=v118"></script>
+  <script type="text/babel" src="lineup.jsx?v=v118"></script>
+  <script type="text/babel" src="artist.jsx?v=v118"></script>
+  <script type="text/babel" src="spotify.jsx?v=v118"></script>
+  <script type="text/babel" src="app.jsx?v=v118"></script>
 
   <script>
 
     // Build version stamp â€” bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v117';
+    const APP_VERSION = 'v118';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -192,20 +192,21 @@
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
         Promise.all(
-          keys.filter(k => k !== 'plursky-v117' && !k.startsWith('plursky-tiles-'))
+          keys.filter(k => k !== 'plursky-v118' && !k.startsWith('plursky-tiles-'))
               .map(k => caches.delete(k))
         )
       ).then(() =>
-        navigator.serviceWorker.register('./sw.js?v=v117', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('./sw.js?v=v118', { updateViaCache: 'none' })
           .then(reg => { try { reg.update(); } catch {} })
       );
 
-      let _reloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (_reloaded) return;
-        _reloaded = true;
-        window.location.reload();
-      });
+      // (Removed the controllerchange auto-reload. It caused a second
+      // visible reload after the version-stamp cache wipe: page load →
+      // wipe + reload → SW reinstalls → controllerchange → ANOTHER
+      // reload. Jake's "loads for a sec then goes blank then reloads"
+      // was that double reload. SW network-first strategy in sw.js
+      // already delivers fresh JS on the next navigation; we don't
+      // need to force-reload on SW takeover.)
     }
   </script>
 </body>
