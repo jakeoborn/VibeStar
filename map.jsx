@@ -3129,7 +3129,12 @@ function RealMap({
       };
 
       const setupOverlayLayers = () => {
-        console.log("[plursky-map] setupOverlayLayers START");
+        console.log("[plursky-map] setupOverlayLayers START — stages count:", stages?.length || 0);
+        if (stages && stages.length) {
+          const s0 = stages[0];
+          const ll = mapToGps(s0.x, s0.y);
+          console.log(`[plursky-map] stage[0] = id:${s0.id} svg(${s0.x},${s0.y}) → lat:${ll?.lat?.toFixed(5)} lng:${ll?.lng?.toFixed(5)}`);
+        }
 
         // Repaint basemap into Plursky palette + hide buildings/parking.
         applyPlurskyPalette();
@@ -3181,8 +3186,10 @@ function RealMap({
           }),
         });
         _safeLayer("stage-zones", () => {
+          const _zd = stageZonesData();
+          console.log("[plursky-map] stage-zones features:", _zd.features.length, "first poly verts:", _zd.features[0]?.geometry?.coordinates?.[0]?.length || 0);
           if (!map.getSource("stage-zones")) {
-            map.addSource("stage-zones", { type: "geojson", data: stageZonesData() });
+            map.addSource("stage-zones", { type: "geojson", data: _zd });
           }
           if (!map.getLayer("stage-zones")) {
             map.addLayer({
@@ -3286,8 +3293,10 @@ function RealMap({
         // Tap = onPickStage. Selected stage updates via setData on the
         // GeoJSON source (no DOM marker class flipping needed).
         _safeLayer("stages-3d", () => {
+        const _sd = stagesExtrusionData(null);
+        console.log("[plursky-map] stages-3d features:", _sd.features.length);
         if (!map.getSource("stages-3d")) {
-          map.addSource("stages-3d", { type: "geojson", data: stagesExtrusionData(null) });
+          map.addSource("stages-3d", { type: "geojson", data: _sd });
         }
         // Split into TWO layers (base + main) because
         // fill-extrusion-opacity is a uniform paint property in MapLibre
