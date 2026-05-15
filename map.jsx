@@ -1619,6 +1619,16 @@ function MapScreen({ state, setState }) {
   const [rideshareOpen, setRideshareOpen] = React.useState(false);
   const [showLabels, setShowLabels] = React.useState(false);
   const [showHeat,   setShowHeat]   = React.useState(false);
+  // v133: pinch/button zoom + pan over the SVG TopDownMap. zoom=1 is fit-screen
+  // (the v1.0 default view); >1 zooms in, <1 reveals more whitespace around
+  // the festival footprint. Pan only takes effect when zoom > 1 — at zoom 1
+  // a single tap still picks a stage (no gesture conflict).
+  const [mapZoom, setMapZoom] = React.useState(1);
+  const [mapPan,  setMapPan]  = React.useState({ x: 0, y: 0 });
+  const MAP_ZOOM_MIN = 0.7, MAP_ZOOM_MAX = 3.5;
+  const zoomIn  = () => setMapZoom(z => Math.min(MAP_ZOOM_MAX, +(z * 1.4).toFixed(3)));
+  const zoomOut = () => setMapZoom(z => Math.max(MAP_ZOOM_MIN, +(z / 1.4).toFixed(3)));
+  const zoomReset = () => { setMapZoom(1); setMapPan({ x: 0, y: 0 }); };
   const [pingOpen, setPingOpen] = React.useState(false);
   const [iAmAtOpen, setIAmAtOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);
@@ -1994,6 +2004,47 @@ function MapScreen({ state, setState }) {
               <path d="M3 16 L12 21 L21 16"/>
             </svg>
           </button>
+          {/* Zoom column — paper-glass capsule mirroring the GPS/Layers style.
+              Stack vertically: +, –, RESET (only when zoomed away from 1×). */}
+          <div style={{
+            display: "flex", flexDirection: "column",
+            background: "rgba(247,237,224,0.92)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 14, overflow: "hidden",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+          }}>
+            <button onClick={zoomIn} disabled={mapZoom >= MAP_ZOOM_MAX} aria-label="Zoom in" style={{
+              width: 46, height: 36, padding: 0,
+              background: "transparent", border: "none",
+              borderBottom: "1px solid var(--line)",
+              cursor: mapZoom >= MAP_ZOOM_MAX ? "default" : "pointer",
+              opacity: mapZoom >= MAP_ZOOM_MAX ? 0.35 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--ink)", fontFamily: "Geist Mono, monospace",
+              fontSize: 17, fontWeight: 600, lineHeight: 1,
+            }}>+</button>
+            <button onClick={zoomOut} disabled={mapZoom <= MAP_ZOOM_MIN} aria-label="Zoom out" style={{
+              width: 46, height: 36, padding: 0,
+              background: "transparent", border: "none",
+              cursor: mapZoom <= MAP_ZOOM_MIN ? "default" : "pointer",
+              opacity: mapZoom <= MAP_ZOOM_MIN ? 0.35 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--ink)", fontFamily: "Geist Mono, monospace",
+              fontSize: 19, fontWeight: 600, lineHeight: 1,
+            }}>−</button>
+            {(mapZoom !== 1 || mapPan.x !== 0 || mapPan.y !== 0) && (
+              <button onClick={zoomReset} aria-label="Reset zoom" style={{
+                width: 46, padding: "5px 0",
+                background: "var(--ink)", color: "var(--paper)",
+                border: "none", borderTop: "1px solid var(--line)",
+                cursor: "pointer",
+                fontFamily: "Geist Mono, monospace",
+                fontSize: 8, letterSpacing: 1.1, fontWeight: 700,
+              }}>RESET</button>
+            )}
+          </div>
         </div>
 
         {/* Layers popover (anchored to the icon column above) */}
@@ -2273,6 +2324,8 @@ function MapScreen({ state, setState }) {
           compassHeading={compassHeading}
           selected={selectedStage} meetMode={meetMode} meetTarget={meetTarget} meetGroup={meetGroup}
           crewFriends={crewFriends}
+          zoom={mapZoom} pan={mapPan} zoomMin={MAP_ZOOM_MIN} zoomMax={MAP_ZOOM_MAX}
+          onZoomChange={setMapZoom} onPanChange={setMapPan}
           onPickStage={(id) => { setSelectedStage(id); setPeek(false); }}
           onClick={handleMapClick}
         />
@@ -3911,7 +3964,7 @@ function _crowdDensity(stageId, nowMin) {
 }
 
 // ---- TOP-DOWN NAVIGATION MAP ----
-function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, showHeat = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], crewFriends = [], onPickStage, onClick }) {
+function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels = false, showHeat = false, compass = false, compassHeading = 0, selected, meetMode, meetTarget, meetGroup = [], crewFriends = [], zoom = 1, pan = { x: 0, y: 0 }, zoomMin = 0.7, zoomMax = 3.5, onZoomChange, onPanChange, onPickStage, onClick }) {
   // Compass mode: rotate the entire map by -heading so the user's facing
   // direction is always "up" on screen. Readable text labels counter-rotate
   // back to upright so they stay legible at any heading.
@@ -3964,21 +4017,80 @@ function TopDownMap({ avatar, heading, friends, stages, saved = [], showLabels =
     return dx < 0 ? "W" : "E";
   };
 
+  // v133 pinch + pan. Two-finger pinch updates zoom via onZoomChange; when
+  // zoomed in (zoom > 1) a single-finger drag panes via onPanChange. We
+  // track whether the gesture actually MOVED so a tap-and-release at the
+  // same point still reaches the SVG's onClick (= stage-select / meet pin).
+  const gestureRef = React.useRef({ mode: null, startDist: 0, startZoom: 1, startPanX: 0, startPanY: 0, startTouchX: 0, startTouchY: 0, moved: false });
+  const _pinchDist = (touches) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  };
+  const onTouchStart = (e) => {
+    const g = gestureRef.current;
+    g.moved = false;
+    if (e.touches.length >= 2) {
+      g.mode = "pinch";
+      g.startDist = _pinchDist(e.touches);
+      g.startZoom = zoom;
+    } else if (e.touches.length === 1 && zoom > 1) {
+      g.mode = "pan";
+      g.startTouchX = e.touches[0].clientX;
+      g.startTouchY = e.touches[0].clientY;
+      g.startPanX = pan.x;
+      g.startPanY = pan.y;
+    } else {
+      g.mode = null;
+    }
+  };
+  const onTouchMove = (e) => {
+    const g = gestureRef.current;
+    if (g.mode === "pinch" && e.touches.length >= 2) {
+      e.preventDefault?.();
+      const d = _pinchDist(e.touches);
+      if (g.startDist <= 0) return;
+      const next = Math.max(zoomMin, Math.min(zoomMax, g.startZoom * (d / g.startDist)));
+      g.moved = true;
+      onZoomChange?.(+next.toFixed(3));
+    } else if (g.mode === "pan" && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - g.startTouchX;
+      const dy = e.touches[0].clientY - g.startTouchY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) g.moved = true;
+      onPanChange?.({ x: g.startPanX + dx, y: g.startPanY + dy });
+    }
+  };
+  const onTouchEnd = () => { gestureRef.current.mode = null; };
+  const guardedClick = (e) => {
+    // If the user pinched or panned, swallow the synthetic click that fires
+    // after touchend so we don't accidentally drop a meet pin or select a
+    // stage at the gesture's release point.
+    if (gestureRef.current.moved) return;
+    onClick?.(e);
+  };
+
   return (
     <div style={{
       position: "absolute", inset: 0, overflow: "hidden",
       background: "#060412",
-    }}>
+      touchAction: "none",
+    }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
     <div style={{
       position: "absolute", inset: 0,
-      transform: compass ? `rotate(${mapRotate}deg)` : undefined,
+      transform: `${compass ? `rotate(${mapRotate}deg) ` : ""}translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
       transformOrigin: "50% 50%",
       // Linear (not ease) so heading changes feel responsive like a real
-      // compass needle rather than spongy.
-      transition: "transform 0.18s linear",
+      // compass needle rather than spongy. The zoom/pan transform shares
+      // the same wrapper so they compose cleanly with compass rotation.
+      transition: gestureRef.current.mode ? "none" : "transform 0.18s linear",
+      willChange: "transform",
     }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
-        onClick={onClick}
+        onClick={guardedClick}
         style={{ position: "absolute", inset: 0, cursor: meetMode ? "crosshair" : "default", display: "block" }}>
         <defs>
           {/* Night sky ground — deepest at edges, slightly less dark at center */}
