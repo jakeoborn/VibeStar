@@ -37,7 +37,7 @@ Ordered by user-impact-per-engineering-hour. Pick from top.
 - [ ] **Apple Music dev token** — `APPLE_DEV_TOKEN` in `spotify.jsx:8` is empty. Get a MusicKit JWT from developer.apple.com → MusicKit identifier. Valid 6 months. Card stays hidden until set (v89 gate).
 - [x] **Friend DMs (PING replacement)** — DONE 2026-05-15 (v132). `MessageDrawer` in `map.jsx` now fetches the full thread from `crew_messages` on open with `crew_code = dm-${sortedPidA}-${sortedPidB}` and subscribes to new INSERTs. Threads survive reloads + offline gaps (vs the prior fire-and-forget broadcast). Optimistic stubs + offline outbox queueing carried over from `sbCrewSendMessage`. The old broadcast helpers (`sbDMChannelKey`, broadcast `sbDMSubscribe`/`sbDMSend`) are deleted; the new persisted helpers take their names. `_fakeReply` kept as a fallback for demo friends (LIME/FROG/NEON/PLUM — no presId). ⚠️ **MANUAL STEP**: run the `drop policy / create policy` ALTER block in the SQL doc at the top of `supabase.jsx` (under "v132 ONE-TIME MIGRATION") to widen the `crew_code` length bound from 12 → 40 so DM channel keys are allowed.
 - [ ] **Smart search bar** — natural-language lineup queries via a server-side LLM proxy. Replaces the removed v97 BYOK chat.
-- [ ] **Setup banner smarter dismiss** — auto-dismiss after first set saved (signal of engagement) instead of always nagging until name + Spotify both set.
+- [x] **Setup banner smarter dismiss** — DONE 2026-05-15 (v132). `HomeScreen` now auto-persists `setup_banner_dismissed = "1"` the moment `state.saved.length` becomes > 0. Saving a set is a strong signal of engagement, and the nag would just feel patronizing after that. Sticks even if the user later un-saves everything.
 
 ---
 

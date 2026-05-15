@@ -1072,6 +1072,15 @@ function HomeScreen({ state, setState }) {
   const [setupBannerDismissed, setSetupBannerDismissed] = React.useState(() => {
     try { return localStorage.getItem("setup_banner_dismissed") === "1"; } catch { return false; }
   });
+  // Once the user saves their first set, they've engaged — auto-dismiss the
+  // setup nudge so we stop nagging. Persisted so it stays dismissed even if
+  // they later un-save everything.
+  React.useEffect(() => {
+    if (setupBannerDismissed) return;
+    if ((state.saved?.length || 0) === 0) return;
+    try { localStorage.setItem("setup_banner_dismissed", "1"); } catch {}
+    setSetupBannerDismissed(true);
+  }, [state.saved?.length, setupBannerDismissed]);
   const { perm: notifPerm, enable: enableNotifs } = useNotifications();
   const weatherAlert = useWeatherAlert();
   // Pre-event newcomers haven't seen the first-timer guide yet — show a
