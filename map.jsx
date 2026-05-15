@@ -3145,10 +3145,53 @@ function RealMap({
         // Repaint basemap into Plursky palette + hide buildings/parking.
         applyPlurskyPalette();
 
-        // (Removed outside-mask — its donut polygon with the festival as a
-        // hole was suspected of throwing and aborting everything after it.
-        // setMaxBounds already keeps users from panning far, so the basemap
-        // around the festival is bounded organically.)
+        // Outside-festival clip mask — covers everything outside the
+        // festival footprint with Plursky paper, so only the speedway
+        // grounds show through. Restored after the Cramer fix; the polygon
+        // hole now lines up with the actual festival GPS.
+        _safeLayer("outside-mask", () => {
+          const _maskFeature = () => {
+            const b = FESTIVAL_CONFIG.venue.festivalBounds;
+            const cx = (b.west + b.east) / 2;
+            const cy = (b.north + b.south) / 2;
+            const big = 0.02; // ~2km half-edge — covers visible viewport at zoom 16
+            return {
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  // Outer ring CCW
+                  [
+                    [cx - big, cy - big], [cx + big, cy - big],
+                    [cx + big, cy + big], [cx - big, cy + big],
+                    [cx - big, cy - big],
+                  ],
+                  // Inner ring CW — festival "window"
+                  [
+                    [b.west, b.north], [b.east, b.north],
+                    [b.east, b.south], [b.west, b.south],
+                    [b.west, b.north],
+                  ],
+                ],
+              },
+            };
+          };
+          if (!map.getSource("outside-mask")) {
+            map.addSource("outside-mask", { type: "geojson", data: _maskFeature() });
+          }
+          if (!map.getLayer("outside-mask")) {
+            map.addLayer({
+              id: "outside-mask",
+              type: "fill",
+              source: "outside-mask",
+              paint: {
+                "fill-color":   "#eee0cb",  // Plursky --paper-2
+                "fill-opacity": 0.97,
+                "fill-antialias": true,
+              },
+            });
+          }
+        });
 
         // Festival floor — warm Plursky tint over the festival rectangle.
         _safeLayer("festival-floor", () => {
@@ -3358,7 +3401,10 @@ function RealMap({
         // events sometimes add basemap layers AFTER the first setupOverlayLayers
         // call, which can leave my layers buried below. moveLayer with no
         // second arg moves to top.
-        ["festival-floor", "stage-zones", "plaza", "plaza-stroke", "stages-3d-base", "stages-3d", "route"].forEach((id) => {
+        // outside-mask FIRST so the festival-floor, zones, etc. render
+        // INSIDE the festival hole on top of the satellite imagery,
+        // while the mask covers everything else.
+        ["outside-mask", "festival-floor", "stage-zones", "plaza", "plaza-stroke", "stages-3d-base", "stages-3d", "route"].forEach((id) => {
           try { if (map.getLayer(id)) map.moveLayer(id); } catch (e) {
             console.error(`[plursky-map] moveLayer "${id}" failed:`, e);
           }
