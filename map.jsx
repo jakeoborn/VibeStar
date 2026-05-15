@@ -3165,7 +3165,7 @@ function RealMap({
               source: "festival-floor",
               paint: {
                 "fill-color":   "#1a1030",
-                "fill-opacity": 0.55,
+                "fill-opacity": 0.30,
                 "fill-antialias": true,
               },
             });
@@ -3432,21 +3432,27 @@ function RealMap({
         // Stage labels — DOM markers anchored above each 3D pillar. The
         // pillar geometry itself (with click handler) lives in the
         // stages-3d fill-extrusion layer above; this just floats the name.
+        // Stage name labels — bigger, stage-colored, sitting just below
+        // each stage shape so they read like a Snapchat-Map POI pin.
         stages.forEach(s => {
           const { lat, lng } = mapToGps(s.x, s.y);
           const labelEl = document.createElement("div");
           labelEl.style.cssText =
-            "background:rgba(6,4,18,0.88);color:#fff;" +
-            "border:1px solid rgba(255,255,255,0.22);" +
-            "padding:3px 9px;border-radius:999px;" +
-            "font-family:'Geist Mono',monospace;font-size:9px;" +
-            "letter-spacing:1.2px;font-weight:700;white-space:nowrap;" +
-            "pointer-events:none;transform:translate(0,-60px);";
+            `background:${s.color};color:#fff;` +
+            "border:1.5px solid rgba(255,255,255,0.85);" +
+            "padding:4px 11px;border-radius:999px;" +
+            "font-family:'Geist Mono',monospace;font-size:11px;" +
+            "letter-spacing:1.1px;font-weight:800;white-space:nowrap;" +
+            "box-shadow:0 4px 14px rgba(0,0,0,0.55);" +
+            "pointer-events:auto;cursor:pointer;" +
+            "transform:translate(0,32px);";
           labelEl.textContent = s.name.toUpperCase();
+          labelEl.onclick = () => onPickStageRef.current && onPickStageRef.current(s.id);
           stageMarkersRef.current[s.id] = new maplibregl.Marker({ element: labelEl, anchor: "center" })
             .setLngLat([lng, lat])
             .addTo(map);
         });
+        console.log("[plursky-map] stage labels added:", stages.length);
 
         // Avatar — outer halo (pulse animation) + inner amber dot
         const avWrap = document.createElement("div");
@@ -3801,14 +3807,10 @@ function RealMap({
         </div>
       )}
 
-      {!loaded && !err && (
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "rgba(255,255,255,0.7)",
-          fontFamily: "'Geist Mono',monospace", fontSize: 10, letterSpacing: 1.3,
-        }}>LOADING MAP…</div>
-      )}
+      {/* (Removed the LOADING MAP overlay — basemap tiles + stage layers
+          render progressively as MapLibre fetches them; a full-screen
+          "loading" curtain on top of an already-painting map was noise.
+          Errors still show the {err} block below.) */}
       {err && (
         <div style={{
           position: "absolute", inset: 0,
