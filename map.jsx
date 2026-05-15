@@ -3747,14 +3747,22 @@ function RealMap({
 
   // Swap the basemap style when the user toggles Stylized / Satellite.
   // styledata listener re-adds overlay layers; markers persist across swaps.
+  // Track whether we've handled the initial styleKey so we don't double-set
+  // the basemap on first mount (constructor already booted with it).
+  const _styleKeyInitRef = React.useRef(styleKey);
   React.useEffect(() => {
-    if (!loaded || !mapRef.current) return;
+    if (!mapRef.current) return;
+    if (_styleKeyInitRef.current === styleKey) {
+      _styleKeyInitRef.current = "__seeded__"; // first run, skip
+      return;
+    }
     const cfg = REAL_MAP_STYLES[styleKey];
     if (!cfg) return;
     try {
+      console.log("[plursky-map] setStyle →", styleKey);
       mapRef.current.setStyle(cfg.style || cfg.url);
-    } catch (e) { /* swallow — initial-load races sometimes */ }
-  }, [loaded, styleKey]);
+    } catch (e) { console.error("[plursky-map] setStyle failed:", e); }
+  }, [styleKey]);
 
   // Route line: avatar → selected stage / meet target
   React.useEffect(() => {
