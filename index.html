@@ -82,23 +82,96 @@
     } catch {}
   </script>
 
-  <script type="text/babel" src="ios-frame.jsx?v=v116"></script>
-  <script type="text/babel" src="data.jsx?v=v116"></script>
-  <script type="text/babel" src="supabase.jsx?v=v116"></script>
-  <script type="text/babel" src="chrome.jsx?v=v116"></script>
-  <script type="text/babel" src="home.jsx?v=v116"></script>
-  <script type="text/babel" src="map.jsx?v=v116"></script>
-  <script type="text/babel" src="lineup.jsx?v=v116"></script>
-  <script type="text/babel" src="artist.jsx?v=v116"></script>
-  <script type="text/babel" src="spotify.jsx?v=v116"></script>
-  <script type="text/babel" src="app.jsx?v=v116"></script>
+  <script>
+    // In-app debug console — visit /?debug=1 (or chain with ?nuke=1&debug=1)
+    // to see a floating panel of console.log/error/warn output. Captures
+    // every message from boot onward into a ring buffer. For Jake to
+    // diagnose map rendering without Safari Web Inspector.
+    (function () {
+      try {
+        if (!location.search.includes('debug=1')) return;
+        const buf = [];
+        const MAX = 200;
+        const orig = { log: console.log, warn: console.warn, error: console.error };
+        const fmt = (args) => Array.prototype.map.call(args, (a) => {
+          if (a instanceof Error) return a.message + '\n' + (a.stack || '');
+          if (typeof a === 'object') { try { return JSON.stringify(a, null, 2); } catch { return String(a); } }
+          return String(a);
+        }).join(' ');
+        ['log', 'warn', 'error'].forEach((k) => {
+          console[k] = function () {
+            buf.push({ k, m: fmt(arguments), t: Date.now() });
+            while (buf.length > MAX) buf.shift();
+            paint();
+            return orig[k].apply(console, arguments);
+          };
+        });
+        window.addEventListener('error', (e) => {
+          buf.push({ k: 'error', m: '[window.error] ' + (e.message || '?') + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), t: Date.now() });
+          paint();
+        });
+        window.addEventListener('unhandledrejection', (e) => {
+          buf.push({ k: 'error', m: '[unhandled] ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)), t: Date.now() });
+          paint();
+        });
+        const panel = document.createElement('div');
+        panel.style.cssText =
+          'position:fixed;left:8px;right:8px;bottom:8px;max-height:42vh;z-index:99999;' +
+          'background:rgba(6,4,18,0.94);color:#f7ede0;' +
+          'border:1px solid rgba(247,237,224,0.35);border-radius:10px;' +
+          'font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.35;' +
+          'padding:6px 8px;overflow:auto;backdrop-filter:blur(6px);';
+        const close = document.createElement('button');
+        close.textContent = 'CLOSE';
+        close.style.cssText =
+          'position:absolute;top:4px;right:6px;background:#e85d2e;color:#fff;border:none;' +
+          'padding:3px 7px;border-radius:4px;font:600 9px/1 ui-monospace,monospace;letter-spacing:1px;cursor:pointer;';
+        close.onclick = () => panel.remove();
+        let attached = false;
+        function paint() {
+          if (!attached && document.body) {
+            document.body.appendChild(panel);
+            panel.appendChild(close);
+            attached = true;
+          }
+          if (!attached) return;
+          const colors = { log: '#f7ede0', warn: '#fbbf24', error: '#f87171' };
+          panel.querySelectorAll('.l').forEach((n) => n.remove());
+          buf.slice(-60).forEach((entry) => {
+            const div = document.createElement('div');
+            div.className = 'l';
+            div.style.cssText = 'color:' + colors[entry.k] + ';padding:2px 0;white-space:pre-wrap;border-bottom:1px solid rgba(247,237,224,0.08);';
+            const ts = new Date(entry.t).toISOString().slice(11, 19);
+            div.textContent = '[' + ts + ' ' + entry.k.toUpperCase() + '] ' + entry.m;
+            panel.appendChild(div);
+          });
+          panel.scrollTop = panel.scrollHeight;
+        }
+        // Paint once body is ready, in case console fires before <body>.
+        if (document.body) paint();
+        else document.addEventListener('DOMContentLoaded', paint);
+        console.log('[plursky-debug] panel armed. v=' + (document.querySelector('script[src*=app]')?.src?.match(/v=v\d+/)?.[0] || '?'));
+      } catch (e) { /* never let debug break the app */ }
+    })();
+  </script>
+
+  <script type="text/babel" src="ios-frame.jsx?v=v117"></script>
+  <script type="text/babel" src="data.jsx?v=v117"></script>
+  <script type="text/babel" src="supabase.jsx?v=v117"></script>
+  <script type="text/babel" src="chrome.jsx?v=v117"></script>
+  <script type="text/babel" src="home.jsx?v=v117"></script>
+  <script type="text/babel" src="map.jsx?v=v117"></script>
+  <script type="text/babel" src="lineup.jsx?v=v117"></script>
+  <script type="text/babel" src="artist.jsx?v=v117"></script>
+  <script type="text/babel" src="spotify.jsx?v=v117"></script>
+  <script type="text/babel" src="app.jsx?v=v117"></script>
 
   <script>
 
     // Build version stamp â€” bumped on every deploy that changes app behaviour.
     // If the running tab's stored version doesn't match, force a full reload
     // (bypassing browser HTTP cache that GH-Pages serves with max-age=600).
-    const APP_VERSION = 'v116';
+    const APP_VERSION = 'v117';
     try {
       const stored = localStorage.getItem('app_version');
       if (stored && stored !== APP_VERSION) {
@@ -119,11 +192,11 @@
     if ('serviceWorker' in navigator) {
       caches.keys().then(keys =>
         Promise.all(
-          keys.filter(k => k !== 'plursky-v116' && !k.startsWith('plursky-tiles-'))
+          keys.filter(k => k !== 'plursky-v117' && !k.startsWith('plursky-tiles-'))
               .map(k => caches.delete(k))
         )
       ).then(() =>
-        navigator.serviceWorker.register('./sw.js?v=v116', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('./sw.js?v=v117', { updateViaCache: 'none' })
           .then(reg => { try { reg.update(); } catch {} })
       );
 

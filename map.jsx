@@ -3115,83 +3115,46 @@ function RealMap({
       // get torn down on setStyle(), so we re-add them every time a new
       // style finishes loading. Clip first → poster on top → 3D buildings
       // extrude from poster → route line → DOM markers.
+      // Helper — wrap layer setup so one broken layer doesn't abort the rest.
+      // Errors get logged with the layer id so Jake can screenshot the console
+      // and we can diagnose remotely without browser access.
+      const _safeLayer = (id, fn) => {
+        try { fn(); }
+        catch (e) { console.error(`[plursky-map] layer "${id}" failed:`, e); }
+      };
+
       const setupOverlayLayers = () => {
-        // Repaint the basemap into Plursky palette before adding overlays.
+        console.log("[plursky-map] setupOverlayLayers START");
+
+        // Repaint basemap into Plursky palette + hide buildings/parking.
         applyPlurskyPalette();
 
-        // Outside-festival mask — fills everything OUTSIDE festivalBounds
-        // with Plursky paper-2, hiding the Vegas Strip / airport / casino
-        // roads. Makes the map read as "a paper illustration of the
-        // fairgrounds" instead of "the world map with a festival on it."
-        // Inner ring is the festival hole — basemap shows through there
-        // until edc-clip covers it with the warm Plursky-night floor.
-        const outsideMaskFeature = () => {
-          const b = FESTIVAL_CONFIG.venue.festivalBounds;
-          const cx = (b.west + b.east) / 2;
-          const cy = (b.north + b.south) / 2;
-          const big = 0.5; // ~55km half-edge; large enough to cover any visible map area
-          return {
-            type: "Feature",
-            geometry: {
-              type: "Polygon",
-              coordinates: [
-                // Outer ring (CCW)
-                [
-                  [cx - big, cy - big], [cx + big, cy - big],
-                  [cx + big, cy + big], [cx - big, cy + big],
-                  [cx - big, cy - big],
-                ],
-                // Inner ring (CW) — the festival "window"
-                [
-                  [b.west, b.north], [b.east, b.north],
-                  [b.east, b.south], [b.west, b.south],
-                  [b.west, b.north],
-                ],
-              ],
-            },
-          };
-        };
-        if (!map.getSource("outside-mask")) {
-          map.addSource("outside-mask", { type: "geojson", data: outsideMaskFeature() });
-        }
-        if (!map.getLayer("outside-mask")) {
-          map.addLayer({
-            id: "outside-mask",
-            type: "fill",
-            source: "outside-mask",
-            paint: {
-              "fill-color":   "#eee0cb",  // Plursky --paper-2
-              // Fully opaque — Jake's call: hide the stuff around the
-              // speedway entirely. Only the festival window shows the
-              // basemap + Plursky overlay; everything else is paper.
-              "fill-opacity": 0.98,
-              "fill-antialias": true,
-            },
-          });
-        }
+        // (Removed outside-mask — its donut polygon with the festival as a
+        // hole was suspected of throwing and aborting everything after it.
+        // setMaxBounds already keeps users from panning far, so the basemap
+        // around the festival is bounded organically.)
 
         // Festival floor — warm Plursky tint over the festival rectangle.
-        // (Replaces the prior global edc-clip polygon, whose [-180,-85]
-        // outer ring was likely hitting Web Mercator precision issues
-        // and silently failing to render.)
-        if (!map.getSource("festival-floor")) {
-          map.addSource("festival-floor", {
-            type: "geojson",
-            data: festivalFootprint(),
-          });
-        }
-        if (!map.getLayer("festival-floor")) {
-          map.addLayer({
-            id: "festival-floor",
-            type: "fill",
-            source: "festival-floor",
-            paint: {
-              "fill-color":   "#1a1030",   // Plursky --night, warm dark
-              "fill-opacity": 0.55,
-              "fill-antialias": true,
-            },
-          });
-        }
+        _safeLayer("festival-floor", () => {
+          if (!map.getSource("festival-floor")) {
+            map.addSource("festival-floor", {
+              type: "geojson",
+              data: festivalFootprint(),
+            });
+          }
+          if (!map.getLayer("festival-floor")) {
+            map.addLayer({
+              id: "festival-floor",
+              type: "fill",
+              source: "festival-floor",
+              paint: {
+                "fill-color":   "#1a1030",
+                "fill-opacity": 0.55,
+                "fill-antialias": true,
+              },
+            });
+          }
+        });
 
         // Plursky-native stage zone glows — colored ground patches in each
         // stage's color. Painted-ground wayfinding (Snapchat Map's POI
@@ -3212,21 +3175,23 @@ function RealMap({
             };
           }),
         });
-        if (!map.getSource("stage-zones")) {
-          map.addSource("stage-zones", { type: "geojson", data: stageZonesData() });
-        }
-        if (!map.getLayer("stage-zones")) {
-          map.addLayer({
-            id: "stage-zones",
-            source: "stage-zones",
-            type: "fill",
-            paint: {
-              "fill-color":   ["get", "color"],
-              "fill-opacity": 0.22,
-              "fill-antialias": true,
-            },
-          });
-        }
+        _safeLayer("stage-zones", () => {
+          if (!map.getSource("stage-zones")) {
+            map.addSource("stage-zones", { type: "geojson", data: stageZonesData() });
+          }
+          if (!map.getLayer("stage-zones")) {
+            map.addLayer({
+              id: "stage-zones",
+              source: "stage-zones",
+              type: "fill",
+              paint: {
+                "fill-color":   ["get", "color"],
+                "fill-opacity": 0.22,
+                "fill-antialias": true,
+              },
+            });
+          }
+        });
 
         // Daisy Lane plaza — central plaza marker at the festival centroid.
         // (Walkway spokes were tried but read as a busy starburst from a
@@ -3249,33 +3214,35 @@ function RealMap({
             }),
           },
         });
-        if (!map.getSource("plaza")) {
-          map.addSource("plaza", { type: "geojson", data: plazaData() });
-        }
-        if (!map.getLayer("plaza")) {
-          map.addLayer({
-            id: "plaza",
-            source: "plaza",
-            type: "fill",
-            paint: {
-              "fill-color":   "#e85d2e",
-              "fill-opacity": 0.18,
-              "fill-antialias": true,
-            },
-          });
-        }
-        if (!map.getLayer("plaza-stroke")) {
-          map.addLayer({
-            id: "plaza-stroke",
-            source: "plaza",
-            type: "line",
-            paint: {
-              "line-color":   "#e85d2e",
-              "line-width":   1.5,
-              "line-opacity": 0.55,
-            },
-          });
-        }
+        _safeLayer("plaza", () => {
+          if (!map.getSource("plaza")) {
+            map.addSource("plaza", { type: "geojson", data: plazaData() });
+          }
+          if (!map.getLayer("plaza")) {
+            map.addLayer({
+              id: "plaza",
+              source: "plaza",
+              type: "fill",
+              paint: {
+                "fill-color":   "#e85d2e",
+                "fill-opacity": 0.18,
+                "fill-antialias": true,
+              },
+            });
+          }
+          if (!map.getLayer("plaza-stroke")) {
+            map.addLayer({
+              id: "plaza-stroke",
+              source: "plaza",
+              type: "line",
+              paint: {
+                "line-color":   "#e85d2e",
+                "line-width":   1.5,
+                "line-opacity": 0.55,
+              },
+            });
+          }
+        });
         // Crowd heatmap — Mapbox native heatmap layer driven by
         // _crowdDensity. Lives BELOW stage pillars so stages still pop
         // when heat is on. Visibility toggles via setLayoutProperty in
@@ -3313,6 +3280,7 @@ function RealMap({
         // colored cylinder rising out of the poster (Pokémon-Go gym vibe).
         // Tap = onPickStage. Selected stage updates via setData on the
         // GeoJSON source (no DOM marker class flipping needed).
+        _safeLayer("stages-3d", () => {
         if (!map.getSource("stages-3d")) {
           map.addSource("stages-3d", { type: "geojson", data: stagesExtrusionData(null) });
         }
@@ -3357,6 +3325,9 @@ function RealMap({
           map.on("mouseenter", "stages-3d", () => { map.getCanvas().style.cursor = "pointer"; });
           map.on("mouseleave", "stages-3d", () => { map.getCanvas().style.cursor = ""; });
         }
+        });
+
+        console.log("[plursky-map] setupOverlayLayers END");
 
         if (!map.getSource("route")) {
           map.addSource("route", {
