@@ -558,6 +558,9 @@ function LineupScreen({ state, setState }) {
     try { return localStorage.getItem('plursky_lineup_view') || 'list'; } catch { return 'list'; }
   });
   React.useEffect(() => { try { localStorage.setItem('plursky_lineup_view', viewMode); } catch {} }, [viewMode]);
+  // v138: per-day section refs so the FRI/SAT/SUN tabs scroll-to-section
+  // when grid view is on (the grid shows all 3 days in one continuous page).
+  const gridSectionRefs = React.useRef({});
   // Sort: time (chronological), tier (headliners first), stage (grouped by stage order)
   const [sortBy, setSortBy] = React.useState("time");
   // Active-filter count powers the badge on the FILTERS trigger button — replaces
@@ -665,7 +668,15 @@ function LineupScreen({ state, setState }) {
         {dayStats.map(d => {
           const on = d.n === day;
           return (
-            <button key={d.n} onClick={() => setDay(d.n)} style={{
+            <button key={d.n} onClick={() => {
+              setDay(d.n);
+              // In grid mode the page renders all 3 days continuously; the
+              // tab acts as a scroll-to-section anchor.
+              if (viewMode === "grid") {
+                const el = gridSectionRefs.current[d.n];
+                if (el?.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }} style={{
               flex: 1,
               padding: "10px 8px",
               borderRadius: 12,
@@ -890,16 +901,59 @@ function LineupScreen({ state, setState }) {
           );
         })()}
         {viewMode === "grid" && !(filter === "saved" && state.saved.length === 0) && (
-          <TimelineGrid
-            day={day}
-            allDayArtists={ARTISTS.filter(a => a.day === day)}
-            state={state}
-            setState={setState}
-            matchesActive={matchesActive}
-            conflictById={conflictById}
-            spotifyMatchedIds={spotifyMatchedIds}
-            highlightId={highlightId}
-          />
+          // v138: all-3-days continuous grid + per-day saved-sets sidebar.
+          // The day tabs above scroll to the matching section instead of
+          // filtering — feels like one long page rather than three tabbed
+          // schedules. Each section has its own sidebar slice so the user
+          // can see what they picked for that night at a glance.
+          [1, 2, 3].map(dn => {
+            const dayMeta = DAYS.find(x => x.n === dn);
+            const dayArt  = ARTISTS.filter(a => a.day === dn);
+            return (
+              <div
+                key={dn}
+                ref={el => { gridSectionRefs.current[dn] = el; }}
+                style={{ scrollMarginTop: 12 }}
+              >
+                {dn !== 1 && (
+                  <div style={{
+                    height: 1, background: "var(--line-2)",
+                    margin: "26px 16px 0",
+                  }}/>
+                )}
+                <div style={{
+                  position: "sticky", top: 0, zIndex: 6,
+                  display: "flex", alignItems: "baseline", gap: 10,
+                  padding: "12px 16px 8px",
+                  background: "var(--paper)",
+                  borderBottom: "1px solid var(--line)",
+                }}>
+                  <div className="serif" style={{ fontSize: 22 }}>{dayMeta?.label || `Day ${dn}`}</div>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700 }}>
+                    · {(dayMeta?.date || "").toUpperCase()}
+                  </div>
+                  <div className="mono" style={{ marginLeft: "auto", fontSize: 9, letterSpacing: 1.2, color: "var(--muted)", fontWeight: 700 }}>
+                    {dayArt.length} SETS
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 0, alignItems: "stretch", padding: "0 0 10px" }}>
+                  <SavedSidebar day={dn} state={state} setState={setState} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <TimelineGrid
+                      day={dn}
+                      allDayArtists={dayArt}
+                      state={state}
+                      setState={setState}
+                      matchesActive={matchesActive}
+                      conflictById={conflictById}
+                      spotifyMatchedIds={spotifyMatchedIds}
+                      highlightId={highlightId}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })
         )}
         {viewMode === "list" && dayArtists.length === 0 && (
           <div style={{ padding: 40, textAlign: "center" }}>
@@ -1097,6 +1151,72 @@ function overlaps(a, b) {
   const aS = toNightMin(a.start), aE = toNightMin(a.end);
   const bS = toNightMin(b.start), bE = toNightMin(b.end);
   return aS < bE && bS < aE;
+}
+
+// v138: skinny vertical column listing the user's saved sets for a given
+// day, sorted by start time. Sits to the LEFT of the TimelineGrid so the
+// grid keeps its full horizontal-scroll real estate. Tap a chip → opens
+// the artist's page (where SCHEDULE handoff can jump into the grid).
+function SavedSidebar({ day, state, setState }) {
+  const saved = state.saved
+    .map(id => ARTISTS.find(a => a.id === id))
+    .filter(a => a && a.day === day)
+    .sort((a, b) => a.start.localeCompare(b.start));
+  return (
+    <div style={{
+      flex: "0 0 92px", boxSizing: "border-box",
+      padding: "10px 6px 14px 12px",
+      borderRight: "1px solid var(--line)",
+      background: "var(--paper)",
+      display: "flex", flexDirection: "column", gap: 4,
+    }}>
+      <div className="mono" style={{
+        fontSize: 8.5, letterSpacing: 1.2, color: "var(--muted)",
+        fontWeight: 700, padding: "0 2px 4px",
+      }}>
+        MY SETS
+      </div>
+      {saved.length === 0 ? (
+        <div style={{
+          padding: "10px 4px", textAlign: "center",
+          fontSize: 9, lineHeight: 1.3, color: "var(--muted)",
+          border: "1px dashed var(--line-2)", borderRadius: 8,
+        }}>
+          Tap any set in the grid →
+        </div>
+      ) : saved.map(a => {
+        const stage = STAGES.find(s => s.id === a.stage);
+        const isLive = (() => {
+          if (a.day !== NOW.day || !NOW.time) return false;
+          const nm = toNightMin(NOW.time), sm = toNightMin(a.start), em = toNightMin(a.end);
+          return sm <= nm && nm < em;
+        })();
+        return (
+          <button key={a.id} onClick={() => setState(s => ({ ...s, artist: a.id }))} style={{
+            display: "flex", alignItems: "stretch", gap: 6,
+            padding: "5px 4px", borderRadius: 6,
+            background: "var(--paper-2)", border: "1px solid var(--line)",
+            cursor: "pointer", textAlign: "left",
+          }}>
+            <div style={{ width: 3, background: stage?.color || "var(--line-2)", borderRadius: 2, flexShrink: 0 }}/>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+              <div style={{
+                fontSize: 10.5, fontWeight: 600, color: "var(--ink)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                lineHeight: 1.15,
+              }}>{a.name}</div>
+              <div className="mono" style={{
+                fontSize: 7.5, letterSpacing: 0.6, fontWeight: 600,
+                color: isLive ? "var(--success)" : "var(--muted)",
+              }}>
+                {isLive ? "● LIVE" : a.start}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function TimelineGrid({ day, allDayArtists, state, setState, matchesActive, conflictById, spotifyMatchedIds, highlightId }) {
