@@ -487,6 +487,136 @@ function _mapDisplayPerm(display) {
   return "default";
 }
 
+// ── Attendance tracking (v137) ────────────────────────────────
+// Real "SETS CAUGHT" stat — replaces the previous hardcoded heuristic
+// (set.day <= NOW.day, which lit up every saved set whether attended
+// or not). Two ways a set ends up here:
+//   (a) Live GPS auto-detect — if the user is within ~140 m of a
+//       stage anchor while one of its artists is mid-set, we mark
+//       attendance immediately. No history needed; just current GPS
+//       + current time. See `detectCurrentArtist`.
+//   (b) Manual review in the Memories tab — checkbox list per night
+//       so the user can backfill anything we missed the next morning.
+
+const ATTENDED_KEY = "plursky_attended_v1";
+function getAllAttended() {
+  try {
+    const raw = localStorage.getItem(ATTENDED_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    // Normalize legacy/empty values into arrays of strings.
+    Object.keys(obj).forEach(k => {
+      obj[k] = Array.isArray(obj[k]) ? obj[k].filter(x => typeof x === "string") : [];
+    });
+    return obj;
+  } catch { return {}; }
+}
+function _writeAttended(map) {
+  try { localStorage.setItem(ATTENDED_KEY, JSON.stringify(map)); } catch {}
+  try { window.dispatchEvent(new CustomEvent("plursky-attended-change")); } catch {}
+}
+function getAttendedForNight(night) {
+  return new Set(getAllAttended()[night] || []);
+}
+function getAttendedCount() {
+  const all = getAllAttended();
+  return Object.values(all).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+}
+function markAttended(night, artistId, source = "manual") {
+  if (!night || !artistId) return false;
+  const all = getAllAttended();
+  const list = all[night] || [];
+  if (list.includes(artistId)) return false;
+  all[night] = [...list, artistId];
+  _writeAttended(all);
+  if (source === "gps") {
+    // Lightweight crumb so we can show a "marked by GPS" badge later
+    try {
+      const log = JSON.parse(localStorage.getItem("plursky_attended_source_v1") || "{}");
+      log[artistId] = { source, ts: Date.now() };
+      localStorage.setItem("plursky_attended_source_v1", JSON.stringify(log));
+    } catch {}
+  }
+  return true;
+}
+function unmarkAttended(night, artistId) {
+  if (!night || !artistId) return false;
+  const all = getAllAttended();
+  const list = (all[night] || []).filter(x => x !== artistId);
+  if (list.length === (all[night] || []).length) return false;
+  all[night] = list;
+  _writeAttended(all);
+  return true;
+}
+function isAttended(night, artistId) {
+  return getAttendedForNight(night).has(artistId);
+}
+function getAttendanceSource(artistId) {
+  try {
+    const log = JSON.parse(localStorage.getItem("plursky_attended_source_v1") || "{}");
+    return log[artistId]?.source || "manual";
+  } catch { return "manual"; }
+}
+
+// Quick equirectangular distance — accurate enough at festival scale.
+function _gpsDistMeters(latA, lngA, latB, lngB) {
+  const toRad = (d) => d * Math.PI / 180;
+  const cosLat = Math.cos(toRad((latA + latB) / 2));
+  const dLat = toRad(latB - latA) * 6371000;
+  const dLng = toRad(lngB - lngA) * 6371000 * cosLat;
+  return Math.hypot(dLat, dLng);
+}
+
+// Given current GPS + current festival time, return the artist the user is
+// most likely watching right now — or null if none matches.
+//
+// "At a set" = within `radiusM` of a stage anchor AND the stage has an
+// artist whose set window contains NOW.time. We use 140 m as the default
+// radius which roughly matches the audible/visible footprint of a stage
+// at LVMS without bleeding into neighbours.
+function detectCurrentArtist(lat, lng, opts = {}) {
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  const cfg = window.FESTIVAL_CONFIG;
+  if (!cfg) return null;
+  const anchors = cfg.gpsAnchors || [];
+  if (anchors.length === 0) return null;
+  const radius = opts.radiusM || 140;
+  const now = window.NOW;
+  if (!now || !now.day || !now.time) return null;
+  // Closest stage anchor within radius
+  let best = null;
+  for (const a of anchors) {
+    const d = _gpsDistMeters(lat, lng, a.lat, a.lng);
+    if (d > radius) continue;
+    if (!best || d < best.d) best = { ...a, d };
+  }
+  if (!best) return null;
+  // Artist at that stage whose set window contains NOW.time
+  const [nh, nm] = (now.time || "00:00").split(":").map(Number);
+  const adjustH = nh < 6 ? nh + 24 : nh;
+  const nowMin  = adjustH * 60 + nm;
+  const playing = (window.ARTISTS || []).find(a => {
+    if (a.day !== now.day) return false;
+    if (a.stage !== best.stageId) return false;
+    const [sh, sm] = a.start.split(":").map(Number);
+    const [eh, em] = a.end.split(":").map(Number);
+    const start = (sh < 6 ? sh + 24 : sh) * 60 + sm;
+    const end   = (eh < 6 ? eh + 24 : eh) * 60 + em;
+    return nowMin >= start && nowMin <= end;
+  });
+  if (!playing) return null;
+  return { artistId: playing.id, stageId: best.stageId, night: now.day, distM: Math.round(best.d) };
+}
+
+// Called from the GPS effect in MapScreen on every successful sample.
+// Idempotent + cheap — silently no-ops when the user is between stages,
+// outside the festival, or it's not set time.
+function recordAttendanceFromGps(lat, lng) {
+  const hit = detectCurrentArtist(lat, lng);
+  if (!hit) return null;
+  const added = markAttended(hit.night, hit.artistId, "gps");
+  return added ? hit : null;
+}
+
 // Convert an artist's set start to a real UTC timestamp (respects
 // post-midnight sets: hours < 6 are treated as the following calendar day).
 function _artistStartMs(artist) {
@@ -1260,6 +1390,8 @@ Object.assign(window, {
   useArtistPhoto,
   useInstallPrompt, InstallBanner,
   useNotifications, NotificationsCard, scheduleReminders,
+  getAllAttended, getAttendedForNight, getAttendedCount, markAttended, unmarkAttended,
+  isAttended, getAttendanceSource, detectCurrentArtist, recordAttendanceFromGps,
   FestivalChip, FestivalSwitcher,
   useBatterySaver, BatterySaverCard, BatterySaverToast, setBatterySaverMode,
   useOnlineStatus, StatusStrip,

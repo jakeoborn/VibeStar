@@ -3060,11 +3060,89 @@ function MemoriesScreen({ state, setState }) {
                   marginTop: moments.length > 0 ? 4 : 0,
                 }}>+ ADD MOMENT</button>
               )}
+
+              {savedNightArtists.length > 0 && (
+                <AttendanceReview night={d.n} savedNightArtists={savedNightArtists} />
+              )}
             </div>
           );
         })}
       </ScrollBody>
     </Screen>
+  );
+}
+
+// v137: manual attendance review — checkbox list of every saved set for a
+// given night. Toggling persists via markAttended/unmarkAttended which both
+// emit the "plursky-attended-change" event so other UI (Me-tab SETS CAUGHT)
+// stays in sync.
+function AttendanceReview({ night, savedNightArtists }) {
+  const [attended, setAttended] = React.useState(() => getAttendedForNight(night));
+  React.useEffect(() => {
+    const refresh = () => setAttended(getAttendedForNight(night));
+    window.addEventListener("plursky-attended-change", refresh);
+    return () => window.removeEventListener("plursky-attended-change", refresh);
+  }, [night]);
+  const toggle = (id) => {
+    if (attended.has(id)) unmarkAttended(night, id);
+    else markAttended(night, id, "manual");
+  };
+  const caught = savedNightArtists.filter(a => attended.has(a.id)).length;
+  return (
+    <div style={{
+      marginTop: 10, padding: "12px 14px",
+      background: "var(--paper-2)", border: "1px solid var(--line)", borderRadius: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700 }}>
+          SETS YOU CAUGHT
+        </div>
+        <div className="mono" style={{ fontSize: 9, letterSpacing: 1.2, color: caught === savedNightArtists.length ? "var(--success)" : "var(--muted)", fontWeight: 700 }}>
+          {caught} / {savedNightArtists.length}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {savedNightArtists
+          .slice()
+          .sort((a, b) => a.start.localeCompare(b.start))
+          .map(a => {
+            const on = attended.has(a.id);
+            const stage = STAGES.find(s => s.id === a.stage);
+            const src = on ? getAttendanceSource(a.id) : null;
+            return (
+              <button key={a.id} onClick={() => toggle(a.id)} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 10px", borderRadius: 8,
+                background: on ? "rgba(45,122,85,0.10)" : "var(--paper)",
+                border: on ? "1px solid rgba(45,122,85,0.4)" : "1px solid var(--line)",
+                cursor: "pointer", textAlign: "left",
+              }}>
+                <span style={{
+                  width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                  background: on ? "var(--success)" : "transparent",
+                  border: on ? "none" : "1.5px solid var(--line-2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontSize: 11, fontWeight: 700,
+                }}>{on ? "✓" : ""}</span>
+                <div style={{ width: 3, alignSelf: "stretch", background: stage?.color || "var(--line-2)", borderRadius: 3 }}/>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="serif" style={{ fontSize: 15, lineHeight: 1.1 }}>{a.name}</div>
+                  <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2, fontWeight: 600 }}>
+                    {(stage?.short || "").toUpperCase()} · {a.start}
+                  </div>
+                </div>
+                {src === "gps" && (
+                  <span className="mono" style={{
+                    fontSize: 8, letterSpacing: 1, color: "var(--success)", fontWeight: 700,
+                    padding: "2px 6px", borderRadius: 999,
+                    background: "rgba(45,122,85,0.14)",
+                  }}>📍 GPS</span>
+                )}
+              </button>
+            );
+          })}
+      </div>
+    </div>
   );
 }
 
@@ -3126,10 +3204,15 @@ function MeScreen({ state, setState }) {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Stats — kept locally per the spec; intentionally cheap, not precious.
-  const setsCaught = state.saved.filter(id => {
-    const a = ARTISTS.find(x => x.id === id);
-    return a && NOW.day && a.day <= NOW.day;
-  }).length;
+  // SETS CAUGHT now reflects real attendance (live GPS auto-detect + manual
+  // review checklist in Memories). Re-renders on any attendance change via
+  // the global "plursky-attended-change" event.
+  const [setsCaught, setSetsCaught] = React.useState(getAttendedCount);
+  React.useEffect(() => {
+    const refresh = () => setSetsCaught(getAttendedCount());
+    window.addEventListener("plursky-attended-change", refresh);
+    return () => window.removeEventListener("plursky-attended-change", refresh);
+  }, []);
   const daysHere = NOW.day || 0;
   const savedCount = state.saved.length;
   // Earned-badge count for the 4-card grid badge — cheap derivation mirroring

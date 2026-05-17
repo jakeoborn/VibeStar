@@ -396,8 +396,20 @@ function useGeolocation(enabled) {
     const id = navigator.geolocation.watchPosition(
       (p) => {
         if (!alive) return;
-        setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, ts: Date.now() });
+        const lat = p.coords.latitude, lng = p.coords.longitude;
+        setPos({ lat, lng, accuracy: p.coords.accuracy, ts: Date.now() });
         setStatus("live");
+        // v137: live attendance auto-detect — silently marks the user as
+        // "caught" the current set when GPS confirms they're inside a stage's
+        // footprint AND the timing matches. Idempotent + cheap; no record
+        // means we're between stages or it's not set time.
+        try {
+          const hit = window.recordAttendanceFromGps?.(lat, lng);
+          if (hit && typeof window.plurskyToast === "function") {
+            const a = (window.ARTISTS || []).find(x => x.id === hit.artistId);
+            if (a) window.plurskyToast(`✓ Caught ${a.name}`);
+          }
+        } catch {}
       },
       (e) => {
         if (!alive) return;
