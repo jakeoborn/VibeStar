@@ -14,9 +14,9 @@ function Screen({ children, bg = "var(--paper)", pad = true, ink = "var(--ink)" 
   );
 }
 
-function ScrollBody({ children, style }) {
+function ScrollBody({ children, style, ...rest }) {
   return (
-    <div style={{
+    <div {...rest} style={{
       flex: 1, overflowY: "auto", overflowX: "hidden",
       WebkitOverflowScrolling: "touch",
       ...style,

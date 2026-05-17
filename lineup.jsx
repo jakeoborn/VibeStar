@@ -561,6 +561,67 @@ function LineupScreen({ state, setState }) {
   // v138: per-day section refs so the FRI/SAT/SUN tabs scroll-to-section
   // when grid view is on (the grid shows all 3 days in one continuous page).
   const gridSectionRefs = React.useRef({});
+
+  // v139: a single rAF-throttled scroll listener on the ScrollBody does
+  // two things at once:
+  //   (a) saves scrollTop to sessionStorage so navigating into an artist
+  //       and coming back restores the exact position — fixes the "go to
+  //       SAT, tap an artist, come back, end up on FRI" bug;
+  //   (b) keeps the FRI/SAT/SUN day picker highlight in sync with whichever
+  //       section the user has scrolled into the top of the viewport.
+  // On mount we restore from sessionStorage in a rAF so layout is committed
+  // first. On unmount + remount the listener re-attaches.
+  const SCROLL_KEY = "plursky_lineup_scroll_v1";
+  React.useEffect(() => {
+    if (viewMode !== "grid") return;
+    const root = document.querySelector('[data-lineup-scroll]');
+    if (!root) return;
+
+    const restoreId = requestAnimationFrame(() => {
+      try {
+        const y = parseInt(sessionStorage.getItem(SCROLL_KEY) || "0", 10);
+        if (y > 0) root.scrollTop = y;
+      } catch {}
+    });
+
+    let pending = false;
+    const tick = () => {
+      const rootTop = root.getBoundingClientRect().top;
+      // Persist position
+      try { sessionStorage.setItem(SCROLL_KEY, String(root.scrollTop)); } catch {}
+      // Day picker sync — section whose top edge is at or just above the
+      // ScrollBody's top edge, and whose bottom is still below.
+      let bestDay = null;
+      for (const dn of [1, 2, 3]) {
+        const el = gridSectionRefs.current[dn];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.top - rootTop <= 100 && r.bottom - rootTop > 100) bestDay = dn;
+      }
+      if (bestDay) setDay(bestDay);
+      pending = false;
+    };
+    const onScroll = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(tick);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    requestAnimationFrame(tick); // initial sync
+
+    return () => {
+      cancelAnimationFrame(restoreId);
+      root.removeEventListener("scroll", onScroll);
+    };
+  }, [viewMode]);
+
+  // Reset stored scroll position when leaving grid view so list-mode users
+  // who later flip to grid get a fresh top-of-page on first switch.
+  React.useEffect(() => {
+    if (viewMode === "list") {
+      try { sessionStorage.removeItem(SCROLL_KEY); } catch {}
+    }
+  }, [viewMode]);
   // Sort: time (chronological), tier (headliners first), stage (grouped by stage order)
   const [sortBy, setSortBy] = React.useState("time");
   // Active-filter count powers the badge on the FILTERS trigger button — replaces
@@ -858,7 +919,7 @@ function LineupScreen({ state, setState }) {
         );
       })()}
 
-      <ScrollBody style={{ padding: viewMode === "grid" ? "0 0 80px" : "0 16px 90px" }}>
+      <ScrollBody data-lineup-scroll style={{ padding: viewMode === "grid" ? "0 0 80px" : "0 16px 90px" }}>
         {/* "Save the Day" empty-state CTA — when no sets are saved for the
             selected day, a single ember card batch-saves every tier-3
             headliner. Disappears once the day has any save. */}
@@ -921,13 +982,15 @@ function LineupScreen({ state, setState }) {
                     margin: "26px 16px 0",
                   }}/>
                 )}
-                <div style={{
-                  position: "sticky", top: 0, zIndex: 6,
-                  display: "flex", alignItems: "baseline", gap: 10,
-                  padding: "12px 16px 8px",
-                  background: "var(--paper)",
-                  borderBottom: "1px solid var(--line)",
-                }}>
+                <div
+                  data-day-header={dn}
+                  style={{
+                    position: "sticky", top: 0, zIndex: 6,
+                    display: "flex", alignItems: "baseline", gap: 10,
+                    padding: "12px 16px 8px",
+                    background: "var(--paper)",
+                    borderBottom: "1px solid var(--line)",
+                  }}>
                   <div className="serif" style={{ fontSize: 22 }}>{dayMeta?.label || `Day ${dn}`}</div>
                   <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700 }}>
                     · {(dayMeta?.date || "").toUpperCase()}
@@ -1153,68 +1216,122 @@ function overlaps(a, b) {
   return aS < bE && bS < aE;
 }
 
-// v138: skinny vertical column listing the user's saved sets for a given
-// day, sorted by start time. Sits to the LEFT of the TimelineGrid so the
-// grid keeps its full horizontal-scroll real estate. Tap a chip → opens
-// the artist's page (where SCHEDULE handoff can jump into the grid).
+// Shared grid time-mapping constants — used by both TimelineGrid (the
+// 9-stage schedule) and SavedSidebar (the user's picks for that night).
+// Keeping them at module scope means each saved set in the sidebar lines
+// up vertically with the corresponding set block in the grid.
+const GRID_START_MIN = 19 * 60;            // 19:00
+const GRID_END_MIN   = (24 + 5) * 60 + 30; // 05:30 next day
+const GRID_PX_PER_MIN = 1.8;
+const GRID_TOTAL_H = (GRID_END_MIN - GRID_START_MIN) * GRID_PX_PER_MIN;
+const GRID_HEADER_H = 36; // matches the sticky stage header height in TimelineGrid
+function _minToTop(m) {
+  return (Math.max(GRID_START_MIN, Math.min(GRID_END_MIN, m)) - GRID_START_MIN) * GRID_PX_PER_MIN;
+}
+
+// v139: time-aligned saved-sets sidebar. Each entry positions absolutely
+// at the corresponding time row so the column reads like a personal vertical
+// schedule next to the full grid. Tap an entry to open the artist page; tap
+// the small × to un-save the set right there.
 function SavedSidebar({ day, state, setState }) {
   const saved = state.saved
     .map(id => ARTISTS.find(a => a.id === id))
     .filter(a => a && a.day === day)
     .sort((a, b) => a.start.localeCompare(b.start));
+
+  const unsave = (id, e) => {
+    e.stopPropagation();
+    setState(s => ({ ...s, saved: s.saved.filter(x => x !== id) }));
+  };
+
   return (
     <div style={{
-      flex: "0 0 92px", boxSizing: "border-box",
-      padding: "10px 6px 14px 12px",
+      flex: "0 0 100px", boxSizing: "border-box",
       borderRight: "1px solid var(--line)",
       background: "var(--paper)",
-      display: "flex", flexDirection: "column", gap: 4,
+      position: "relative",
     }}>
-      <div className="mono" style={{
-        fontSize: 8.5, letterSpacing: 1.2, color: "var(--muted)",
-        fontWeight: 700, padding: "0 2px 4px",
+      {/* Header matches the grid's sticky stage-header height so the rows
+          below align with the time gutter pixel-for-pixel. */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 5,
+        height: GRID_HEADER_H,
+        display: "flex", alignItems: "center",
+        padding: "0 8px",
+        background: "var(--paper)",
+        borderBottom: "1px solid var(--line-2)",
       }}>
-        MY SETS
+        <div className="mono" style={{
+          fontSize: 8.5, letterSpacing: 1.2, color: "var(--muted)",
+          fontWeight: 700,
+        }}>MY SETS · {saved.length}</div>
       </div>
-      {saved.length === 0 ? (
-        <div style={{
-          padding: "10px 4px", textAlign: "center",
-          fontSize: 9, lineHeight: 1.3, color: "var(--muted)",
-          border: "1px dashed var(--line-2)", borderRadius: 8,
-        }}>
-          Tap any set in the grid →
-        </div>
-      ) : saved.map(a => {
-        const stage = STAGES.find(s => s.id === a.stage);
-        const isLive = (() => {
-          if (a.day !== NOW.day || !NOW.time) return false;
-          const nm = toNightMin(NOW.time), sm = toNightMin(a.start), em = toNightMin(a.end);
-          return sm <= nm && nm < em;
-        })();
-        return (
-          <button key={a.id} onClick={() => setState(s => ({ ...s, artist: a.id }))} style={{
-            display: "flex", alignItems: "stretch", gap: 6,
-            padding: "5px 4px", borderRadius: 6,
-            background: "var(--paper-2)", border: "1px solid var(--line)",
-            cursor: "pointer", textAlign: "left",
+      <div style={{ position: "relative", height: GRID_TOTAL_H }}>
+        {saved.length === 0 ? (
+          <div style={{
+            position: "absolute", top: 14, left: 6, right: 6,
+            padding: "10px 6px", textAlign: "center",
+            fontSize: 9, lineHeight: 1.3, color: "var(--muted)",
+            border: "1px dashed var(--line-2)", borderRadius: 8,
           }}>
-            <div style={{ width: 3, background: stage?.color || "var(--line-2)", borderRadius: 2, flexShrink: 0 }}/>
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
-              <div style={{
-                fontSize: 10.5, fontWeight: 600, color: "var(--ink)",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                lineHeight: 1.15,
-              }}>{a.name}</div>
-              <div className="mono" style={{
-                fontSize: 7.5, letterSpacing: 0.6, fontWeight: 600,
-                color: isLive ? "var(--success)" : "var(--muted)",
+            Tap any set in the grid to add
+          </div>
+        ) : saved.map(a => {
+          const stage = STAGES.find(s => s.id === a.stage);
+          const startMin = toNightMin(a.start);
+          const endMin   = toNightMin(a.end);
+          const top      = _minToTop(startMin);
+          const blockH   = Math.max(34, _minToTop(endMin) - top);
+          const isLive = (() => {
+            if (a.day !== NOW.day || !NOW.time) return false;
+            const nm = toNightMin(NOW.time);
+            return startMin <= nm && nm < endMin;
+          })();
+          return (
+            <button
+              key={a.id}
+              onClick={() => setState(s => ({ ...s, artist: a.id }))}
+              style={{
+                position: "absolute",
+                top, left: 4, right: 4, height: blockH,
+                display: "flex", alignItems: "stretch", gap: 5,
+                padding: "4px 4px 4px 5px",
+                background: stage ? `${stage.color}1a` : "var(--paper-2)",
+                border: isLive ? "1px solid var(--success)" : `1px solid ${stage?.color || "var(--line-2)"}40`,
+                borderLeft: `3px solid ${stage?.color || "var(--line-2)"}`,
+                borderRadius: 6,
+                cursor: "pointer", textAlign: "left",
+                overflow: "hidden",
               }}>
-                {isLive ? "● LIVE" : a.start}
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: "var(--ink)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  lineHeight: 1.1,
+                }}>{a.name}</div>
+                <div className="mono" style={{
+                  fontSize: 7.5, letterSpacing: 0.5, fontWeight: 600,
+                  color: isLive ? "var(--success)" : "var(--muted)",
+                }}>
+                  {isLive ? "● LIVE" : `${a.start}–${a.end}`}
+                </div>
               </div>
-            </div>
-          </button>
-        );
-      })}
+              <span
+                role="button"
+                aria-label={`Remove ${a.name}`}
+                onClick={(e) => unsave(a.id, e)}
+                style={{
+                  flexShrink: 0, width: 18, height: 18, borderRadius: 999,
+                  background: "rgba(0,0,0,0.06)", color: "var(--muted)",
+                  border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 700, lineHeight: 1,
+                  alignSelf: "flex-start",
+                }}>×</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1222,11 +1339,11 @@ function SavedSidebar({ day, state, setState }) {
 function TimelineGrid({ day, allDayArtists, state, setState, matchesActive, conflictById, spotifyMatchedIds, highlightId }) {
   const COL_W = 76;
   const GUTTER_W = 38;
-  const PX_PER_MIN = 1.8;
-  const GRID_START_MIN = 19 * 60;            // 19:00
-  const GRID_END_MIN   = (24 + 5) * 60 + 30; // 05:30 next day
-  const TOTAL_H = (GRID_END_MIN - GRID_START_MIN) * PX_PER_MIN;
-  const minToTop = (m) => (Math.max(GRID_START_MIN, Math.min(GRID_END_MIN, m)) - GRID_START_MIN) * PX_PER_MIN;
+  // Time constants are hoisted to module scope so SavedSidebar can share
+  // them. Alias here so the rest of the component reads the same way.
+  const PX_PER_MIN = GRID_PX_PER_MIN;
+  const TOTAL_H = GRID_TOTAL_H;
+  const minToTop = _minToTop;
 
   const HOURS = [];
   for (let h = 19; h <= 24 + 5; h++) {
