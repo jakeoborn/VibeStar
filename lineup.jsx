@@ -712,6 +712,23 @@ function LineupScreen({ state, setState }) {
 
   // conflicts: 2+ saved sets overlap in time
   const savedToday = ARTISTS.filter(a => a.day === day && state.saved.includes(a.id));
+  // v141: pairs the user has explicitly "kept both" on — we still show them
+  // as conflicts in the per-card ⚠ chip (information stays available) but
+  // skip them in the top-level ConflictResolver card so it stops nagging.
+  const CONFLICT_ACK_KEY = "plursky_conflicts_kept_both_v1";
+  const _pairKey = (idA, idB) => [idA, idB].sort().join("|");
+  const [ackedPairs, setAckedPairs] = React.useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(CONFLICT_ACK_KEY) || "[]")); }
+    catch { return new Set(); }
+  });
+  const ackPair = (idA, idB) => {
+    setAckedPairs(prev => {
+      const next = new Set(prev);
+      next.add(_pairKey(idA, idB));
+      try { localStorage.setItem(CONFLICT_ACK_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
   const conflicts = [];
   // conflictById: artist.id → array of saved set names this artist clashes with.
   // Powers the per-card ⚠ chip so users can spot WHICH saved sets clash, not
@@ -720,8 +737,12 @@ function LineupScreen({ state, setState }) {
   for (let i = 0; i < savedToday.length; i++) {
     for (let j = i + 1; j < savedToday.length; j++) {
       if (overlaps(savedToday[i], savedToday[j])) {
-        conflicts.push([savedToday[i], savedToday[j]]);
         const a = savedToday[i], b = savedToday[j];
+        if (!ackedPairs.has(_pairKey(a.id, b.id))) {
+          conflicts.push([a, b]);
+        }
+        // Per-card chip stays even after KEEP BOTH so the warning info
+        // doesn't disappear — the only thing that hides is the resolver card.
         (conflictById[a.id] = conflictById[a.id] || []).push(b.name);
         (conflictById[b.id] = conflictById[b.id] || []).push(a.name);
       }
@@ -890,6 +911,7 @@ function LineupScreen({ state, setState }) {
           onKeep={(keepId, dropId) => {
             setState({ ...state, saved: state.saved.filter(id => id !== dropId) });
           }}
+          onKeepBoth={(pair) => ackPair(pair[0].id, pair[1].id)}
           onSplit={(pair) => setState({ ...state, tab: "map", focusStage: pair[0].stage })}
         />
       )}
@@ -1522,10 +1544,14 @@ function TimelineGrid({ day, allDayArtists, state, setState, matchesActive, conf
   );
 }
 
-function ConflictResolver({ conflicts, onKeep, onSplit }) {
+function ConflictResolver({ conflicts, onKeep, onKeepBoth, onSplit }) {
   const [idx, setIdx] = React.useState(0);
+  // If the current index falls out of range because a conflict was just
+  // resolved (state mutation upstream re-renders us with a shorter list),
+  // clamp back into bounds.
+  const safeIdx = Math.min(idx, Math.max(0, conflicts.length - 1));
   if (!conflicts.length) return null;
-  const pair = conflicts[idx];
+  const pair = conflicts[safeIdx];
   const [a, b] = pair;
   const sA = STAGES.find(s => s.id === a.stage);
   const sB = STAGES.find(s => s.id === b.stage);
@@ -1586,12 +1612,19 @@ function ConflictResolver({ conflicts, onKeep, onSplit }) {
       </div>
 
       <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => onKeepBoth?.(pair)} style={{
+          flex: 1, background: "rgba(247,237,224,0.08)",
+          border: "1px solid rgba(247,237,224,0.3)",
+          color: "var(--paper)", borderRadius: 10, padding: "8px 10px",
+          fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
+          cursor: "pointer",
+        }}>KEEP BOTH ↺</button>
         <button onClick={() => onSplit(pair)} style={{
           flex: 1, background: "transparent", border: "1px solid rgba(247,237,224,0.3)",
           color: "var(--paper)", borderRadius: 10, padding: "8px 10px",
           fontFamily: "Geist Mono, monospace", fontSize: 9, letterSpacing: 1.2, fontWeight: 600,
           cursor: "pointer",
-        }}>SPLIT THE NIGHT →</button>
+        }}>SPLIT NIGHT →</button>
         {conflicts.length > 1 && (
           <button onClick={next} style={{
             background: "transparent", border: "1px solid rgba(247,237,224,0.3)",

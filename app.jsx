@@ -344,7 +344,7 @@ function App() {
   React.useEffect(() => {
     try { sbOutboxInit?.(); } catch {}
   }, []);
-  // Native Spotify OAuth handoff (v140). When the user finishes the
+  // Native Spotify OAuth handoff (v141). When the user finishes the
   // SafariViewController flow, the appUrlOpen listener in spotify.jsx
   // exchanges the code for a token and dispatches this event. Mirror it
   // into React state so the UI flips from "Connect Spotify" to "Connected"
@@ -563,7 +563,7 @@ class RootErrorBoundary extends React.Component {
         stack:   err?.stack?.slice(0, 4000) || null,
         compStack: info?.componentStack?.slice(0, 2000) || null,
         ts: new Date().toISOString(),
-        version: "v140",
+        version: "v141",
       }));
     } catch {}
   }
@@ -596,7 +596,7 @@ class RootErrorBoundary extends React.Component {
           fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1.4, fontWeight: 700,
         }}>RELOAD</button>
         <div style={{ marginTop: 22, fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, color: "rgba(26,18,13,0.45)" }}>
-          PLURSKY · v140
+          PLURSKY · v141
         </div>
       </div>
     );

@@ -2112,7 +2112,7 @@ function BadgesSection({ state }) {
 // the 4-card grid. History rows = per-night recap (sets caught, total
 // minutes, top stage color stripe). Records = derived superlatives
 // (most saved on one night, top stage, longest single set, etc.).
-function HistoryRecordsSection({ state }) {
+function HistoryRecordsSection({ state, setState }) {
   const [view, setView] = React.useState("history"); // "history" | "records"
 
   const days = Object.keys(window.FESTIVAL_CONFIG?.dayDates || {})
@@ -2218,13 +2218,17 @@ function HistoryRecordsSection({ state }) {
       {view === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {nights.map((n) => (
-            <div key={n.n} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 12,
-              background: "var(--paper-2)",
-              borderLeft: `3px solid ${n.topStage?.color || "var(--line-2)"}`,
-              opacity: n.count === 0 && !n.isLive ? 0.62 : 1,
-            }}>
+            <button key={n.n}
+              onClick={() => setState && setState(s => ({ ...s, tab: "memories", memoriesNight: n.n }))}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 12,
+                background: "var(--paper-2)",
+                borderLeft: `3px solid ${n.topStage?.color || "var(--line-2)"}`,
+                opacity: n.count === 0 && !n.isLive ? 0.62 : 1,
+                border: "none", cursor: "pointer", textAlign: "left",
+                width: "100%",
+              }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="serif" style={{ fontSize: 16, lineHeight: 1.15 }}>
                   {n.name || `Night ${n.n}`}
@@ -2252,7 +2256,8 @@ function HistoryRecordsSection({ state }) {
                 fontSize: 9, letterSpacing: 1.2, fontWeight: 700,
                 color: n.isPast ? "var(--muted)" : (n.isLive ? "var(--success)" : "var(--horizon)"),
               }}>{n.isPast ? "DONE" : n.isLive ? "TONIGHT" : "UPCOMING"}</div>
-            </div>
+              <span className="mono" style={{ fontSize: 11, color: "var(--muted)", marginLeft: 6 }}>›</span>
+            </button>
           ))}
         </div>
       )}
@@ -2856,6 +2861,22 @@ function MemoriesScreen({ state, setState }) {
   const [adding, setAdding] = React.useState(null); // night number being added to, or null
   const [batch, setBatch] = React.useState(null);   // null | { total, done, results: [{name, night, artistId, err?}] }
   const batchInputRef = React.useRef(null);
+  const nightSectionRefs = React.useRef({});
+
+  // v141: when a user taps a FRI/SAT/SUN row on the Me-tab History list,
+  // it sets state.memoriesNight + state.tab="memories". This effect scrolls
+  // that night's section to the top of the ScrollBody so the user lands
+  // on the right place + clears the hint so a manual navigation later
+  // doesn't snap them back.
+  React.useEffect(() => {
+    if (!state.memoriesNight) return;
+    const id = requestAnimationFrame(() => {
+      const el = nightSectionRefs.current[state.memoriesNight];
+      if (el?.scrollIntoView) el.scrollIntoView({ behavior: "instant", block: "start" });
+      setState(s => ({ ...s, memoriesNight: null }));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [state.memoriesNight]);
 
   const handleAdd = (moment) => {
     const next = { ..._readMoments() };
@@ -2877,31 +2898,38 @@ function MemoriesScreen({ state, setState }) {
     setBatch({ total: files.length, done: 0, results });
     const savedIds = state.saved || [];
     const current = { ..._readMoments() };
+    // Fallback target night when we can't infer one from EXIF: prefer the
+    // current festival day, then yesterday (post-midnight shoot earlier in
+    // the morning), else the first festival night. Better to import every
+    // photo into SOME night so the user can re-tag than silently skip.
+    const allNights = Object.keys(window.FESTIVAL_CONFIG?.dayDates || {}).map(Number).sort((a, b) => a - b);
+    const fallbackNight = (window.NOW?.day && allNights.includes(window.NOW.day))
+      ? window.NOW.day
+      : (allNights[allNights.length - 1] || 1);
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       try {
-        // EXIF for JPEGs; falls back to file.lastModified for videos /
-        // photos without EXIF (screenshots, edited images). Either way the
-        // matcher takes the same shape.
         const exif = await _parseExifMeta(f).catch(() => null);
         const meta = _metaFromFile(f, exif);
         const matched = meta?.date ? _matchArtistForPhoto(meta, savedIds) : { artistId: null, night: null, reason: "no_date" };
-        if (!matched.night) {
-          results.push({ name: f.name, night: null, artistId: null, err: matched.reason });
-        } else {
-          const out = await _processMomentMedia(f);
-          const id = `m_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
-          const photoId = `p_${id}`;
-          await _putPhoto(photoId, out.blob);
-          const moment = {
-            id, night: matched.night, text: "", artistId: matched.artistId, photoId,
-            kind: out.kind,
-            createdAt: Date.now(),
-            takenAt: meta?.date ? `${meta.date.yr}-${String(meta.date.mo).padStart(2,"0")}-${String(meta.date.dy).padStart(2,"0")} ${String(meta.date.hh).padStart(2,"0")}:${String(meta.date.mm).padStart(2,"0")}` : null,
-          };
-          current[matched.night] = [...(current[matched.night] || []), moment];
-          results.push({ name: f.name, night: matched.night, artistId: matched.artistId });
-        }
+        // v141: never skip — if EXIF/lastModified didn't pick a night, drop
+        // into the current festival night untagged. User can re-tag from
+        // the moment card later or delete if it doesn't belong.
+        const night = matched.night || fallbackNight;
+        const out = await _processMomentMedia(f);
+        const id = `m_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+        const photoId = `p_${id}`;
+        await _putPhoto(photoId, out.blob);
+        const moment = {
+          id, night, text: "", artistId: matched.artistId, photoId,
+          kind: out.kind,
+          createdAt: Date.now(),
+          takenAt: meta?.date ? `${meta.date.yr}-${String(meta.date.mo).padStart(2,"0")}-${String(meta.date.dy).padStart(2,"0")} ${String(meta.date.hh).padStart(2,"0")}:${String(meta.date.mm).padStart(2,"0")}` : null,
+          // Mark fallback drops so the UI can show a "Tap to retag" hint.
+          autoTagged: !!matched.artistId,
+        };
+        current[night] = [...(current[night] || []), moment];
+        results.push({ name: f.name, night, artistId: matched.artistId, fallback: !matched.night });
       } catch (err) {
         results.push({ name: f.name, night: null, artistId: null, err: err?.message || "failed" });
       }
@@ -3002,7 +3030,10 @@ function MemoriesScreen({ state, setState }) {
             .map(id => ARTISTS.find(a => a.id === id))
             .filter(a => a && a.day === d.n);
           return (
-            <div key={d.n} style={{ marginBottom: 22 }}>
+            <div key={d.n}
+              ref={el => { nightSectionRefs.current[d.n] = el; }}
+              style={{ marginBottom: 22, scrollMarginTop: 12 }}
+            >
               <div style={{
                 display: "flex", alignItems: "baseline", gap: 10,
                 paddingTop: 14, paddingBottom: 8, marginBottom: 4,
@@ -3386,7 +3417,7 @@ function MeScreen({ state, setState }) {
             Night-by-night recap rows + festival superlatives below the
             stat grid. History = per-day saved-set count + time + top
             stage; Records = derived best-of stats from saved data. */}
-        <HistoryRecordsSection state={state} />
+        <HistoryRecordsSection state={state} setState={setState} />
 
         {/* ── Badges (Me+ / Plenty of Fish-modeled) ─────────────────
             Festival milestones earned from saved-set behavior. Earned
