@@ -1,25 +1,29 @@
 ﻿// Artist detail — shown as a modal-style pane when state.artist is set
 
 // ── Setlist.fm ─────────────────────────────────────────────────
-// Free API key at https://api.setlist.fm — paste yours below.
-const SETLISTFM_KEY = "Fjj0gHyGxSTN4TfFc_K76CV-KAoTGE1SksfU";
+// setlist.fm doesn't send Access-Control-Allow-Origin, so calling it
+// directly from the browser triggers a CORS block — that's why the
+// SETLISTS section was permanently empty before v142. We now go through
+// the `proxy-setlist` Supabase Edge Function which forwards the request
+// server-side (key stored as SETLISTFM_KEY secret) and returns the JSON
+// with proper CORS headers.
+const SETLISTS_PROXY_URL = "https://pzoijbqsbbwyuyjinjtj.functions.supabase.co/proxy-setlist";
 const _SL_TTL = 24 * 3600000; // cache 24 h
-
+// v2 cache key — invalidates the empty `[]` arrays stale clients wrote
+// while the direct fetch was CORS-failing.
 async function fetchSetlists(artistName) {
-  if (!SETLISTFM_KEY) return null;
-  const cacheKey = `setlist_${artistName.toLowerCase().replace(/\W+/g, "_")}_v1`;
+  const cacheKey = `setlist_${artistName.toLowerCase().replace(/\W+/g, "_")}_v2`;
   try {
     const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
     if (c && Date.now() - c.fetchedAt < _SL_TTL) return c.data;
   } catch {}
   try {
     const res = await fetch(
-      `https://api.setlist.fm/rest/1.0/search/setlists?artistName=${encodeURIComponent(artistName)}&p=1`,
-      { headers: { "x-api-key": SETLISTFM_KEY, "Accept": "application/json" } }
+      `${SETLISTS_PROXY_URL}?artistName=${encodeURIComponent(artistName)}&p=1`,
+      { headers: { "Accept": "application/json" } }
     );
     if (!res.ok) return [];
     const json = await res.json();
-    // Keep up to 3 setlists that actually have songs documented
     const lists = (json.setlist || [])
       .filter(s => (s.sets?.set || []).some(set => (set.song || []).length > 0))
       .slice(0, 3);
@@ -1371,7 +1375,7 @@ function ArtistScreen({ state, setState }) {
 
         {/* ── Setlist history ───────────────────────────────── */}
         <div id="artist-section-setlists" />
-        {SETLISTFM_KEY && (
+        {SETLISTS_PROXY_URL && (
           <div style={{ marginBottom: 18 }}>
             <div className="mono" style={{ fontSize: 9, letterSpacing: 1.4, color: "var(--muted)", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
               SETLIST HISTORY

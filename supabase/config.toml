@@ -6,3 +6,6 @@ project_id = "pzoijbqsbbwyuyjinjtj"
 
 [functions.delete-account]
 verify_jwt = false
+
+[functions.proxy-setlist]
+verify_jwt = false
