@@ -562,6 +562,17 @@ function LineupScreen({ state, setState }) {
   // when grid view is on (the grid shows all 3 days in one continuous page).
   const gridSectionRefs = React.useRef({});
 
+  // v140: force a re-render every 30 s so the NOW indicator line on the
+  // grid, the "● LIVE" pills, and the time-cursor on the saved-sets
+  // sidebar all advance without needing the user to close-and-reopen
+  // the app. NOW is a Proxy that recomputes on each access — the only
+  // thing missing was a trigger to recommit React's rendered output.
+  const [, _tickT] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    const id = setInterval(_tickT, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   // v139: a single rAF-throttled scroll listener on the ScrollBody does
   // two things at once:
   //   (a) saves scrollTop to sessionStorage so navigating into an artist
