@@ -3413,6 +3413,33 @@ function MeScreen({ state, setState }) {
           ))}
         </div>
 
+        {/* ── Festival Recap entry (v145) ───────────────────────────
+            Spotify-Wrapped-style summary of the weekend — sets caught,
+            top stage, top genre, hidden gems. Lives behind a big card
+            on Me so it's discoverable but optional. Only renders once
+            the festival is over (otherwise the stats are noise). */}
+        {typeof window.FESTIVAL_CONFIG?.endMs === "number" && Date.now() > window.FESTIVAL_CONFIG.endMs && (
+          <button onClick={() => setState(s => ({ ...s, tab: "recap" }))} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            width: "100%", padding: "14px 16px", marginBottom: 14,
+            background: "linear-gradient(135deg, var(--ink) 0%, var(--horizon) 100%)",
+            border: "none", borderRadius: 16,
+            color: "var(--paper)", cursor: "pointer", textAlign: "left",
+            boxShadow: "0 4px 18px rgba(123,61,154,0.30)",
+          }}>
+            <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>✦</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="serif" style={{ fontSize: 21, lineHeight: 1.05 }}>
+                Your <span style={{ fontStyle: "italic", color: "var(--flare)" }}>EDC</span> weekend
+              </div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "rgba(247,237,224,0.65)", marginTop: 4, fontWeight: 700 }}>
+                THE RECAP · {getAttendedCount?.() || 0} SETS CAUGHT · TAP TO SEE
+              </div>
+            </div>
+            <span style={{ fontSize: 18, opacity: 0.75 }}>→</span>
+          </button>
+        )}
+
         {/* ── History / Records toggle (Runbuds-modeled) ────────────
             Night-by-night recap rows + festival superlatives below the
             stat grid. History = per-day saved-set count + time + top
@@ -3733,8 +3760,362 @@ function BuildPlaylistButton({ state }) {
 }
 
 
+// ── Festival Recap (v145) ─────────────────────────────────────
+// Spotify-Wrapped-style post-festival summary. Stitches together the
+// attendance store (plursky_attended_v1), saved sets, Memories moments,
+// and any cached Spotify popularity stats into a series of full-bleed
+// cards that scroll vertically. No "tap to next" gesture — just a clean
+// long-form recap the user can screenshot at will.
+function _computeRecap(state) {
+  const attended = getAllAttended();                // { night: artistId[] }
+  const moments  = _readMoments();                   // { night: moment[] }
+  const ARTISTS  = window.ARTISTS || [];
+  const STAGES   = window.STAGES  || [];
+  const CFG      = window.FESTIVAL_CONFIG;
+
+  // Flatten to attended-artist objects with night info
+  const caughtArtists = [];
+  Object.keys(attended).forEach(n => {
+    (attended[n] || []).forEach(id => {
+      const a = ARTISTS.find(x => x.id === id);
+      if (a) caughtArtists.push({ ...a, _night: +n });
+    });
+  });
+  const setsCount = caughtArtists.length;
+
+  // Time spent (minutes) across all attended sets
+  const totalMin = caughtArtists.reduce((sum, a) => {
+    const sm = window.toNightMin?.(a.start) || 0;
+    const em = window.toNightMin?.(a.end)   || 0;
+    return sum + Math.max(0, em - sm);
+  }, 0);
+
+  // Sets per night → busiest night
+  const byNight = {};
+  caughtArtists.forEach(a => { byNight[a._night] = (byNight[a._night] || 0) + 1; });
+  const busiestNight = Object.keys(byNight).sort((x, y) => byNight[y] - byNight[x])[0];
+  const busiestNightCount = busiestNight ? byNight[busiestNight] : 0;
+  const busiestNightLabel = busiestNight && CFG?.dayDates?.[busiestNight]?.name || `Night ${busiestNight || "—"}`;
+
+  // Sets per stage → top stage
+  const byStage = {};
+  const stageMinutes = {};
+  caughtArtists.forEach(a => {
+    byStage[a.stage] = (byStage[a.stage] || 0) + 1;
+    const sm = window.toNightMin?.(a.start) || 0;
+    const em = window.toNightMin?.(a.end)   || 0;
+    stageMinutes[a.stage] = (stageMinutes[a.stage] || 0) + Math.max(0, em - sm);
+  });
+  const topStageId = Object.keys(stageMinutes).sort((x, y) => stageMinutes[y] - stageMinutes[x])[0];
+  const topStage   = topStageId ? STAGES.find(s => s.id === topStageId) : null;
+  const topStageMin = topStageId ? stageMinutes[topStageId] : 0;
+
+  // Genre tally
+  const byGenre = {};
+  caughtArtists.forEach(a => { byGenre[a.genre] = (byGenre[a.genre] || 0) + 1; });
+  const topGenre = Object.keys(byGenre).sort((x, y) => byGenre[y] - byGenre[x])[0] || null;
+
+  // First and last set (chronologically across all 3 nights)
+  const _artistEpoch = (a) => {
+    const dm = CFG?.dayDates?.[a._night];
+    if (!dm) return 0;
+    const [h, m] = a.start.split(":").map(Number);
+    const adjustH = h < 6 ? h + 24 : h;
+    return dm.midnightUtc + adjustH * 3600000 + m * 60000;
+  };
+  const chronological = caughtArtists.slice().sort((x, y) => _artistEpoch(x) - _artistEpoch(y));
+  const firstSet = chronological[0] || null;
+  const lastSet  = chronological[chronological.length - 1] || null;
+
+  // Headliners caught
+  const headlinersCaught = caughtArtists.filter(a => a.tier === 3);
+  const headlinerNames = headlinersCaught.map(a => a.name);
+
+  // Sunrise sets caught (started at or after 04:00 next-day, i.e. early-AM)
+  const sunriseSets = caughtArtists.filter(a => {
+    const [h] = a.start.split(":").map(Number);
+    return h >= 4 && h <= 8;
+  });
+
+  // Hidden gem: lowest Spotify popularity among the artists they caught
+  // (requires the spotify_artist_data_v1 cache that artist.jsx populates).
+  let hiddenGem = null;
+  let topByPop  = null;
+  try {
+    const cache = JSON.parse(localStorage.getItem("spotify_artist_data_v1") || "{}");
+    const annotated = caughtArtists
+      .map(a => {
+        const c = cache[a.name.toLowerCase()];
+        return c?.popularity > 0 ? { ...a, _pop: c.popularity } : null;
+      })
+      .filter(Boolean);
+    if (annotated.length) {
+      annotated.sort((x, y) => x._pop - y._pop);
+      hiddenGem = annotated[0];
+      topByPop  = annotated[annotated.length - 1];
+    }
+  } catch {}
+
+  // Memories
+  const allMoments = Object.values(moments).flat();
+  const photoMoments = allMoments.filter(m => m.photoId);
+  const videoMoments = allMoments.filter(m => m.kind === "video");
+
+  return {
+    setsCount,
+    totalMin,
+    nights: Object.keys(byNight).length,
+    busiestNightLabel,
+    busiestNightCount,
+    topStage, topStageMin,
+    topGenre,
+    firstSet, lastSet,
+    headlinersCaught: headlinersCaught.length,
+    headlinerNames,
+    sunriseSetsCount: sunriseSets.length,
+    hiddenGem, topByPop,
+    momentsCount: allMoments.length,
+    photosCount:  photoMoments.length,
+    videosCount:  videoMoments.length,
+  };
+}
+
+function _fmtHrsMin(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}M`;
+  if (m === 0) return `${h}H`;
+  return `${h}H ${m}M`;
+}
+
+function RecapCard({ accent = "var(--ink)", paper = "var(--paper)", children, mono, kicker }) {
+  return (
+    <div style={{
+      borderRadius: 22, padding: "26px 22px",
+      background: paper, color: accent,
+      marginBottom: 14,
+      minHeight: 200,
+      border: "1px solid var(--line)",
+      display: "flex", flexDirection: "column", justifyContent: "space-between",
+      boxShadow: "0 6px 22px rgba(26,18,13,0.06)",
+    }}>
+      {kicker && (
+        <div className="mono" style={{
+          fontSize: 9, letterSpacing: 1.5, fontWeight: 700,
+          color: mono || "var(--muted)", marginBottom: 14,
+        }}>{kicker}</div>
+      )}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function RecapScreen({ state, setState }) {
+  const recap = React.useMemo(() => _computeRecap(state), [state]);
+  const CFG   = window.FESTIVAL_CONFIG || {};
+  const fmt12 = window.fmt12 || ((t) => t);
+
+  const back = () => setState(s => ({ ...s, tab: "me" }));
+
+  // Empty-state guard — nothing to recap
+  if (recap.setsCount === 0 && recap.momentsCount === 0) {
+    return (
+      <Screen bg="var(--paper)">
+        <div style={{ padding: "8px 20px", display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={back} aria-label="Back" style={{
+            background: "transparent", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 22, color: "var(--ink)", lineHeight: 1, width: 30, height: 30,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>←</button>
+          <TopBar title={<span>Recap</span>} sub={CFG.shortName?.toUpperCase()} tight />
+        </div>
+        <ScrollBody style={{ padding: "10px 20px 94px" }}>
+          <div style={{ padding: "40px 0", textAlign: "center" }}>
+            <div className="serif" style={{ fontSize: 24, color: "var(--muted)", fontStyle: "italic", marginBottom: 8 }}>
+              Nothing to recap yet
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)" }}>
+              MARK SETS YOU CAUGHT IN MEMORIES — TODAY'S WEEKEND RECAP WILL FILL IN
+            </div>
+          </div>
+        </ScrollBody>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen bg="var(--paper-2)">
+      <div style={{ padding: "8px 20px", display: "flex", alignItems: "center", gap: 10, background: "var(--paper)" }}>
+        <button onClick={back} aria-label="Back" style={{
+          background: "transparent", border: "none", padding: 0, cursor: "pointer",
+          fontSize: 22, color: "var(--ink)", lineHeight: 1, width: 30, height: 30,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>←</button>
+        <TopBar title={<span>Recap</span>} sub={(CFG.shortName || "Festival").toUpperCase() + " · YOUR WEEKEND"} tight />
+      </div>
+      <ScrollBody style={{ padding: "14px 16px 94px" }}>
+        {/* HERO ─ totals */}
+        <div style={{
+          borderRadius: 22, padding: "26px 22px", marginBottom: 14,
+          background: "linear-gradient(155deg, var(--ink) 0%, var(--horizon) 60%, var(--ember) 130%)",
+          color: "var(--paper)",
+          boxShadow: "0 10px 30px rgba(26,18,13,0.18)",
+        }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "rgba(247,237,224,0.75)", fontWeight: 700, marginBottom: 10 }}>
+            YOUR {(CFG.shortName || "FESTIVAL").toUpperCase()} · {CFG.year || ""}
+          </div>
+          <div className="serif" style={{ fontSize: 40, lineHeight: 0.95, letterSpacing: -0.5, marginBottom: 18 }}>
+            That was <span style={{ fontStyle: "italic", color: "var(--flare)" }}>your</span> weekend.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <div className="serif" style={{ fontSize: 36, lineHeight: 1 }}>{recap.setsCount}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700, color: "rgba(247,237,224,0.7)", marginTop: 3 }}>SETS CAUGHT</div>
+            </div>
+            <div>
+              <div className="serif" style={{ fontSize: 36, lineHeight: 1 }}>{_fmtHrsMin(recap.totalMin)}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700, color: "rgba(247,237,224,0.7)", marginTop: 3 }}>ON DANCEFLOORS</div>
+            </div>
+            <div>
+              <div className="serif" style={{ fontSize: 36, lineHeight: 1 }}>{recap.nights}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700, color: "rgba(247,237,224,0.7)", marginTop: 3 }}>NIGHTS</div>
+            </div>
+            <div>
+              <div className="serif" style={{ fontSize: 36, lineHeight: 1 }}>{recap.headlinersCaught}</div>
+              <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1.3, fontWeight: 700, color: "rgba(247,237,224,0.7)", marginTop: 3 }}>HEADLINERS</div>
+            </div>
+          </div>
+        </div>
+
+        {/* TOP STAGE */}
+        {recap.topStage && (
+          <RecapCard
+            kicker="YOUR HEADQUARTERS"
+            paper={`${recap.topStage.color}18`}
+            mono={recap.topStage.color}
+          >
+            <div className="serif" style={{ fontSize: 32, lineHeight: 1, letterSpacing: -0.4, marginBottom: 8 }}>
+              You lived at <span style={{ fontStyle: "italic", color: recap.topStage.color }}>{recap.topStage.name}</span>
+            </div>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: 1, color: "var(--muted)", marginTop: 6, fontWeight: 600 }}>
+              {_fmtHrsMin(recap.topStageMin)} of your weekend was right here
+            </div>
+          </RecapCard>
+        )}
+
+        {/* BUSIEST NIGHT */}
+        {recap.busiestNightCount > 0 && (
+          <RecapCard kicker="BUSIEST NIGHT">
+            <div className="serif" style={{ fontSize: 32, lineHeight: 1.0, letterSpacing: -0.4 }}>
+              <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{recap.busiestNightLabel}</span> was your peak —
+              {" "}{recap.busiestNightCount} sets in one night.
+            </div>
+          </RecapCard>
+        )}
+
+        {/* TOP GENRE */}
+        {recap.topGenre && (
+          <RecapCard kicker="THE SOUND OF YOUR WEEKEND" paper="var(--paper)">
+            <div className="serif" style={{ fontSize: 30, lineHeight: 1.0, letterSpacing: -0.4 }}>
+              You went deep on{" "}
+              <span style={{ fontStyle: "italic", color: "var(--horizon)" }}>{recap.topGenre}</span>.
+            </div>
+          </RecapCard>
+        )}
+
+        {/* FIRST + LAST */}
+        {recap.firstSet && recap.lastSet && (
+          <RecapCard kicker="BOOKENDS">
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1.15, marginBottom: 14 }}>
+              You opened with <span style={{ color: "var(--ember)" }}>{recap.firstSet.name}</span>
+              <span style={{ color: "var(--muted)", fontSize: 16 }}> · {fmt12(recap.firstSet.start)}</span>
+            </div>
+            <div className="serif" style={{ fontSize: 22, lineHeight: 1.15 }}>
+              and closed with <span style={{ color: "var(--ember)" }}>{recap.lastSet.name}</span>
+              <span style={{ color: "var(--muted)", fontSize: 16 }}> · {fmt12(recap.lastSet.start)}</span>
+            </div>
+          </RecapCard>
+        )}
+
+        {/* SUNRISE */}
+        {recap.sunriseSetsCount > 0 && (
+          <RecapCard kicker="STAYED UP">
+            <div className="serif" style={{ fontSize: 32, lineHeight: 1.0, letterSpacing: -0.4 }}>
+              {recap.sunriseSetsCount === 1 ? "One sunrise set" : `${recap.sunriseSetsCount} sunrise sets`}.{" "}
+              <span style={{ color: "var(--flare)", fontStyle: "italic" }}>Respect.</span>
+            </div>
+          </RecapCard>
+        )}
+
+        {/* HIDDEN GEM */}
+        {recap.hiddenGem && (
+          <RecapCard kicker="HIDDEN GEM" paper="var(--paper)">
+            <div className="serif" style={{ fontSize: 28, lineHeight: 1.05, letterSpacing: -0.3 }}>
+              Most under-the-radar artist you saw:{" "}
+              <span style={{ fontStyle: "italic", color: "var(--horizon)" }}>{recap.hiddenGem.name}</span>.
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
+              SPOTIFY POPULARITY {recap.hiddenGem._pop} / 100 · TASTE 🤌
+            </div>
+          </RecapCard>
+        )}
+
+        {/* HEADLINERS */}
+        {recap.headlinersCaught > 0 && (
+          <RecapCard kicker={`HEADLINERS CAUGHT · ${recap.headlinersCaught}`}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+              {recap.headlinerNames.map(n => (
+                <span key={n} className="mono" style={{
+                  padding: "6px 11px", borderRadius: 999,
+                  background: "var(--ink)", color: "var(--paper)",
+                  fontSize: 10, letterSpacing: 1.2, fontWeight: 700,
+                }}>★ {n.toUpperCase()}</span>
+              ))}
+            </div>
+          </RecapCard>
+        )}
+
+        {/* MEMORIES */}
+        {recap.momentsCount > 0 && (
+          <RecapCard kicker="MEMORIES" paper="var(--paper)">
+            <div className="serif" style={{ fontSize: 32, lineHeight: 1.0, letterSpacing: -0.4 }}>
+              <span style={{ color: "var(--ember)" }}>{recap.momentsCount}</span>{" "}
+              {recap.momentsCount === 1 ? "moment" : "moments"} captured.
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
+              {recap.photosCount} PHOTO{recap.photosCount === 1 ? "" : "S"}
+              {recap.videosCount > 0 ? ` · ${recap.videosCount} VIDEO${recap.videosCount === 1 ? "" : "S"}` : ""}
+            </div>
+            <button onClick={() => setState(s => ({ ...s, tab: "memories" }))} style={{
+              marginTop: 14, padding: "8px 14px", borderRadius: 999,
+              background: "var(--ink)", color: "var(--paper)", border: "none",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+              cursor: "pointer", alignSelf: "flex-start",
+            }}>OPEN MEMORIES →</button>
+          </RecapCard>
+        )}
+
+        {/* OUTRO */}
+        <RecapCard
+          kicker="UNTIL NEXT YEAR"
+          paper="linear-gradient(155deg, var(--paper) 0%, rgba(245,154,54,0.18) 100%)"
+        >
+          <div className="serif" style={{ fontSize: 32, lineHeight: 1, letterSpacing: -0.4 }}>
+            See you under the <span style={{ fontStyle: "italic", color: "var(--ember)" }}>electric sky</span>.
+          </div>
+          <div className="mono" style={{ fontSize: 10, letterSpacing: 1.2, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
+            PLURSKY · {CFG.year || ""}
+          </div>
+        </RecapCard>
+      </ScrollBody>
+    </Screen>
+  );
+}
+
 Object.assign(window, {
-  SpotifyScreen, MeScreen, MemoriesScreen, fetchPreviewUrl,
+  SpotifyScreen, MeScreen, MemoriesScreen, RecapScreen, fetchPreviewUrl,
   ensureSpotifyProfile, getSpotifyProfileSync, createEdcPlaylist,
   startSpotifyAuth, PackListCard,
 });

@@ -344,7 +344,7 @@ function App() {
   React.useEffect(() => {
     try { sbOutboxInit?.(); } catch {}
   }, []);
-  // Native Spotify OAuth handoff (v144). When the user finishes the
+  // Native Spotify OAuth handoff (v145). When the user finishes the
   // SafariViewController flow, the appUrlOpen listener in spotify.jsx
   // exchanges the code for a token and dispatches this event. Mirror it
   // into React state so the UI flips from "Connect Spotify" to "Connected"
@@ -466,6 +466,7 @@ function App() {
   else if (state.tab === "lineup")   body = <LineupScreen   state={state} setState={setState} />;
   else if (state.tab === "spotify")  body = <SpotifyScreen  state={state} setState={setState} />;
   else if (state.tab === "memories") body = <MemoriesScreen state={state} setState={setState} />;
+  else if (state.tab === "recap")    body = <RecapScreen    state={state} setState={setState} />;
   else if (state.tab === "me")       body = <MeScreen       state={state} setState={setState} />;
 
   // status bar tint — dark pane on map, light elsewhere
@@ -503,7 +504,7 @@ function App() {
         </div>
         {!state.artist && (
           <TabBar
-            active={(state.tab === "spotify" || state.tab === "memories") ? "me" : state.tab}
+            active={["spotify", "memories", "recap"].includes(state.tab) ? "me" : state.tab}
             onChange={t => setState({ ...state, tab: t })}
           />
         )}
@@ -563,7 +564,7 @@ class RootErrorBoundary extends React.Component {
         stack:   err?.stack?.slice(0, 4000) || null,
         compStack: info?.componentStack?.slice(0, 2000) || null,
         ts: new Date().toISOString(),
-        version: "v144",
+        version: "v145",
       }));
     } catch {}
   }
@@ -596,7 +597,7 @@ class RootErrorBoundary extends React.Component {
           fontFamily: "Geist Mono, monospace", fontSize: 11, letterSpacing: 1.4, fontWeight: 700,
         }}>RELOAD</button>
         <div style={{ marginTop: 22, fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2, color: "rgba(26,18,13,0.45)" }}>
-          PLURSKY · v144
+          PLURSKY · v145
         </div>
       </div>
     );
