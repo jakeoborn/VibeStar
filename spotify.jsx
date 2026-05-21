@@ -4355,16 +4355,38 @@ async function _shareRecapCard(recap) {
   if (!blob) return false;
   const filename = `plursky-recap-${(window.FESTIVAL_CONFIG?.id || "festival")}.png`;
   const file = new File([blob], filename, { type: "image/png" });
-  // Try iOS share sheet first (best path on phone)
+  const title = `My ${window.FESTIVAL_CONFIG?.shortName || "festival"}`;
+
+  // Native iOS path (v152): @capacitor/share with `files` (data URL) — more
+  // reliable inside WKWebView than the web `navigator.share({ files })` path
+  // which can fail silently in some iOS versions.
+  const capShare = window.Capacitor?.Plugins?.Share;
+  if (capShare?.share && window.Capacitor?.isNativePlatform?.()) {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      await capShare.share({ title, files: [dataUrl] });
+      return true;
+    } catch (e) {
+      // Fall through to web flow if the native sheet errors or is cancelled
+      if (e?.message && !/cancel|abort/i.test(e.message)) console.warn("[plursky-share]", e.message);
+    }
+  }
+
+  // Web path — navigator.share({ files }) where supported
   if (navigator.share && typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: `My ${window.FESTIVAL_CONFIG?.shortName || "festival"}` });
+      await navigator.share({ files: [file], title });
       return true;
     } catch (e) {
       if (e?.name === "AbortError") return false; // user cancelled — silent
     }
   }
-  // Fallback: download
+  // Final fallback: download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

@@ -458,15 +458,36 @@ async function sbExportUserData(state) {
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const filename = `plursky-export-${(window.FESTIVAL_CONFIG?.id || "festival")}-${Date.now()}.json`;
-  // Native share sheet preferred (iOS sends to Files / Mail / AirDrop), web
-  // downloads via blob URL.
+  const title = "Plursky data export";
+
+  // v152: native iOS via @capacitor/share — more reliable inside WKWebView
+  // than navigator.share, which silently fails on some iOS versions when
+  // sharing a File from a blob URL.
+  const capShare = window.Capacitor?.Plugins?.Share;
+  if (capShare?.share && window.Capacitor?.isNativePlatform?.()) {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      await capShare.share({ title, files: [dataUrl] });
+      return;
+    } catch (e) {
+      if (e?.message && !/cancel|abort/i.test(e.message)) console.warn("[plursky-share]", e.message);
+    }
+  }
+
+  // Web path
   if (navigator.share && typeof navigator.canShare === "function") {
     const file = new File([blob], filename, { type: "application/json" });
     if (navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: "Plursky data export" }); return; }
+      try { await navigator.share({ files: [file], title }); return; }
       catch (e) { if (e?.name === "AbortError") return; }
     }
   }
+  // Final fallback: blob-URL download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
