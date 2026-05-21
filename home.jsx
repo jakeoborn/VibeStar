@@ -1218,9 +1218,41 @@ function HomeScreen({ state, setState }) {
             <div className="serif" style={{ fontSize: 36, lineHeight: 0.95, letterSpacing: -0.5 }}>
               {FESTIVAL_CONFIG.brand} <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{FESTIVAL_CONFIG.year}</span> — that's a wrap.
             </div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6 }}>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1.4, color: "var(--muted)", marginTop: 6, marginBottom: 14 }}>
               {FESTIVAL_CONFIG.locationShort.toUpperCase()} · {FESTIVAL_CONFIG.dates.toUpperCase()}
             </div>
+            {/* v151: post-festival recap hero CTA — the Home tab was a dead
+                slate after the festival ended. Now it teases the Recap
+                with the attended-set count, so a user opening the app
+                Tuesday morning has somewhere to go that isn't "ME tab,
+                scroll down". */}
+            {(() => {
+              const attendedCount = (typeof window.getAttendedCount === "function" ? window.getAttendedCount() : 0);
+              if (attendedCount === 0) return null;
+              return (
+                <button
+                  onClick={() => setState(s => ({ ...s, tab: "recap" }))}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    width: "100%", marginTop: 6, padding: "13px 14px",
+                    background: "linear-gradient(135deg, var(--ink) 0%, var(--horizon) 90%, var(--ember) 130%)",
+                    border: "none", borderRadius: 16,
+                    color: "var(--paper)", cursor: "pointer", textAlign: "left",
+                    boxShadow: "0 4px 18px rgba(123,61,154,0.28)",
+                  }}>
+                  <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>✦</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="serif" style={{ fontSize: 19, lineHeight: 1.05 }}>
+                      Your <span style={{ fontStyle: "italic", color: "var(--flare)" }}>weekend</span>, recapped
+                    </div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "rgba(247,237,224,0.7)", marginTop: 4, fontWeight: 700 }}>
+                      {attendedCount} SET{attendedCount === 1 ? "" : "S"} CAUGHT · TAP TO SEE THE FULL RECAP
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 18, opacity: 0.75 }}>→</span>
+                </button>
+              );
+            })()}
           </>
         ) : (
           <>

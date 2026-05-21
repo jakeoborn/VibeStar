@@ -4188,6 +4188,45 @@ function RecapCard({ accent = "var(--ink)", paper = "var(--paper)", children, mo
   );
 }
 
+// v151: in-app rating prompt. Routes through `@capacitor-community/in-app-review`
+// on native (SKStoreReviewController — iOS throttles to ~3 prompts/year by
+// itself, so we don't have to be clever about timing). Web fallback opens the
+// App Store listing in a new tab. Auto-trigger on Recap from the 2nd visit
+// onward (1st visit = "let me see what this is"; 2nd = "I like this enough
+// to come back") via a localStorage visit counter. Plus a manual link in
+// the AccountCard for users who never opens Recap.
+const APP_STORE_ID = null; // TODO: paste the App Store Connect numeric ID once 1.3 is published
+function _appStoreUrl() {
+  if (APP_STORE_ID) return `https://apps.apple.com/app/plursky-live/id${APP_STORE_ID}`;
+  return "https://apps.apple.com/search?term=plursky%20live";
+}
+async function requestRating() {
+  try {
+    const native = window.Capacitor?.Plugins?.InAppReview;
+    if (native?.requestReview && window.Capacitor?.isNativePlatform?.()) {
+      await native.requestReview();
+      return { ok: true, source: "native" };
+    }
+  } catch (e) { /* fall through to web */ }
+  try { window.open(_appStoreUrl(), "_blank", "noopener"); return { ok: true, source: "web" }; }
+  catch { return { ok: false }; }
+}
+function _maybeAutoRatingPromptOnRecap() {
+  try {
+    const key = "plursky_recap_visits_v1";
+    const visits = parseInt(localStorage.getItem(key) || "0", 10) + 1;
+    localStorage.setItem(key, String(visits));
+    const lastPromptedAt = parseInt(localStorage.getItem("plursky_rating_prompted_at") || "0", 10);
+    const oneYearMs = 365 * 24 * 3600 * 1000;
+    if (visits < 2) return;                                            // wait for 2nd visit
+    if (lastPromptedAt && Date.now() - lastPromptedAt < oneYearMs) return; // iOS will silently no-op anyway
+    if (!window.Capacitor?.isNativePlatform?.()) return;               // only auto-prompt on native — web spam is bad
+    localStorage.setItem("plursky_rating_prompted_at", String(Date.now()));
+    // Small delay so the user is past the hero card animation before iOS pops
+    setTimeout(() => { requestRating().catch(() => {}); }, 1500);
+  } catch {}
+}
+
 // v147: shareable image card — paints the recap stats onto a 1080x1920 canvas
 // (Instagram story aspect), then shares via navigator.share files API (which
 // pops the iOS share sheet — IG, Messages, AirDrop, save to camera roll) or
@@ -4343,6 +4382,12 @@ function RecapScreen({ state, setState }) {
   const fmt12 = window.fmt12 || ((t) => t);
 
   const back = () => setState(s => ({ ...s, tab: "me" }));
+
+  // v151: ask for an iOS rating on 2nd+ Recap visit. iOS handles cool-off
+  // (3 prompts / year) so we don't need to be cute about it.
+  React.useEffect(() => {
+    if (recap.setsCount > 0 || recap.momentsCount > 0) _maybeAutoRatingPromptOnRecap();
+  }, []);
 
   // v148: async-load the hero photo blob from IndexedDB so we can paint it
   // as the hero card background. Falls back to the gradient when no photo.

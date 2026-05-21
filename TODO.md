@@ -120,7 +120,18 @@ Ordered by impact-per-engineering-hour.
 - [ ] **Apple Music dev token** — `APPLE_DEV_TOKEN` in `spotify.jsx`
       is empty. Generate a MusicKit JWT from developer.apple.com →
       MusicKit identifier (valid 6 months). Card stays hidden until
-      set (v89 gate).
+      set (v89 gate). High-leverage: half the Plursky user base likely
+      uses Apple Music over Spotify.
+- [ ] **Capacitor Share for recap card + data export** — both currently
+      use `navigator.share` which works in iOS Safari but can be flaky
+      inside the WKWebView. Wrap the existing helpers (`_shareRecapCard`
+      in spotify.jsx, `sbExportUserData` in supabase.jsx) with
+      `@capacitor/share` when native; keep the web fallback path.
+      Small upgrade — strictly improves native reliability.
+- [ ] **Paste the App Store ID into `APP_STORE_ID`** (`spotify.jsx`)
+      once v1.3 is live. Current rating prompt's web fallback opens a
+      generic App Store search; with the real ID it deep-links to the
+      Plursky listing.
 - [ ] **Lineup virtualization** — list view renders all 300+ artists
       at once. Fine on a fast phone, sluggish on older ones. Wrap in
       a windowing strategy (intersection-observer-based render

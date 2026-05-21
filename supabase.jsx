@@ -418,6 +418,65 @@ async function sbGetArtistSaveCounts(artistIds) {
 }
 
 // ── Account card (shown inside MeScreen) ─────────────────────
+// v151: account data export — JSON dump of everything Plursky persists
+// LOCALLY (saved IDs, attended sets, moment metadata, notes, settings) plus
+// the cloud-backed identity if connected. Photo + video blobs stay in
+// IndexedDB; the export references their photoIds but does NOT inline them
+// (they'd blow out the file size and aren't meaningful outside the device).
+async function sbExportUserData(state) {
+  let cloudUser = null;
+  try {
+    if (window.sbGetUser) cloudUser = await window.sbGetUser();
+  } catch {}
+  const safeLs = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const parseJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  const payload = {
+    exportedAt:     new Date().toISOString(),
+    plurskyVersion: safeLs("app_version"),
+    festival:       window.FESTIVAL_CONFIG?.id || null,
+    user: {
+      pid:         safeLs("plursky_pid"),
+      displayName: safeLs("plursky_display_name") || safeLs("user_name"),
+      cloudId:     cloudUser?.id || null,
+      cloudEmail:  cloudUser?.email || null,
+      spotifyProfile: parseJson(safeLs("spotify_profile")),
+    },
+    saved:    state.saved || [],
+    attended: parseJson(safeLs("plursky_attended_v1")) || {},
+    moments:  parseJson(safeLs("plursky_moments_v1"))  || {},
+    notes:    parseJson(safeLs("artist_notes_v1")) || {},
+    crewCode: safeLs("plursky_group_code"),
+    settings: {
+      reminderLeadMin: parseJson(safeLs("plursky_reminder_lead_min")),
+      batterySaver:    safeLs("plursky_battery_saver"),
+      pinger:          safeLs("plursky_pinger_v1"),
+    },
+    // Conflicts the user explicitly chose to keep both
+    keptBothConflicts: parseJson(safeLs("plursky_conflicts_kept_both_v1")) || [],
+    blockedPids:       parseJson(safeLs("plursky_blocked_pids_v1")) || [],
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const filename = `plursky-export-${(window.FESTIVAL_CONFIG?.id || "festival")}-${Date.now()}.json`;
+  // Native share sheet preferred (iOS sends to Files / Mail / AirDrop), web
+  // downloads via blob URL.
+  if (navigator.share && typeof navigator.canShare === "function") {
+    const file = new File([blob], filename, { type: "application/json" });
+    if (navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Plursky data export" }); return; }
+      catch (e) { if (e?.name === "AbortError") return; }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function AccountCard({ state, setState }) {
   const configured = !!(SUPABASE_URL && SUPABASE_ANON);
   const [sbUser, setSbUser] = React.useState(null);
@@ -625,10 +684,22 @@ function AccountCard({ state, setState }) {
               }}>SIGN OUT</button>
             </div>
 
+            {/* Export data — Apple G5.1.1(v) doesn't require this but App
+                Review increasingly asks for an export path alongside delete.
+                JSON dump of saved + attended + moments metadata + Spotify
+                profile. No blob data — photos stay local. */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <button onClick={() => sbExportUserData(state)} style={{
+                background: "transparent", border: "none", padding: "4px 0", cursor: "pointer",
+                fontFamily: "Geist Mono, monospace", fontSize: 10, letterSpacing: 1.2,
+                color: "var(--muted)", textDecoration: "underline",
+              }}>↓ EXPORT MY DATA</button>
+            </div>
+
             {/* Delete account — required by Apple App Store Guideline 5.1.1(v)
                 for any app that supports account creation. Two-step inline
                 confirm so a stray tap can't nuke the user's data. */}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+            <div style={{ marginTop: 10, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
               {deletePhase === "idle" && (
                 <button onClick={() => { setDeletePhase("confirming"); setDeleteErr(""); }} style={{
                   background: "transparent", border: "none", padding: "4px 0", cursor: "pointer",
