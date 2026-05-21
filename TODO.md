@@ -1,128 +1,223 @@
 # Plursky — To-Do List
 
+_Last full sweep: 2026-05-20 (post-EDC). Web is at v149; App Store is
+still on `1.2 (12)` — everything from v131 onward is website-only until
+v1.3 is archived._
+
+## 🚨 SHIP-BLOCKING — the App Store binary is way out of date
+
+7+ weeks of fixes have landed on the website but iOS users on
+`1.2 (12)` (still the App Store version) have none of it. Archive +
+submit a v1.3 to ship:
+
+- [ ] **`npx cap sync ios`** — copies the new dist/ + registers the
+      plugins added since the last archive (`@capacitor/local-notifications`,
+      `@capacitor/browser`, `@capacitor/app`) and the `plursky://` URL
+      scheme into the Xcode project.
+- [ ] **Bump `CURRENT_PROJECT_VERSION 12 → 13`** in
+      `ios/App/App.xcodeproj/project.pbxproj` (both Debug + Release
+      configurations). `MARKETING_VERSION 1.2 → 1.3` recommended given
+      the scope.
+- [ ] **Archive in Xcode → Distribute App → App Store Connect →
+      Upload**. Then in App Store Connect: create version `1.3`, fill
+      "What's New", attach build 13, **Submit for Review**.
+
+### What ships in v1.3 (build 13)
+
+  - **v131** — UGC report + block on CrewChat (Apple G1.2 safety)
+  - **v131** — Native local notifications via `@capacitor/local-notifications`
+  - **v132** — Persisted 1:1 friend DMs via `crew_messages`
+  - **v133** — iOS scroll fix (`contentInset: 'always' → 'never'`),
+    native Spotify OAuth via `@capacitor/browser` + `plursky://callback`
+  - **v134** — SVG TopDownMap pinch-zoom + pan + zoom buttons
+  - **v135** — Memories with EXIF auto-tag, batch import, video support
+  - **v137** — Attendance tracking (live GPS auto-detect + manual review),
+    real "SETS CAUGHT" stat
+  - **v138-v141** — Lineup grid restructure: 1-page all-3-days + saved
+    sets sidebar + un-save × + scroll-position restore + day-picker sync
+  - **v141** — Tappable Me-tab History rows; Keep Both on conflicts;
+    photos never silently skip
+  - **v142** — Spotify pill goes to artist page (cached `spotifyId`)
+  - **v143-v144** — Setlist proxy (Edge Function) + venue-only setlists
+  - **v145-v149** — Festival Recap screen with shareable image card,
+    stages visited, walking distance, B2B, attended-sets Spotify
+    playlist, hero photo, discovery, crew highlights
+  - **v146** — Photo set-detection bug fix (was matching by time-only,
+    ignoring date — Saturday photos could land on Friday artists)
+
+### What's-New copy for App Store Connect
+
+```
+Built for the morning after the festival.
+
+YOUR WEEKEND, RECAPPED
+A new RECAP screen that wraps the festival into a single shareable
+card — sets caught, top stage, top genre, walking distance, hidden
+gem, headliners caught, your weekend playlist built from what you
+actually saw.
+
+MEMORIES, AUTO-TAGGED
+Drop in photos and videos from your camera roll. Each one auto-tags
+to the right night and artist by EXIF time + GPS.
+
+NATIVE FIXES
+Scroll snappier on iPhone. Spotify connect now opens in an in-app
+Safari sheet and lands you straight back in Plursky. Set-time
+reminders fire even when the app is killed.
+
+CREW + CHAT
+Persistent 1-on-1 DMs with crew. Report / Block on any message.
+Crew chat highlights in your weekend recap.
+
+PLUS
+Pinch + zoom on the festival map. Lineup grid shows all three nights
+on one page with your picks pinned in a vertical sidebar.
+```
+
+---
+
 ## 🔧 MANUAL STEPS YOU MUST RUN
 
-These are one-time setup steps that Claude cannot do for you. Run them before the relevant feature reaches users.
+One-time setup steps Claude can't do via tooling.
 
-- [x] **Run `crew_message_reports` DDL in Supabase** — DONE 2026-05-15 via MCP. Migration `v131_crew_message_reports_ugc_moderation` applied. Table exists with insert-only anon policy (`length(body_snapshot) <= 600 and reporter_pid <> sender_pid`).
-- [ ] **`npx cap sync ios` then archive + submit a v1.1.x update** to ship the native local-notification reminders to iOS App Store users (web users get nothing new from this — web Notification path is unchanged). Required after v131's `@capacitor/local-notifications` install lands. **v133 piggybacks on this same archive**: ships the iOS scroll fix (`contentInset: 'never'`), the native Spotify OAuth (`@capacitor/browser` + `plursky://callback` URL scheme), and the `@capacitor/app` listener for the inbound auth code.
-- [x] **Widen `crew_messages` insert-policy `crew_code` bound 12 → 40** — DONE 2026-05-15 via MCP. Migration `v132_widen_crew_messages_code_bound` applied. Policy now: `length(body) between 1 and 500 and length(crew_code) between 4 and 40`. DM channel keys (`dm-${pidA}-${pidB}`, ~24 chars) now pass RLS.
-- [x] **Add `plursky://callback` to Spotify dashboard Redirect URIs** — DONE 2026-05-15. Three URIs now registered: `plursky://callback` (v133 native iOS), `https://plursky.com/callback` (website PKCE), `https://pzoijbqsbbwyuyjinjtj.supabase.co/auth/v1/callback` (Supabase Sign-in-with-Spotify).
+- [ ] **Spotify Quota Extension Request** (still pending — start now
+      since approval takes 2–6 weeks). App
+      `2219c68606c54629a8799f467a996a81` is in Development Mode
+      (25-user allowlist). Until Quota Extension is approved →
+      Production Mode, only allowlisted emails can create playlists.
+      v84 modify-existing-playlist workaround is the bridge. Full
+      submission workflow + paste-ready form answers in the
+      "Spotify Quota Extension" appendix at the bottom of this file.
 
----
+### ✓ Completed manual steps
 
-## 🎉 LIVE ON THE APP STORE
-
-**Status (2026-05-15):** Plursky Live `1.1 (11)` is **APPROVED FOR DISTRIBUTION**. App Store listing is live (or pending developer release). EDC opens today — launch + festival collide.
-
-### What this unlocks
-- iOS binary is **unfrozen** — patch updates (v1.1.1, v1.2, …) can be archived + submitted whenever.
-- Website (plursky.com) continues to ship on every push to `main` as before.
-- All deferred work below is now in-bounds.
-
-### Operational status (verified live as of 2026-05-13)
-- Edge Function: `https://pzoijbqsbbwyuyjinjtj.functions.supabase.co/delete-account` → HTTP 200
-- Privacy policy: `https://plursky.com/privacy` → HTTP 200
-- Email forward: `hello@plursky.com → jakeoborn@yahoo.com` via Squarespace/Mailgun
-
----
-
-## 🚀 POST-LAUNCH QUEUE — ship as v1.1.1 / v1.2
-
-Ordered by user-impact-per-engineering-hour. Pick from top.
-
-- [x] **Map redesign** — DONE 2026-05-14 across commits `8f712cd`..`f109803`. RealMap (MapLibre + heatmap + Apple-Maps chrome) shipped, but **reverted to v1.0 SVG `TopDownMap` in `139b50e` (2026-05-15) for EDC night**. Both implementations are in the binary; `MapScreen` calls `TopDownMap`.
-- [ ] **Re-enable RealMap post-festival** — once EDC weekend is over, swap `<TopDownMap …>` at `map.jsx:2269` back to `<RealMap …>` (or restore the toggle). RealMap function lives at `map.jsx:2780` with all the polish from the May 14 session preserved. ⚠️ **Do NOT purge `TopDownMap`** — it's the live map until this swap happens.
-- [x] **UGC report + block** — DONE 2026-05-15 (v131). `⋯` button on each non-mine `CrewChat` bubble opens an inline menu (Report message / Block sender / Cancel). Report opens a reason sheet (5 chips: spam · harassment · sexual · violence · other + 500-char optional note) and inserts a row into `crew_message_reports` with a snapshot of body+sender+reporter. Block is per-device (`localStorage.plursky_blocked_pids_v1`) and filters blocked senders' messages AND polls AND votes out of render. `BlockedManager` pill above the input shows count + per-pid Unblock buttons. ⚠️ **MANUAL STEP**: run the new `crew_message_reports` DDL block in the Supabase SQL editor before the first user reports a message (see top of `supabase.jsx` — table + index + RLS insert policy). Reports are queryable from the Supabase dashboard for now; an Edge Function → email hello@plursky.com trigger is a future enhancement.
-- [x] **Native local notifications** — DONE 2026-05-15 (v131). Installed `@capacitor/local-notifications@^6` (corrected from the TODO's `@capacitor/push-notifications`, which is for server-sent APNs/FCM — Plursky has no backend for that). `chrome.jsx:useNotifications` now branches on `window.Capacitor.Plugins.LocalNotifications`: native gets OS-level scheduled alerts that fire when the app is killed; web keeps the existing setTimeout + `reg.showNotification` fallback. `scheduleReminders` collapses to a single `LocalNotifications.schedule({ at: Date })` call on native (cancels prior slate first). `loadAndReschedule` is a no-op on native because the OS holds the schedule across app lifecycle. Stable int32-safe IDs derived from artist id so cancel/replace is trivial. "How to re-enable" copy + "blocked" copy branch on native (Settings → Plursky → Notifications vs Safari site permissions). ⚠️ **MANUAL STEP**: `npx cap sync ios` then archive + submit a v1.1.x update to reach App Store users. Website users are unchanged.
-- [ ] **Apple Music dev token** — `APPLE_DEV_TOKEN` in `spotify.jsx:8` is empty. Get a MusicKit JWT from developer.apple.com → MusicKit identifier. Valid 6 months. Card stays hidden until set (v89 gate).
-- [x] **Friend DMs (PING replacement)** — DONE 2026-05-15 (v132). `MessageDrawer` in `map.jsx` now fetches the full thread from `crew_messages` on open with `crew_code = dm-${sortedPidA}-${sortedPidB}` and subscribes to new INSERTs. Threads survive reloads + offline gaps (vs the prior fire-and-forget broadcast). Optimistic stubs + offline outbox queueing carried over from `sbCrewSendMessage`. The old broadcast helpers (`sbDMChannelKey`, broadcast `sbDMSubscribe`/`sbDMSend`) are deleted; the new persisted helpers take their names. `_fakeReply` kept as a fallback for demo friends (LIME/FROG/NEON/PLUM — no presId). ⚠️ **MANUAL STEP**: run the `drop policy / create policy` ALTER block in the SQL doc at the top of `supabase.jsx` (under "v132 ONE-TIME MIGRATION") to widen the `crew_code` length bound from 12 → 40 so DM channel keys are allowed.
-- [ ] **Smart search bar** — natural-language lineup queries via a server-side LLM proxy. Replaces the removed v97 BYOK chat.
-- [x] **Setup banner smarter dismiss** — DONE 2026-05-15 (v132). `HomeScreen` now auto-persists `setup_banner_dismissed = "1"` the moment `state.saved.length` becomes > 0. Saving a set is a strong signal of engagement, and the nag would just feel patronizing after that. Sticks even if the user later un-saves everything.
+- [x] **2026-05-15** — `crew_message_reports` DDL applied
+      (`v131_crew_message_reports_ugc_moderation`)
+- [x] **2026-05-15** — `crew_messages` policy widened 12 → 40
+      (`v132_widen_crew_messages_code_bound`)
+- [x] **2026-05-15** — `plursky://callback` added to Spotify dashboard
+      Redirect URIs
+- [x] **2026-05-17** — `proxy-setlist` Edge Function deployed (CORS
+      fix for setlist.fm)
 
 ---
 
-## ⚙️ STRONGLY RECOMMENDED — operational hardening (no code change)
+## 🟠 PRODUCT GAPS — sessions, not one-liners
 
-Pre-launch ops items still pending. Not blocking the App Store submission, but each one trades a small upfront effort for meaningful risk reduction at festival scale.
+Ordered by impact-per-engineering-hour.
 
-- [ ] **Enable Supabase backups / PITR** — Supabase Dashboard → Database → Backups. Free tier gives daily 7-day-retention; Pro adds Point-in-Time Recovery (recovers within minutes after a bad migration). The festival is the worst time to find out your only backup is 24h old.
-- [ ] **Set up uptime monitoring** — UptimeRobot (free) on:
-  - `https://plursky.com/` (GitHub Pages)
-  - `https://pzoijbqsbbwyuyjinjtj.functions.supabase.co/delete-account` via OPTIONS (Edge Function health)
-  - `https://pzoijbqsbbwyuyjinjtj.supabase.co/rest/v1/` (Supabase REST)
-  Alert email → your phone.
-- [ ] **Enable Supabase refresh-token rotation** — Dashboard → Auth → Sessions → toggle "Rotate refresh tokens on use." Limits blast radius if a localStorage token leaks.
-- [ ] **Tighter rate-limit on `crew_messages` insert** — only if real abuse appears. Add a per-`crew_code` insert-rate trigger in Postgres (reject if >60/min from same row). 6-char code is enough friction for the festival window.
-
----
-
-## 📅 TIME-SENSITIVE — start now, takes weeks
-
-- [ ] **Spotify Quota Extension Request** — App `2219c68606c54629a8799f467a996a81` is in Development Mode (25-user allowlist). Until Quota Extension is approved → Production Mode, only allowlisted emails can create playlists. v84 modify-existing-playlist workaround is the bridge; quota extension is the real fix (unblocks `POST /users/{id}/playlists` AND `/top-tracks`). **Approval takes ~2-6 weeks. Respond to Spotify follow-up email within 7 days or they close the request.**
-
-  **Submission workflow:**
-  1. Sign in at https://developer.spotify.com/dashboard with the dev account that owns the app
-  2. Open Plursky app → click "Request Extension" / "Extend Quota" (top of page or under App Settings)
-  3. Fill out form — see prepared answers below
-  4. Record 1–2 min demo video, upload to YouTube unlisted
-  5. Take 3–5 screenshots
-  6. Submit; check email for follow-up questions
-
-  **Form answers (copy/paste):**
-  - Commercial use? → **No** (free PWA, no monetization)
-  - App URL → `https://plursky.com`
-  - User estimates → "~5,000 in first festival year, growing"
-  - App description:
-    > Plursky is a free Progressive Web App for attendees of EDC Las Vegas 2026 (~150K attendees). It uses Spotify to (1) match the user's top + followed artists against the festival's 250+ artist lineup so they discover sets they'll like, (2) build a personalized Spotify playlist of their saved sets sorted FRI→SAT→SUN by stage time. No commercial use. No data resold or stored — all listening data stays in-browser via PKCE.
-  - Integration description:
-    > User connects Spotify via PKCE OAuth. We call /me/top/artists, /me/following, /me/tracks, /me/recently-played to derive their music taste, then match against our hand-curated EDC lineup data. Optional second flow: user taps "Build My Playlist" which calls POST /users/{id}/playlists to create a "My EDC Lineup" playlist, then /search?type=track + POST /playlists/{id}/tracks to fill it with each saved artist's top tracks. All listening insights are surfaced read-only — the playlist write is the only mutation.
-
-  **Endpoints used:**
-  ```
-  GET    /v1/me
-  GET    /v1/me/top/artists
-  GET    /v1/me/top/tracks
-  GET    /v1/me/following?type=artist
-  GET    /v1/me/player/recently-played
-  GET    /v1/me/tracks (saved library)
-  GET    /v1/me/playlists
-  GET    /v1/search?type=artist,track
-  GET    /v1/artists/{id}
-  POST   /v1/users/{id}/playlists          ← blocked currently, key ask
-  POST   /v1/playlists/{id}/tracks
-  PUT    /v1/playlists/{id}
-  PUT    /v1/playlists/{id}/tracks
-  DELETE /v1/playlists/{id}/tracks
-  ```
-
-  **Scopes requested:**
-  ```
-  user-top-read user-read-recently-played user-library-read
-  user-read-private user-read-email user-follow-read
-  playlist-read-private playlist-modify-public playlist-modify-private
-  ```
-
-  **Demo video script (1–2 min, QuickTime / Win+G):**
-  1. Open `plursky.com` → tap Music tab
-  2. Tap **Connect Spotify** → grant scopes
-  3. Show top-artist matches lit up in lineup
-  4. Save 5–10 sets in Lineup tab
-  5. Tap **BUILD MY PLAYLIST** → success → open in Spotify
-  6. Show resulting playlist with tracks
+- [ ] **Manage storage UI** — Memories writes blobs to IndexedDB with
+      no size visibility. A heavy weekend can stash 500MB+. Add a
+      "Storage used · X MB · Clear all" row inside Memories (or Me →
+      Settings) with per-night and per-moment delete. Uses the
+      `navigator.storage.estimate()` web API. (in progress — see
+      v150)
+- [ ] **Re-enable RealMap post-festival** — both implementations are
+      in the binary; `MapScreen` calls `TopDownMap` at `map.jsx:2269`.
+      Swap to `<RealMap …>` (or a runtime toggle) to bring back the
+      MapLibre + heatmap + Apple-Maps-style chrome. ⚠️ Do NOT purge
+      `TopDownMap` — it's the live map.
+- [ ] **Apple Music dev token** — `APPLE_DEV_TOKEN` in `spotify.jsx`
+      is empty. Generate a MusicKit JWT from developer.apple.com →
+      MusicKit identifier (valid 6 months). Card stays hidden until
+      set (v89 gate).
+- [ ] **Lineup virtualization** — list view renders all 300+ artists
+      at once. Fine on a fast phone, sluggish on older ones. Wrap in
+      a windowing strategy (intersection-observer-based render
+      windowing — no library needed).
+- [ ] **Per-festival recap archive** — Recap is wired to
+      `FESTIVAL_CONFIG` (the current festival). Future festivals will
+      overwrite stats unless we snapshot attendance + memories +
+      moments per `FESTIVAL_CONFIG.id` and let users tap back to past
+      recaps. Right now the recap only ever represents "this
+      festival."
+- [ ] **Account data export** — Apple is starting to ask. JSON dump
+      of `state.saved`, `plursky_attended_v1`, `plursky_moments_v1`
+      (metadata only, not blobs), Memories photo IDs, and any cloud
+      pull. Trigger from Me → Cloud account card → "Export my data".
+- [ ] **Smart search bar** — natural-language lineup queries
+      ("something like Lane 8 but darker"). Replaces the removed v97
+      BYOK chat. Needs a server-side LLM proxy Edge Function +
+      `@anthropic-ai/sdk` (or OpenAI / Cohere); ranks
+      lineup artists by similarity to the user's query.
+- [ ] **Friend lookup backend** — PING (LIME/FROG/NEON/PLUM codes) is
+      demo-only; CREW presence is real. Either: (a) deprecate PING
+      entirely so users only see crew code joins, OR (b) build a real
+      pid↔code server-side mapping in Supabase (table:
+      `friend_codes(code text primary key, pid text)`).
 
 ---
 
-## 📚 LISTING TEXT — paste-ready for future updates
+## 🟡 POLISH + RISK REDUCTION
 
-Kept for the next App Store update. The first submission used these verbatim.
+- [ ] **Native push notifications** — set-time reminders fire (local
+      notifications, v131), but no remote push for "your crew just
+      sent a message" or "your saved set starts in 5 min — check the
+      map." Lower priority post-festival; bigger value in pre-show
+      hype next year.
+- [ ] **Notification UX during festival** — Plursky is silent during
+      sets you saved unless you've set reminders. Could nudge "Tiësto
+      starts in 5 min · Kinetic Field" as a passive bottom-of-screen
+      banner.
+- [ ] **Onboarding flow bump** — `OnboardingModal` is pinned to
+      `ONBOARD_VERSION = "v1"`. Bump if/when the welcome flow changes
+      substantively; everyone re-onboards once.
+- [ ] **Memory storage soft cap** — once we have storage UI, surface
+      a soft warning when IndexedDB exceeds e.g. 80% of
+      `storage.estimate().quota`.
+- [ ] **Attendance edge cases** — GPS auto-detect only ADDS, never
+      removes. If a user walks past a stage briefly, they get marked
+      as attending. Need a "Mark not attended" path on the GPS toast.
+
+---
+
+## ⚙️ OPERATIONAL HARDENING (no code change)
+
+Risk-reduction items that don't touch the bundle.
+
+- [ ] **Enable Supabase backups / PITR** — Supabase Dashboard →
+      Database → Backups. Free tier gives daily 7-day-retention; Pro
+      adds Point-in-Time Recovery.
+- [ ] **Set up uptime monitoring** — UptimeRobot (free) on
+      `https://plursky.com/`, `proxy-setlist` Edge Function (OPTIONS),
+      and `https://pzoijbqsbbwyuyjinjtj.supabase.co/rest/v1/`. Alert
+      email → phone.
+- [ ] **Enable Supabase refresh-token rotation** — Dashboard → Auth
+      → Sessions → "Rotate refresh tokens on use".
+- [ ] **Rotate the public setlist.fm + YouTube + Last.fm + TM API
+      keys** if any have been heavily used by random visitors. Keys
+      are currently HTTP-referrer-restricted in their providers'
+      dashboards.
+
+---
+
+## 🟢 SPECULATIVE — 2027 territory
+
+- [ ] **Multi-festival platform** — `FESTIVAL_CONFIG` registry exists
+      but only EDC LV 2026 is selectable. EDC Orlando 2027 / Coachella
+      / NYE could plug in once the per-festival recap-archive lands.
+- [ ] **Insomniac partnership pitch** — post-EDC attendance + memory
+      data is real evidence. Use the Recap screen as the demo.
+- [ ] **Real-time friends-on-map** — CREW presence broadcast already
+      runs; could surface live pins on the festival map.
+- [ ] **AR stage finder** — point phone camera, identify stage by
+      silhouette, drop a "you are here" pin.
+- [ ] **Voice queries / Apple Intelligence** — "when does Tiësto
+      play" via Siri shortcut.
+
+---
+
+## 📚 LISTING TEXT — paste-ready for App Store updates
+
+Kept for future version submissions; the first submission used these
+verbatim.
 
 ### Name
 ```
 Plursky Live
 ```
 
-### Subtitle (30 chars max — uses 29)
+### Subtitle (30 chars max)
 ```
 Festival companion - EDC 2026
 ```
@@ -150,6 +245,9 @@ See your position, all nine stages, sunrise sets, last shuttle times - and your 
 CREW CHAT
 Group thread for whoever's holding the same code. Persistent (late joiners see the history), real-time, zero phone numbers required.
 
+WEEKEND RECAP
+Spotify-Wrapped-style summary of your festival — sets caught, top stage, top genre, hidden gem, walking distance, headliners. Sharable as a single image.
+
 OFFLINE-FIRST
 The Vegas desert eats LTE. Plursky precaches the full lineup, stage map, and your saved sets on first load - works fully offline once you're inside the festival.
 
@@ -159,83 +257,110 @@ Plursky is free and stays free. We do not run ads, do not sell your data, and do
 Privacy policy: plursky.com/privacy
 ```
 
-### Keywords (100 chars max — uses 87)
+### Keywords (100 chars max)
 ```
 lineup,vegas,rave,edm,schedule,dj sets,playlist,set times,plur,kandi,stage map,discover
 ```
 
-### App Review reviewer notes
+### App Review reviewer notes (v1.3)
 ```
 Plursky is a free festival-companion app for EDC Las Vegas 2026 (May 15-17, 2026). No ads, no analytics, no third-party tracking. Works offline once content is precached.
 
+NEW IN v1.3:
+  - "Recap" screen on Me tab — post-festival summary, shareable.
+  - "SETS YOU CAUGHT" attendance checklist under each night in
+    Memories.
+  - "Import from camera roll" auto-tags photos/videos to set + night
+    via EXIF time + GPS. All blobs stored locally in IndexedDB; no
+    upload.
+  - In-chat Report message + Block sender on every CrewChat bubble.
+  - 1:1 friend DMs persisted via Supabase Realtime (same trust model
+    as Crew Chat: 6-char code is the secret).
+  - Native Spotify OAuth via SafariViewController + plursky://callback
+    URL scheme (replaces the web-redirect-out-and-back pattern).
+
 CORE FEATURES (no account required):
-  - Lineup: browse all 250 artists across 9 stages, 3 nights
-  - Map: stage map with live GPS position (GPS used in-browser only, never sent to server)
-  - Save sets: tap a heart to save artists for offline reference
-  - Music tab: optional Spotify PKCE OAuth to match the lineup to your top artists. Read-only; tokens stay on device.
+  - Lineup: 250 artists, 9 stages, 3 nights
+  - Map: stage map with live GPS (in-browser only, never sent to server)
+  - Save sets, mark attended, build Spotify playlist of what you saw
+  - Optional Spotify PKCE OAuth to match the lineup. Read-only; tokens
+    stay on device.
 
 TO TEST SIGN IN WITH APPLE (Guideline 4.8):
-  1. Tap through the welcome wizard.
-  2. Bottom tab bar -> "ME".
-  3. Tap "Cloud account" card to expand.
-  4. Tap "Sign in with Apple" -> Face ID / Touch ID sheet appears.
+  1. Welcome wizard → "ME" tab → "Cloud account" → "Sign in with Apple"
 
 TO TEST ACCOUNT DELETION (Guideline 5.1.1(v)):
-  After signing in (above), scroll to the bottom of the Cloud account card and tap "DELETE ACCOUNT" -> two-step inline confirm -> "YES, DELETE EVERYTHING". This calls a Supabase Edge Function that hard-deletes both the auth.users row and the user_data row server-side. No retention.
+  After signing in, scroll to bottom of Cloud account → "DELETE
+  ACCOUNT" → two-step confirm. Calls a Supabase Edge Function that
+  hard-deletes both the auth.users row and the user_data row.
+
+UGC SAFETY (Guideline 1.2):
+  CrewChat is a closed-group thread restricted to users sharing a
+  6-character invite code. NO public discovery, NO direct messaging
+  between strangers, NO user profiles. Every non-mine message has a
+  "⋯" menu with Report and Block. Reports persist a snapshot of the
+  body + sender so deletion can't destroy evidence. Plursky commits
+  to 24h response to reports at hello@plursky.com.
 
 LOCATION USAGE:
-  Map tab uses CLLocationManager via the WebView (NSLocationWhenInUseUsageDescription set in Info.plist). Coordinates are used only to draw the user's dot on an in-app SVG map. Never transmitted to any server. See privacy policy at plursky.com/privacy.
-
-CREW CHAT (USER-GENERATED CONTENT):
-  Plursky has one chat surface — "Crew Chat" — which is a closed-group thread restricted to users who share a 6-character invite code. There is NO public discovery, NO direct messaging between strangers, and NO user profiles. Structurally this works like a passworded Group iMessage: only people who have been given the code by an existing member can see or post in that room.
-
-  Current moderation: message bodies length-limited 1-500 chars at DB level; messages tied to sender_pid + display name; RLS ensures only crew members of the correct code can read/write the room.
-
-  Planned for a near-term update: in-chat "Report message" + per-pid block list. Plursky commits to responding to user reports of objectionable content within 24 hours of receipt at hello@plursky.com.
-
-The festival is upcoming so the Home tab shows a countdown view. During festival window (May 15-17, 2026) it shows real-time "Now playing" computed from the lineup data.
+  Map tab uses CLLocationManager via WebView
+  (NSLocationWhenInUseUsageDescription set). Coordinates are used
+  in-browser for the map dot AND for attendance auto-detect (matches
+  the user's stage anchor distance against current playing set).
+  Never transmitted to any server. See privacy policy.
 ```
 
 ---
 
-## Features (post-MVP — see POST-LAUNCH QUEUE above for priorities)
-- [ ] Real friend lookup backend — The PING (1:1 pin drop) system is demo-only (LIME/FROG/NEON/PLUM codes). Real friend lookup needs a server-side code → user mapping. The CREW presence system IS real (Supabase Realtime). Consider deprecating PING in favor of CREW.
+## 📅 APPENDIX — Spotify Quota Extension Request workflow
 
-## Data / Content
-- [ ] Update GPS anchors in `FESTIVAL_CONFIG.gpsAnchors` once Insomniac releases the official 2026 stage map (~2 weeks before festival).
+**Submission workflow:**
+1. Sign in at https://developer.spotify.com/dashboard with the dev
+   account that owns app `2219c68606c54629a8799f467a996a81`
+2. Open Plursky app → click "Request Extension" / "Extend Quota"
+3. Fill out the form (answers below)
+4. Record a 1–2 min demo video, upload to YouTube unlisted
+5. Take 3–5 screenshots
+6. Submit; check email for follow-up questions
 
-## Done ✓
-- [x] **2026-05-13 — Plursky Live `1.0 (3)` submitted to Apple App Review.** All pre-submission blockers resolved: SQL migration run, Supabase Apple provider configured, Edge Function deployed, YouTube key restricted, privacy.html live, iOS build signed + iPhone-only + Plursky-branded icon, screenshots uploaded (5× at both 6.5" and 6.9"), listing text + categories + age rating + App Privacy + Content Rights all filled, `hello@plursky.com` Squarespace forward live and MX-propagated to Mailgun.
-- [x] **v107** — iOS App Store rejection-proofing + security/perf hardening.
-  - **(1) Native Sign in with Apple** via `@capacitor-community/apple-sign-in@^6` — replaces the web-OAuth redirect with Apple's native Face ID / Touch ID sheet on iOS. Web (plursky.com) still falls back to `signInWithOAuth({provider:"apple"})`. `sbSignInWithApple` branches on `Capacitor.isNativePlatform()`, generates a fresh nonce, calls `SignInWithApple.authorize`, then exchanges the identity token via `_sb.auth.signInWithIdToken({provider:"apple", token, nonce})`. First-name captured from the response on first sign-in only (Apple won't resend).
-  - **(2) DELETE ACCOUNT button** in `AccountCard` (Me → Cloud account → expanded) — two-step inline confirm, hits new `delete-account` Edge Function that verifies the JWT and hard-deletes via `auth.admin.deleteUser` + drops the `user_data` row. Required by Guideline 5.1.1(v).
-  - **(3) iOS entitlements & Info.plist** — `ios/App/App/App.entitlements` with `com.apple.developer.applesignin` wired into both Debug+Release `CODE_SIGN_ENTITLEMENTS`. Added `NSLocationWhenInUseUsageDescription` (map.jsx geolocation), `ITSAppUsesNonExemptEncryption=false` (skips TestFlight encryption prompt), `UIUserInterfaceStyle=Light` (paper-and-ink design lock).
-  - **(4) Privacy policy** — `privacy.html` scaffolded (deploys to `plursky.com/privacy`) tailored to what Plursky actually collects: Supabase auth + saved sets, Spotify PKCE, GPS in-browser only, crew chat, no analytics / ads / payments.
-  - **(5) Security hardening** — pinned `supabase-js@2.45.4` with SRI hash in `index.html`; tightened Edge Function CORS from wildcard to a `{plursky.com, capacitor://localhost, http://localhost}` allowlist with `Vary: Origin`; documented HTTP-referrer restriction for the YouTube API key in `artist.jsx:47`.
-  - **(6) Resilience** — `RootErrorBoundary` wraps `<App />` in `app.jsx:526`, persists the last crash to `localStorage.plursky_last_crash` and shows a Reload card that wipes SW caches before reloading.
-  - **(7) DB performance** — GIN index on `user_data.artist_ids` so `get_artist_save_counts` stops seq-scanning past ~1k users.
-  - **(8) v107.1 follow-ups** — notes textarea capped at 500 chars; `UIUserInterfaceStyle=Light` locked; support-email TODO surfaced.
-  - **(9) v107.2** — install/A2HS banner suppressed in native iOS build via `Capacitor.isNativePlatform()` check (was pitching users to install the app they were already inside).
-  - **(10) iPad drop + build bump** — `TARGETED_DEVICE_FAMILY = "1"`, `CURRENT_PROJECT_VERSION 1 → 2 → 3` (Build 3 carries the branded icon).
-  - **(11) Branded icon** — replaced default Capacitor blue-X with the Plursky yellow P-mark (1024×1024, no alpha).
-  - **(12) DESIGN.md** — visual-system reference at repo root.
-  - **(13) Misc** — `viewport-fit=cover` for notch handling, fixed `<title>` UTF-8 mojibake.
-- [x] **v98** — Crew chat (site-wide messaging service v1). `crew_messages` Postgres table + Realtime INSERT subscription, scoped by `crew_code`. Helpers in `supabase.jsx`: `sbCrewFetchMessages`, `sbCrewSendMessage`, `sbCrewSubscribeMessages`. `CrewChat` component renders inside expanded `CrewCard` whenever the user is joined to a crew.
-- [x] **v97** — Removed BYOK Ask-Plursky AI chat.
-- [x] **v96** — Lineup highlight-on-arrival.
-- [x] **v95** — Sticky top strip across all screens.
-- [x] **v94** — Timeline grid view on LineupScreen.
-- [x] **v93** — Strip placeholder data; Hybrid-C onboarding; configurable reminder lead-time; cloud auto-push on save; battery-saver real-power gating.
-- [x] **v92** — Flow cleanup: AI FAB hidden unless key stored, 5→4 tabs, onboarding modal → soft Setup banner, ArtistScreen SCHEDULE handoff, global toast on save.
-- [x] **v91** — Drop iPhone frame on real phones / installed PWA.
-- [x] **v90** — Memories grid → tappable Your Headliners, Discoveries reasons, Lineup filter collapse.
-- [x] **v89** — Apple Music card hidden when token empty. Home banner queue. Me tab CrewCard + AccountCard collapse.
-- [x] **v88** — Crew deep-link auto-join; playlist build hardened with shared `fetchWithRetry`.
-- [x] **v87** — `fetchPlaylistsWithRetry` for /me/playlists.
-- [x] **v86** — `_findPlurskyPlaylist` discriminated return.
-- [x] **v85** — Home masthead scrolls inside ScrollBody.
-- [x] **v84** — Modify-existing-playlist workaround for blocked POST /users/{id}/playlists.
-- [x] **v83** — Track-search playlist build; per-artist track-count voting for name-collision disambiguation.
-- [x] **v81** — Pre-flight scope check, OAuth resume after reconnect, scope record from granted scopes.
-- [x] **v79** — Crew-scoped presence via `?crew=CODE` deep link.
-- [x] **v62** — Dynamic NOW, dynamic alerts, stage vibes, real Realtime crew presence, playlist try/catch, Apple Sign In code, shuttle times.
+**Form answers (copy/paste):**
+- Commercial use? → **No** (free PWA, no monetization)
+- App URL → `https://plursky.com`
+- User estimates → "~5,000 in first festival year, growing"
+- App description:
+  > Plursky is a free Progressive Web App for attendees of EDC Las Vegas 2026 (~150K attendees). It uses Spotify to (1) match the user's top + followed artists against the festival's 250+ artist lineup so they discover sets they'll like, (2) build a personalized Spotify playlist of their saved sets sorted FRI→SAT→SUN by stage time. No commercial use. No data resold or stored — all listening data stays in-browser via PKCE.
+- Integration description:
+  > User connects Spotify via PKCE OAuth. We call /me/top/artists, /me/following, /me/tracks, /me/recently-played to derive their music taste, then match against our hand-curated EDC lineup data. Optional second flow: user taps "Build My Playlist" which calls POST /users/{id}/playlists to create a "My EDC Lineup" playlist, then /search?type=track + POST /playlists/{id}/tracks to fill it with each saved artist's top tracks. All listening insights are surfaced read-only — the playlist write is the only mutation.
+
+**Endpoints used:**
+```
+GET    /v1/me
+GET    /v1/me/top/artists
+GET    /v1/me/top/tracks
+GET    /v1/me/following?type=artist
+GET    /v1/me/player/recently-played
+GET    /v1/me/tracks
+GET    /v1/me/playlists
+GET    /v1/search?type=artist,track
+GET    /v1/artists/{id}
+POST   /v1/users/{id}/playlists          ← blocked currently, key ask
+POST   /v1/playlists/{id}/tracks
+PUT    /v1/playlists/{id}
+PUT    /v1/playlists/{id}/tracks
+DELETE /v1/playlists/{id}/tracks
+```
+
+**Scopes requested:**
+```
+user-top-read user-read-recently-played user-library-read
+user-read-private user-read-email user-follow-read
+playlist-read-private playlist-modify-public playlist-modify-private
+```
+
+**Demo video script (1–2 min):**
+1. Open `plursky.com` → tap Music tab
+2. Tap **Connect Spotify** → grant scopes
+3. Show top-artist matches lit up in lineup
+4. Save 5–10 sets in Lineup tab
+5. Tap **BUILD MY PLAYLIST** → success → open in Spotify
+6. Show resulting playlist with tracks

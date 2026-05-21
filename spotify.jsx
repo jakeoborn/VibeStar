@@ -2900,6 +2900,181 @@ function _matchArtistForPhoto({ date, lat, lng }, savedIds) {
   return { artistId: pool[0].a.id, night, reason: "matched" };
 }
 
+// v150: Manage-storage panel rendered at the bottom of the Memories screen.
+// Surfaces how much disk space Plursky is using (via the Storage Manager
+// API) + lets the user purge moments per-night or wholesale. Each delete
+// nukes both the localStorage metadata AND the IndexedDB photo blob so
+// nothing leaks.
+async function _purgeNightMoments(night) {
+  const all = _readMoments();
+  const list = all[night] || [];
+  for (const m of list) {
+    if (m.photoId) { try { await _deletePhoto(m.photoId); } catch {} }
+  }
+  delete all[night];
+  _writeMoments(all);
+}
+async function _purgeAllMoments() {
+  const all = _readMoments();
+  for (const list of Object.values(all)) {
+    for (const m of list || []) {
+      if (m.photoId) { try { await _deletePhoto(m.photoId); } catch {} }
+    }
+  }
+  _writeMoments({});
+}
+
+function StorageManager({ all, onChange }) {
+  const [usage, setUsage] = React.useState(null);
+  const [busy, setBusy]   = React.useState(false);
+  const [confirming, setConfirming] = React.useState(null); // night | 'all' | null
+
+  const refresh = React.useCallback(async () => {
+    try {
+      if (navigator.storage?.estimate) {
+        const e = await navigator.storage.estimate();
+        setUsage({ used: e.usage || 0, quota: e.quota || 0 });
+      } else setUsage({ used: null, quota: null });
+    } catch { setUsage({ used: null, quota: null }); }
+  }, []);
+  React.useEffect(() => { refresh(); }, [refresh, all]);
+
+  const totalMoments = Object.values(all).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+  if (totalMoments === 0) return null;
+
+  const fmtBytes = (b) => {
+    if (b == null) return "—";
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    if (b < 1024 * 1024 * 1024) return `${(b / 1048576).toFixed(1)} MB`;
+    return `${(b / 1073741824).toFixed(2)} GB`;
+  };
+  const usedPct = usage?.quota ? Math.round((usage.used / usage.quota) * 100) : null;
+
+  const handlePurge = async (target) => {
+    setBusy(true);
+    try {
+      if (target === "all") await _purgeAllMoments();
+      else                  await _purgeNightMoments(target);
+    } finally {
+      setBusy(false);
+      setConfirming(null);
+      onChange?.();
+    }
+  };
+
+  const DAYS = window.DAYS || [];
+
+  return (
+    <div style={{
+      marginTop: 22, padding: "14px 16px",
+      background: "var(--paper-2)", border: "1px solid var(--line)", borderRadius: 14,
+    }}>
+      <div className="mono" style={{ fontSize: 9, letterSpacing: 1.3, color: "var(--muted)", fontWeight: 700, marginBottom: 10 }}>
+        STORAGE
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+        <span style={{ fontSize: 13, color: "var(--ink)" }}>
+          {totalMoments} moment{totalMoments === 1 ? "" : "s"}
+        </span>
+        {usage?.used != null && (
+          <span className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", fontWeight: 600 }}>
+            {fmtBytes(usage.used)}{usage.quota ? ` / ${fmtBytes(usage.quota)}` : ""}
+          </span>
+        )}
+      </div>
+      {usedPct != null && (
+        <div style={{ height: 4, background: "var(--paper)", borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
+          <div style={{
+            height: "100%", width: `${Math.min(100, usedPct)}%`,
+            background: usedPct > 80 ? "var(--ember)" : "var(--horizon)",
+            transition: "width 0.3s",
+          }}/>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+        {DAYS.map(d => {
+          const list = all[d.n] || [];
+          if (list.length === 0) return null;
+          const photos = list.filter(m => m.photoId && m.kind !== "video").length;
+          const videos = list.filter(m => m.kind === "video").length;
+          const isConfirm = confirming === d.n;
+          return (
+            <div key={d.n} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 10px", borderRadius: 8,
+              background: isConfirm ? "rgba(232,93,46,0.10)" : "var(--paper)",
+              border: isConfirm ? "1px solid rgba(232,93,46,0.5)" : "1px solid var(--line)",
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: "var(--ink)" }}>
+                  {d.label} <span className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", fontWeight: 600 }}>· {list.length} TOTAL</span>
+                </div>
+                {(photos > 0 || videos > 0) && (
+                  <div className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", marginTop: 2, fontWeight: 600 }}>
+                    {photos > 0 && `${photos} PHOTO${photos === 1 ? "" : "S"}`}
+                    {photos > 0 && videos > 0 && " · "}
+                    {videos > 0 && `${videos} VIDEO${videos === 1 ? "" : "S"}`}
+                  </div>
+                )}
+              </div>
+              {isConfirm ? (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => setConfirming(null)} disabled={busy} className="mono" style={{
+                    padding: "4px 9px", borderRadius: 999, background: "transparent", border: "1px solid var(--line-2)",
+                    color: "var(--ink)", cursor: "pointer", fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                  }}>CANCEL</button>
+                  <button onClick={() => handlePurge(d.n)} disabled={busy} className="mono" style={{
+                    padding: "4px 9px", borderRadius: 999, background: "var(--ember)", color: "#fff", border: "none",
+                    cursor: "pointer", fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                  }}>{busy ? "..." : "DELETE"}</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirming(d.n)} aria-label="Clear night" className="mono" style={{
+                  padding: "4px 9px", borderRadius: 999, background: "transparent", border: "1px solid var(--line-2)",
+                  color: "var(--muted)", cursor: "pointer", fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                }}>CLEAR</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {totalMoments > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          {confirming === "all" ? (
+            <div style={{
+              padding: "10px 12px", borderRadius: 8,
+              background: "rgba(232,93,46,0.10)", border: "1px solid rgba(232,93,46,0.5)",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            }}>
+              <span style={{ fontSize: 11.5, color: "var(--ink)" }}>
+                Delete all {totalMoments} moments?
+              </span>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button onClick={() => setConfirming(null)} disabled={busy} className="mono" style={{
+                  padding: "5px 10px", borderRadius: 999, background: "transparent", border: "1px solid var(--line-2)",
+                  color: "var(--ink)", cursor: "pointer", fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                }}>NO</button>
+                <button onClick={() => handlePurge("all")} disabled={busy} className="mono" style={{
+                  padding: "5px 10px", borderRadius: 999, background: "var(--ember)", color: "#fff", border: "none",
+                  cursor: "pointer", fontSize: 8.5, letterSpacing: 1, fontWeight: 700,
+                }}>{busy ? "..." : "DELETE ALL"}</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setConfirming("all")} className="mono" style={{
+              padding: "8px 14px", width: "100%", borderRadius: 8,
+              background: "transparent", border: "1px dashed var(--line-2)",
+              color: "var(--muted)", cursor: "pointer",
+              fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
+            }}>🗑  CLEAR ALL MEMORIES</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MemoriesScreen({ state, setState }) {
   const [all, setAll] = React.useState(_readMoments);
   const [adding, setAdding] = React.useState(null); // night number being added to, or null
@@ -3142,6 +3317,8 @@ function MemoriesScreen({ state, setState }) {
             </div>
           );
         })}
+
+        <StorageManager all={all} onChange={() => setAll(_readMoments())} />
       </ScrollBody>
     </Screen>
   );
