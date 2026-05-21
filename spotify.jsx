@@ -3904,6 +3904,12 @@ function _computeRecap(state) {
   const allMoments = Object.values(moments).flat();
   const photoMoments = allMoments.filter(m => m.photoId);
   const videoMoments = allMoments.filter(m => m.kind === "video");
+  // v148: hero-photo candidate — earliest photo we have so the hero card
+  // reads chronologically. Image-only (videos render slow/heavy as a bg).
+  const heroPhotoMoment = photoMoments
+    .filter(m => m.kind !== "video")
+    .slice()
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))[0] || null;
 
   // v147: stages visited (unique stages with ≥1 attended set)
   const stagesVisited = Array.from(new Set(caughtArtists.map(a => a.stage)));
@@ -3962,6 +3968,14 @@ function _computeRecap(state) {
     walkingMetersLo,  walkingMetersHi,
     b2bCount: b2bSets.length,
     b2bNames: b2bSets.map(a => a.name),
+    heroPhotoMoment,
+    // v148: saved-but-not-attended = the ones you marked then missed.
+    // Trim to the most "valuable" — by tier desc, then by chronological order.
+    missedSaved: (state.saved || [])
+      .map(id => ARTISTS.find(a => a.id === id))
+      .filter(a => a && !caughtArtists.some(ca => ca.id === a.id))
+      .sort((a, b) => (b.tier || 0) - (a.tier || 0))
+      .slice(0, 6),
   };
 }
 
@@ -4153,6 +4167,39 @@ function RecapScreen({ state, setState }) {
 
   const back = () => setState(s => ({ ...s, tab: "me" }));
 
+  // v148: async-load the hero photo blob from IndexedDB so we can paint it
+  // as the hero card background. Falls back to the gradient when no photo.
+  const heroPhotoUrl = useMomentPhoto(recap.heroPhotoMoment?.photoId);
+
+  // v148: crew highlights — pull last 100 crew_messages for the user's
+  // current crew code (if any) and derive simple stats. One round-trip,
+  // results cached in component state.
+  const [crewStats, setCrewStats] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    try {
+      const code = localStorage.getItem("plursky_group_code");
+      if (!code || typeof window.sbCrewFetchMessages !== "function") return;
+      window.sbCrewFetchMessages(code, 100).then(rows => {
+        if (cancelled) return;
+        if (!rows?.length) { setCrewStats({ total: 0, code }); return; }
+        const counts = {};
+        rows.forEach(r => {
+          const name = r.sender_name || "Friend";
+          counts[name] = (counts[name] || 0) + 1;
+        });
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        setCrewStats({
+          total: rows.length,
+          uniqueSenders: Object.keys(counts).length,
+          topSender: top ? { name: top[0], count: top[1] } : null,
+          code,
+        });
+      }).catch(() => {});
+    } catch {}
+    return () => { cancelled = true; };
+  }, []);
+
   // v147: build a Spotify playlist of what the user actually CAUGHT (attended)
   // — separate from the existing build-playlist flow which uses saved sets.
   const [playlistState, setPlaylistState] = React.useState({ status: "idle" });
@@ -4218,10 +4265,13 @@ function RecapScreen({ state, setState }) {
         {/* HERO ─ totals · share button bottom-right */}
         <div style={{
           borderRadius: 22, padding: "26px 22px", marginBottom: 14,
-          background: "linear-gradient(155deg, var(--ink) 0%, var(--horizon) 60%, var(--ember) 130%)",
+          background: heroPhotoUrl
+            ? `linear-gradient(155deg, rgba(26,18,13,0.85) 0%, rgba(123,61,154,0.72) 60%, rgba(232,93,46,0.65) 130%), url(${heroPhotoUrl}) center/cover`
+            : "linear-gradient(155deg, var(--ink) 0%, var(--horizon) 60%, var(--ember) 130%)",
           color: "var(--paper)",
           boxShadow: "0 10px 30px rgba(26,18,13,0.18)",
           position: "relative",
+          overflow: "hidden",
         }}>
           <button
             onClick={async () => { await _shareRecapCard(recap); }}
@@ -4457,6 +4507,60 @@ function RecapScreen({ state, setState }) {
             {playlistState.status === "error" && (
               <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1, color: "#c14a4a", marginTop: 8, fontWeight: 600 }}>
                 {playlistState.msg}
+              </div>
+            )}
+          </RecapCard>
+        )}
+
+        {/* DISCOVERY — saved but didn't catch */}
+        {recap.missedSaved.length > 0 && (
+          <RecapCard kicker={`MISSED · ${recap.missedSaved.length}`}>
+            <div className="serif" style={{ fontSize: 28, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 10 }}>
+              You saved {recap.missedSaved.length} sets you didn't make it to.
+            </div>
+            <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1, color: "var(--muted)", marginBottom: 10, fontWeight: 600 }}>
+              CATCH THEM NEXT YEAR
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {recap.missedSaved.map(a => {
+                const stage = (window.STAGES || []).find(s => s.id === a.stage);
+                return (
+                  <button key={a.id}
+                    onClick={() => setState(s => ({ ...s, artist: a.id }))}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "7px 10px", borderRadius: 8,
+                      background: "var(--paper)", border: "1px solid var(--line)",
+                      cursor: "pointer", textAlign: "left",
+                    }}>
+                    <div style={{ width: 3, alignSelf: "stretch", background: stage?.color || "var(--line-2)", borderRadius: 2, flexShrink: 0 }}/>
+                    <span style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500, flex: 1 }}>{a.name}</span>
+                    <span className="mono" style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--muted)", fontWeight: 600 }}>
+                      {stage?.short || ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </RecapCard>
+        )}
+
+        {/* CREW HIGHLIGHTS */}
+        {crewStats && crewStats.total > 0 && (
+          <RecapCard kicker={`CREW · ${crewStats.code}`}>
+            <div className="serif" style={{ fontSize: 28, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 10 }}>
+              Your crew sent <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{crewStats.total}</span> messages this weekend.
+            </div>
+            {crewStats.topSender && (
+              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                Loudest in the group chat:{" "}
+                <strong style={{ color: "var(--ink)" }}>{crewStats.topSender.name}</strong>
+                {" "}({crewStats.topSender.count} messages).
+              </div>
+            )}
+            {crewStats.uniqueSenders > 1 && (
+              <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
+                {crewStats.uniqueSenders} VOICES · 1 PLUR
               </div>
             )}
           </RecapCard>
