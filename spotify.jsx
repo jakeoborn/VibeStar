@@ -636,13 +636,20 @@ async function _findPlurskyPlaylist(token, profileId) {
 // #12 Build my playlist — push the user's saved EDC sets into their existing
 // "Plursky" Spotify playlist (created manually, see _findPlurskyPlaylist).
 // Skips artists Spotify can't find.
-async function createEdcPlaylist(state) {
+async function createEdcPlaylist(state, opts = {}) {
+  const source = opts.source === "attended" ? "attended" : "saved";
   const token   = await getValidToken();
   const profile = await ensureSpotifyProfile();
   if (!token || !profile) return { ok: false, reason: "not_connected" };
   if (!_hasPlaylistWriteScope()) return { ok: false, reason: "reconnect", status: 403, message: "Need to reconnect for playlist permission" };
 
-  const saved = state.saved
+  // v147: "attended" variant pulls from the attendance store (plursky_attended_v1)
+  // instead of the saved set — turns Recap into a one-tap "make a playlist of what
+  // I actually caught this weekend" button.
+  const sourceIds = source === "attended"
+    ? Object.values(window.getAllAttended?.() || {}).flat()
+    : state.saved;
+  const saved = sourceIds
     .map(id => ARTISTS.find(a => a.id === id))
     .filter(Boolean);
   if (saved.length === 0) return { ok: false, reason: "empty" };
@@ -4146,6 +4153,31 @@ function RecapScreen({ state, setState }) {
 
   const back = () => setState(s => ({ ...s, tab: "me" }));
 
+  // v147: build a Spotify playlist of what the user actually CAUGHT (attended)
+  // — separate from the existing build-playlist flow which uses saved sets.
+  const [playlistState, setPlaylistState] = React.useState({ status: "idle" });
+  const buildAttendedPlaylist = async () => {
+    setPlaylistState({ status: "building" });
+    try {
+      const result = await createEdcPlaylist(state, { source: "attended" });
+      if (result.ok) {
+        setPlaylistState({ status: "done", url: result.url, added: result.added });
+      } else {
+        const reason = result.reason || "fail";
+        const msg = {
+          not_connected:     "Connect Spotify on the Me tab first.",
+          empty:             "Mark sets you caught in Memories first.",
+          reconnect:         "Reconnect Spotify (needs playlist permission).",
+          no_target_playlist: "Create an empty Spotify playlist named 'Plursky' first.",
+          rate_limited:      "Spotify is throttling — wait 30s and retry.",
+        }[reason] || (result.message || "Couldn't build playlist.");
+        setPlaylistState({ status: "error", msg });
+      }
+    } catch (e) {
+      setPlaylistState({ status: "error", msg: e?.message || "Couldn't build playlist." });
+    }
+  };
+
   // Empty-state guard — nothing to recap
   if (recap.setsCount === 0 && recap.momentsCount === 0) {
     return (
@@ -4383,6 +4415,50 @@ function RecapScreen({ state, setState }) {
               fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700,
               cursor: "pointer", alignSelf: "flex-start",
             }}>OPEN MEMORIES →</button>
+          </RecapCard>
+        )}
+
+        {/* WEEKEND PLAYLIST */}
+        {state.spotifyConnected && recap.setsCount > 0 && (
+          <RecapCard kicker="YOUR SOUNDTRACK" paper="var(--paper)">
+            <div className="serif" style={{ fontSize: 28, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 14 }}>
+              Take the weekend <span style={{ fontStyle: "italic", color: "var(--horizon)" }}>home</span> with you.
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 14 }}>
+              Build a Spotify playlist of every set you actually caught — top tracks from each, in chronological set order.
+            </div>
+            {playlistState.status === "done" ? (
+              <div style={{
+                padding: "10px 12px", borderRadius: 10,
+                background: "rgba(45,122,85,0.12)", border: "1px solid rgba(45,122,85,0.4)",
+              }}>
+                <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1.2, color: "var(--success)", fontWeight: 700, marginBottom: 6 }}>
+                  ✓ {playlistState.added} TRACKS ADDED
+                </div>
+                {playlistState.url && (
+                  <a href={playlistState.url} target="_blank" rel="noopener noreferrer" className="mono" style={{
+                    fontSize: 10, letterSpacing: 1.1, color: "var(--ink)", fontWeight: 700,
+                    textDecoration: "underline",
+                  }}>OPEN IN SPOTIFY ↗</a>
+                )}
+              </div>
+            ) : (
+              <button onClick={buildAttendedPlaylist} disabled={playlistState.status === "building"} style={{
+                background: playlistState.status === "building" ? "var(--paper-2)" : "#1DB954",
+                color: playlistState.status === "building" ? "var(--muted)" : "#fff",
+                border: "none", borderRadius: 999, padding: "11px 18px",
+                fontFamily: "Geist Mono, monospace", fontSize: 10.5, letterSpacing: 1.3, fontWeight: 700,
+                cursor: playlistState.status === "building" ? "default" : "pointer",
+                alignSelf: "flex-start",
+              }}>
+                {playlistState.status === "building" ? "BUILDING…" : "↗ BUILD WEEKEND PLAYLIST"}
+              </button>
+            )}
+            {playlistState.status === "error" && (
+              <div className="mono" style={{ fontSize: 9.5, letterSpacing: 1, color: "#c14a4a", marginTop: 8, fontWeight: 600 }}>
+                {playlistState.msg}
+              </div>
+            )}
           </RecapCard>
         )}
 
