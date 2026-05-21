@@ -3898,6 +3898,41 @@ function _computeRecap(state) {
   const photoMoments = allMoments.filter(m => m.photoId);
   const videoMoments = allMoments.filter(m => m.kind === "video");
 
+  // v147: stages visited (unique stages with ≥1 attended set)
+  const stagesVisited = Array.from(new Set(caughtArtists.map(a => a.stage)));
+  const stagesVisitedNames = stagesVisited
+    .map(id => STAGES.find(s => s.id === id))
+    .filter(Boolean)
+    .map(s => s.name);
+
+  // v147: walking distance estimate — sum minutes from WALK_PAIRS for every
+  // stage-to-stage transition in chronological attendance, then convert to
+  // approximate metres at festival pace (~75 m/min).
+  const _artistEpochM = (a) => {
+    const dm = CFG?.dayDates?.[a._night];
+    if (!dm) return 0;
+    const [h, m] = a.start.split(":").map(Number);
+    return dm.midnightUtc + (h < 6 ? h + 24 : h) * 3600000 + m * 60000;
+  };
+  const walkSequence = caughtArtists.slice().sort((a, b) => _artistEpochM(a) - _artistEpochM(b));
+  let walkingMinutesLo = 0, walkingMinutesHi = 0;
+  const WP = window.WALK_PAIRS || {};
+  const PK = window._pairKey || ((a, b) => a < b ? `${a},${b}` : `${b},${a}`);
+  for (let i = 1; i < walkSequence.length; i++) {
+    const prev = walkSequence[i - 1].stage;
+    const cur  = walkSequence[i].stage;
+    if (prev === cur) continue;
+    const pair = WP[PK(prev, cur)];
+    if (!pair) continue;
+    walkingMinutesLo += pair[0];
+    walkingMinutesHi += pair[1];
+  }
+  const walkingMetersLo = Math.round(walkingMinutesLo * 75);
+  const walkingMetersHi = Math.round(walkingMinutesHi * 75);
+
+  // v147: B2B sets caught — artist names containing "b2b" or " b2b "
+  const b2bSets = caughtArtists.filter(a => /\bb2b\b/i.test(a.name));
+
   return {
     setsCount,
     totalMin,
@@ -3914,6 +3949,12 @@ function _computeRecap(state) {
     momentsCount: allMoments.length,
     photosCount:  photoMoments.length,
     videosCount:  videoMoments.length,
+    stagesVisitedCount: stagesVisited.length,
+    stagesVisitedNames,
+    walkingMinutesLo, walkingMinutesHi,
+    walkingMetersLo,  walkingMetersHi,
+    b2bCount: b2bSets.length,
+    b2bNames: b2bSets.map(a => a.name),
   };
 }
 
@@ -3947,6 +3988,155 @@ function RecapCard({ accent = "var(--ink)", paper = "var(--paper)", children, mo
       </div>
     </div>
   );
+}
+
+// v147: shareable image card — paints the recap stats onto a 1080x1920 canvas
+// (Instagram story aspect), then shares via navigator.share files API (which
+// pops the iOS share sheet — IG, Messages, AirDrop, save to camera roll) or
+// downloads as PNG on desktop. Fonts ship via Google Fonts in index.html; we
+// await document.fonts.ready so canvas picks them up.
+async function _renderRecapShareCard(recap) {
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const CFG = window.FESTIVAL_CONFIG || {};
+
+  // Ensure custom fonts are ready before we draw — canvas falls back to a
+  // generic serif if Instrument Serif hasn't loaded yet.
+  try {
+    await document.fonts.load("700 italic 96px 'Instrument Serif'");
+    await document.fonts.load("700 24px 'Geist Mono'");
+    await document.fonts.load("500 64px Geist");
+  } catch {}
+
+  // Background — same gradient as the hero card on screen
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0,    "#1a120d");
+  grad.addColorStop(0.55, "#7b3d9a");
+  grad.addColorStop(1,    "#e85d2e");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle starfield to echo TopDownMap's aesthetic
+  ctx.fillStyle = "rgba(247,237,224,0.4)";
+  let s = 0xdeadbeef;
+  for (let i = 0; i < 60; i++) {
+    s = Math.imul(s ^ (s >>> 17), 0x45d9f3b);
+    const rng = () => ((s = Math.imul(s, 0x119de1f3)) >>> 0) / 0x100000000;
+    const x = rng() * W, y = rng() * H * 0.5;
+    const r = 1 + rng() * 2.5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Kicker
+  ctx.fillStyle = "rgba(247,237,224,0.65)";
+  ctx.font = "700 26px 'Geist Mono', monospace";
+  ctx.textAlign = "left";
+  ctx.fillText(`PLURSKY · ${(CFG.shortName || "EDC LV").toUpperCase()} · ${CFG.year || ""}`, 72, 130);
+
+  // Title
+  ctx.fillStyle = "#f7ede0";
+  ctx.textAlign = "left";
+  ctx.font = "400 130px 'Instrument Serif', serif";
+  ctx.fillText("That was", 72, 290);
+  ctx.font = "italic 400 130px 'Instrument Serif', serif";
+  ctx.fillStyle = "#f59a36";
+  ctx.fillText("your weekend.", 72, 440);
+
+  // 2x2 stats grid
+  const cells = [
+    { big: String(recap.setsCount),                small: "SETS CAUGHT" },
+    { big: _fmtHrsMin(recap.totalMin),             small: "ON DANCEFLOORS" },
+    { big: String(recap.stagesVisitedCount || recap.nights), small: recap.stagesVisitedCount != null ? `OF ${(window.STAGES || []).length} STAGES` : "NIGHTS" },
+    { big: String(recap.headlinersCaught),         small: "HEADLINERS" },
+  ];
+  const gridTop = 600, cellH = 240, cellW = W / 2;
+  cells.forEach((c, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = col * cellW + 72;
+    const y = gridTop + row * cellH;
+    ctx.fillStyle = "#f7ede0";
+    ctx.font = "400 130px 'Instrument Serif', serif";
+    ctx.fillText(c.big, x, y + 130);
+    ctx.fillStyle = "rgba(247,237,224,0.65)";
+    ctx.font = "700 22px 'Geist Mono', monospace";
+    ctx.fillText(c.small, x, y + 175);
+  });
+
+  // Top-stage banner
+  if (recap.topStage) {
+    const by = gridTop + cellH * 2 + 60;
+    ctx.fillStyle = recap.topStage.color;
+    ctx.fillRect(72, by, W - 144, 6);
+    ctx.fillStyle = "rgba(247,237,224,0.7)";
+    ctx.font = "700 22px 'Geist Mono', monospace";
+    ctx.fillText("YOU LIVED AT", 72, by + 60);
+    ctx.fillStyle = "#f7ede0";
+    ctx.font = "italic 400 80px 'Instrument Serif', serif";
+    ctx.fillText(recap.topStage.name, 72, by + 150);
+  }
+
+  // Headliner pill row
+  if (recap.headlinerNames?.length) {
+    const hy = H - 380;
+    ctx.fillStyle = "rgba(247,237,224,0.7)";
+    ctx.font = "700 22px 'Geist Mono', monospace";
+    ctx.fillText(`HEADLINERS CAUGHT · ${recap.headlinersCaught}`, 72, hy);
+    ctx.font = "700 28px 'Geist Mono', monospace";
+    ctx.fillStyle = "#f7ede0";
+    let lineY = hy + 60;
+    let lineW = 0;
+    recap.headlinerNames.slice(0, 8).forEach((name) => {
+      const text = "★ " + name.toUpperCase();
+      const w = ctx.measureText(text).width + 40;
+      if (lineW + w > W - 144) {
+        lineY += 60;
+        lineW = 0;
+      }
+      ctx.fillText(text, 72 + lineW, lineY);
+      lineW += w + 24;
+    });
+  }
+
+  // Watermark
+  ctx.fillStyle = "rgba(247,237,224,0.55)";
+  ctx.textAlign = "left";
+  ctx.font = "700 26px 'Geist Mono', monospace";
+  ctx.fillText("PLURSKY.COM", 72, H - 90);
+  ctx.textAlign = "right";
+  ctx.fillText("UNDER THE ELECTRIC SKY", W - 72, H - 90);
+
+  return canvas;
+}
+
+async function _shareRecapCard(recap) {
+  let canvas;
+  try { canvas = await _renderRecapShareCard(recap); }
+  catch (e) { console.error("[plursky-recap] render failed:", e); return false; }
+  const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+  if (!blob) return false;
+  const filename = `plursky-recap-${(window.FESTIVAL_CONFIG?.id || "festival")}.png`;
+  const file = new File([blob], filename, { type: "image/png" });
+  // Try iOS share sheet first (best path on phone)
+  if (navigator.share && typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `My ${window.FESTIVAL_CONFIG?.shortName || "festival"}` });
+      return true;
+    } catch (e) {
+      if (e?.name === "AbortError") return false; // user cancelled — silent
+    }
+  }
+  // Fallback: download
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 function RecapScreen({ state, setState }) {
@@ -3993,13 +4183,25 @@ function RecapScreen({ state, setState }) {
         <TopBar title={<span>Recap</span>} sub={(CFG.shortName || "Festival").toUpperCase() + " · YOUR WEEKEND"} tight />
       </div>
       <ScrollBody style={{ padding: "14px 16px 94px" }}>
-        {/* HERO ─ totals */}
+        {/* HERO ─ totals · share button bottom-right */}
         <div style={{
           borderRadius: 22, padding: "26px 22px", marginBottom: 14,
           background: "linear-gradient(155deg, var(--ink) 0%, var(--horizon) 60%, var(--ember) 130%)",
           color: "var(--paper)",
           boxShadow: "0 10px 30px rgba(26,18,13,0.18)",
+          position: "relative",
         }}>
+          <button
+            onClick={async () => { await _shareRecapCard(recap); }}
+            aria-label="Share recap"
+            style={{
+              position: "absolute", top: 16, right: 16,
+              padding: "7px 12px", borderRadius: 999,
+              background: "rgba(247,237,224,0.18)", color: "#f7ede0",
+              border: "1px solid rgba(247,237,224,0.35)", cursor: "pointer",
+              fontFamily: "Geist Mono, monospace", fontSize: 9.5, letterSpacing: 1.3, fontWeight: 700,
+              backdropFilter: "blur(8px)",
+            }}>↗ SHARE</button>
           <div className="mono" style={{ fontSize: 9, letterSpacing: 1.6, color: "rgba(247,237,224,0.75)", fontWeight: 700, marginBottom: 10 }}>
             YOUR {(CFG.shortName || "FESTIVAL").toUpperCase()} · {CFG.year || ""}
           </div>
@@ -4095,6 +4297,56 @@ function RecapScreen({ state, setState }) {
             </div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
               SPOTIFY POPULARITY {recap.hiddenGem._pop} / 100 · TASTE 🤌
+            </div>
+          </RecapCard>
+        )}
+
+        {/* STAGES VISITED */}
+        {recap.stagesVisitedCount > 0 && (
+          <RecapCard kicker={`STAGES VISITED · ${recap.stagesVisitedCount} OF ${(window.STAGES || []).length}`}>
+            <div className="serif" style={{ fontSize: 30, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 10 }}>
+              {recap.stagesVisitedCount === (window.STAGES || []).length
+                ? <>Every <span style={{ fontStyle: "italic", color: "var(--ember)" }}>stage</span>. Completionist.</>
+                : <>You set foot at <span style={{ fontStyle: "italic", color: "var(--ember)" }}>{recap.stagesVisitedCount}</span> of {(window.STAGES || []).length} stages.</>}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+              {recap.stagesVisitedNames.map(name => (
+                <span key={name} className="mono" style={{
+                  padding: "4px 9px", borderRadius: 999,
+                  background: "var(--paper)", border: "1px solid var(--line-2)",
+                  color: "var(--ink)", fontSize: 9, letterSpacing: 1.1, fontWeight: 700,
+                }}>{name.toUpperCase()}</span>
+              ))}
+            </div>
+          </RecapCard>
+        )}
+
+        {/* WALKING DISTANCE */}
+        {recap.walkingMinutesHi > 0 && (
+          <RecapCard kicker="DISTANCE COVERED">
+            <div className="serif" style={{ fontSize: 30, lineHeight: 1.05, letterSpacing: -0.3 }}>
+              You walked roughly{" "}
+              <span style={{ fontStyle: "italic", color: "var(--horizon)" }}>
+                {recap.walkingMetersHi >= 1000
+                  ? `${(recap.walkingMetersLo / 1000).toFixed(1)}–${(recap.walkingMetersHi / 1000).toFixed(1)} km`
+                  : `${recap.walkingMetersLo}–${recap.walkingMetersHi} m`}
+              </span>{" "}
+              between stages.
+            </div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: 1, color: "var(--muted)", marginTop: 10, fontWeight: 600 }}>
+              ~{recap.walkingMinutesLo}–{recap.walkingMinutesHi} MIN WALKING TOTAL
+            </div>
+          </RecapCard>
+        )}
+
+        {/* B2B SETS */}
+        {recap.b2bCount > 0 && (
+          <RecapCard kicker={`B2B SETS · ${recap.b2bCount}`}>
+            <div className="serif" style={{ fontSize: 30, lineHeight: 1.05, letterSpacing: -0.3, marginBottom: 8 }}>
+              You caught {recap.b2bCount === 1 ? "a" : recap.b2bCount} <span style={{ fontStyle: "italic", color: "var(--ember)" }}>back-to-back</span> collab{recap.b2bCount === 1 ? "" : "s"}.
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.45 }}>
+              {recap.b2bNames.join(" · ")}
             </div>
           </RecapCard>
         )}
