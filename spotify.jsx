@@ -2812,35 +2812,72 @@ async function _parseExifMeta(file) {
 //      stage is closest to the photo GPS (if GPS available).
 //   2. If no time match in saved sets, expand to ALL artists on that night.
 //   3. If still nothing, return null.
+// v146 fix: use the photo's actual DATE (yr/mo/dy) to determine which
+// festival night it belongs to BEFORE matching artists. The prior version
+// only used time-of-day, which meant a Saturday 10:30 PM photo could be
+// tagged as a Friday artist whose set happened to overlap 10:30 PM.
+//
+// Festival night N runs from Day N at 19:00 local to Day N+1 at 06:00 local.
+// `FESTIVAL_CONFIG.dayDates[n].midnightUtc` is the UTC epoch corresponding
+// to Day N's local 00:00, so [+19h, +30h] is the night window in UTC.
+function _festivalTzOffsetHours() {
+  const day1 = window.FESTIVAL_CONFIG?.dayDates?.[1];
+  if (!day1) return -7; // PT default
+  return -new Date(day1.midnightUtc).getUTCHours();
+}
+function _photoEpochUtc(date) {
+  // EXIF DateTimeOriginal / file.lastModified gives festival-local wall
+  // clock (iOS phones store capture time in device-local, no tz). Convert
+  // to UTC epoch using the festival's offset.
+  const offset = _festivalTzOffsetHours(); // e.g. -7 for PDT
+  return Date.UTC(date.yr, date.mo - 1, date.dy, date.hh, date.mm, date.ss || 0)
+       - offset * 3600000;
+}
+function _photoFestivalNight(date) {
+  if (!date) return null;
+  const cfg = window.FESTIVAL_CONFIG;
+  if (!cfg?.dayDates) return null;
+  const photoMs = _photoEpochUtc(date);
+  for (const n of Object.keys(cfg.dayDates).map(Number)) {
+    const dm = cfg.dayDates[n];
+    if (!dm) continue;
+    const startMs = dm.midnightUtc + 19 * 3600000;     // 19:00 PT of day N
+    const endMs   = dm.midnightUtc + 30 * 3600000;     // 06:00 PT day N+1
+    if (photoMs >= startMs - 30 * 60000 && photoMs <= endMs + 30 * 60000) return n;
+  }
+  return null;
+}
+
 function _matchArtistForPhoto({ date, lat, lng }, savedIds) {
   if (!date) return { artistId: null, night: null, reason: "no_date" };
-  const minOfDay = date.hh * 60 + date.mm; // 0..1439
-  // Adjust: any time before 06:00 is treated as still belonging to the
-  // PREVIOUS festival day (sets often run until 5–6 AM in Vegas).
+  // First: which festival night does this photo's DATE place it in?
+  const night = _photoFestivalNight(date);
+  if (!night) return { artistId: null, night: null, reason: "outside_festival_window" };
+
+  // Then: which artist on THAT night was playing at the photo's time?
+  const minOfDay = date.hh * 60 + date.mm;
   const adjustedMin = minOfDay < 360 ? minOfDay + 1440 : minOfDay;
-  // Per-night candidates
-  const nights = Object.keys(window.FESTIVAL_CONFIG?.dayDates || {}).map(n => +n);
   const candidates = [];
-  for (const night of nights) {
-    for (const a of (window.ARTISTS || [])) {
-      if (a.day !== night) continue;
-      const [sh, sm] = a.start.split(":").map(Number);
-      const [eh, em] = a.end.split(":").map(Number);
-      // Same post-midnight rollover trick as _artistStartMs
-      const startMin = (sh < 6 ? sh + 24 : sh) * 60 + sm;
-      const endMin   = (eh < 6 ? eh + 24 : eh) * 60 + em;
-      if (adjustedMin >= startMin - 5 && adjustedMin <= endMin + 10) {
-        candidates.push({ a, night, startMin, endMin });
-      }
+  for (const a of (window.ARTISTS || [])) {
+    if (a.day !== night) continue;
+    const [sh, sm] = a.start.split(":").map(Number);
+    const [eh, em] = a.end.split(":").map(Number);
+    const startMin = (sh < 6 ? sh + 24 : sh) * 60 + sm;
+    const endMin   = (eh < 6 ? eh + 24 : eh) * 60 + em;
+    if (adjustedMin >= startMin - 5 && adjustedMin <= endMin + 10) {
+      candidates.push({ a, startMin, endMin });
     }
   }
-  if (candidates.length === 0) return { artistId: null, night: null, reason: "no_time_match" };
-  // Prefer saved artists first
+  if (candidates.length === 0) {
+    // We know the night but no specific artist — return the night so the
+    // photo still lands in the right bucket (e.g. between sets, in the
+    // shuttle line, etc.).
+    return { artistId: null, night, reason: "no_artist_at_time" };
+  }
+  // Prefer saved artists; GPS tiebreaker; then tightest time fit
   const savedSet = new Set(savedIds || []);
   const inSaved = candidates.filter(c => savedSet.has(c.a.id));
   const pool = inSaved.length > 0 ? inSaved : candidates;
-  // GPS tiebreaker: if we have photo GPS + the stage has a known anchor,
-  // pick the closest. Otherwise pick by tightest time fit (start time).
   const stageDist = (a) => {
     if (lat == null || lng == null) return Infinity;
     const anchor = (window.FESTIVAL_CONFIG?.gpsAnchors || []).find(g => g.stageId === a.stage);
@@ -2853,7 +2890,7 @@ function _matchArtistForPhoto({ date, lat, lng }, savedIds) {
     if (dx !== Infinity && dy !== Infinity && Math.abs(dx - dy) > 1e-9) return dx - dy;
     return Math.abs(adjustedMin - x.startMin) - Math.abs(adjustedMin - y.startMin);
   });
-  return { artistId: pool[0].a.id, night: pool[0].night, reason: "matched" };
+  return { artistId: pool[0].a.id, night, reason: "matched" };
 }
 
 function MemoriesScreen({ state, setState }) {
