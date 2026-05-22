@@ -171,6 +171,25 @@ Ordered by impact-per-engineering-hour.
 
 ## 🟡 POLISH + RISK REDUCTION
 
+- [ ] **Wire `@capacitor/haptics` into primary CTAs** — Dim Hour shipped
+      this 2026-05-21 (commit on main; see Dim Hour memory
+      `feedback_check_skills_catalog_first.md` for the broader skill-
+      catalog directive that motivated it). Same pattern fits Plursky:
+      `_haptic('light')` on save-set toggle, crew-message send, recap
+      share; `_haptic('medium')` on the more weighty CTAs (Spotify
+      connect, save full lineup, generate playlist). Install:
+      `npm i @capacitor/haptics && npx cap sync ios`. Helper pattern:
+      ```js
+      window._haptic = function(kind){
+        try {
+          var H = window.Capacitor?.Plugins?.Haptics;
+          if (!H) return;
+          H.impact({ style: kind === 'medium' ? 'MEDIUM' : 'LIGHT' });
+        } catch(e){}
+      };
+      ```
+      Founder direction 2026-05-21: micro-interactions are the
+      difference between "feels native" and "feels like a webview."
 - [ ] **Native push notifications** — set-time reminders fire (local
       notifications, v131), but no remote push for "your crew just
       sent a message" or "your saved set starts in 5 min — check the
@@ -217,6 +236,20 @@ Risk-reduction items that don't touch the bundle.
 - [ ] **Multi-festival platform** — `FESTIVAL_CONFIG` registry exists
       but only EDC LV 2026 is selectable. EDC Orlando 2027 / Coachella
       / NYE could plug in once the per-festival recap-archive lands.
+- [ ] **IRL meetup mechanic — Plursky tests this first per founder
+      direction 2026-05-21.** Group meetup pins on the festival map
+      (leverages existing map + crew/DMs from v132/v134) likely the
+      lowest-cost first ship. Pre/post-festival hangs + carpool/hotel-
+      share are the broader meetup surface. See memory
+      `project_irl_meetup_moat.md` for sequencing. Open prereqs: cold-
+      start mechanic per festival, trust/safety layer, RSVP cap,
+      cancellation flow, liability framing.
+- [ ] **browse.sh skill catalog for event discovery + meetups** —
+      `meetup.com/search-events` and `ticketmaster.com/find-ticket`
+      from the browse.sh skill catalog (already wired into Dim Hour
+      session) could feed the multi-festival expansion + meetup
+      discovery features. Prereqs: `BROWSERBASE_API_KEY` set; per-skill
+      SKILL.md recipes fetched. Catalog lives at https://browse.sh.
 - [ ] **Insomniac partnership pitch** — post-EDC attendance + memory
       data is real evidence. Use the Recap screen as the demo.
 - [ ] **Real-time friends-on-map** — CREW presence broadcast already
